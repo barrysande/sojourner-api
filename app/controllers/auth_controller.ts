@@ -10,15 +10,6 @@ export default class AuthController {
     try {
       const data = await request.validateUsing(registerValidator)
 
-      // Check if user already exists
-      const existingUser = await User.findBy('email', data.email)
-      if (existingUser) {
-        return response.conflict({
-          message: 'User with this email already exists',
-          errors: { email: ['Email already taken'] },
-        })
-      }
-
       const user = await User.create(data)
 
       return response.created({
@@ -38,7 +29,7 @@ export default class AuthController {
         })
       }
 
-      // Database constraint errors (unique email, etc.)
+      // Database constraint errors (unique email) - Avoids race condition of manually checking the user using User.findBy('email', data.email) then creating a user.
       if (error.code === '23505') {
         // PostgreSQL unique violation
         return response.conflict({
