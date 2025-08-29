@@ -11,7 +11,13 @@ export default class Photo extends BaseModel {
   declare hiddenGemId: number
 
   @column()
-  declare filePath: string
+  declare cloudinaryUrl: string
+
+  @column()
+  declare cloudinaryPublicId: string
+
+  @column()
+  declare cloudinarySecureUrl: string
 
   @column()
   declare fileName: string
