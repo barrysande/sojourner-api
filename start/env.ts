@@ -35,4 +35,15 @@ export default await Env.create(new URL('../', import.meta.url), {
   |----------------------------------------------------------
   */
   SESSION_DRIVER: Env.schema.enum(['cookie', 'memory'] as const),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring Cloudinary package
+  |----------------------------------------------------------
+  */
+  CLOUDINARY_CLOUD_NAME: Env.schema.string(),
+  CLOUDINARY_API_KEY: Env.schema.string(),
+  CLOUDINARY_API_SECRET: Env.schema.string(),
+  CLOUDINARY_FREE_PRESET: Env.schema.string(),
+  CLOUDINARY_PAID_PRESET: Env.schema.string(),
 })
