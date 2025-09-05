@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary'
 import env from '#start/env'
+import logger from '@adonisjs/core/services/logger'
 
 export default class CloudinaryService {
   constructor() {
@@ -45,29 +46,40 @@ export default class CloudinaryService {
       const result = await cloudinary.uploader.destroy(publicId)
       return result.result === 'ok'
     } catch (error) {
-      console.error('Error deleting image from Cloudinary:', error)
+      logger.error('Error deleting image from Cloudinary:', error)
       return false
     }
   }
 
   generateSignedUploadParams(userTier: string, userId: number, gemId?: number) {
-    const uploadPreset = this.getUploadPreset(userTier)
-    const timestamp = Math.round(new Date().getTime() / 1000)
-
-    const folder = gemId ? `users/${userId}/gems/${gemId}` : `users/${userId}/temp`
-    const params = {
-      upload_preset: uploadPreset,
-      timestamp: timestamp,
-      folder: folder,
+    if (!userId || !userTier) {
+      throw new Error('Missing required parameters for upload configuration.')
     }
 
-    const signature = cloudinary.utils.api_sign_request(params, env.get('CLOUDINARY_API_SECRET'))
+    try {
+      const uploadPreset = this.getUploadPreset(userTier)
+      const timestamp = Math.round(new Date().getTime() / 1000)
 
-    return {
-      ...params,
-      signature,
-      api_key: env.get('CLOUDINARY_API_KEY'),
-      cloud_name: env.get('CLOUDINARY_CLOUD_NAME'),
+      const folder = gemId ? `users/${userId}/gems/${gemId}` : `users/${userId}/temp`
+      const params = {
+        upload_preset: uploadPreset,
+        timestamp: timestamp,
+        folder: folder,
+      }
+
+      const signature = cloudinary.utils.api_sign_request(params, env.get('CLOUDINARY_API_SECRET'))
+
+      return {
+        ...params,
+        signature,
+        api_key: env.get('CLOUDINARY_API_KEY'),
+        cloud_name: env.get('CLOUDINARY_CLOUD_NAME'),
+      }
+    } catch (error) {
+      logger.error('Failed to generate Cloudinary upload parameters', {
+        error: error.message,
+      })
+      throw new Error('Ubable to configure photo upload,')
     }
   }
 }
