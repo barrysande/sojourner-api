@@ -1,11 +1,13 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
+import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
 import { inject } from '@adonisjs/core'
 import type CloudinaryService from '#services/cloudinary_service'
 import type TierService from '#services/tier_service'
 import { getMetaData } from '@adonisjs/core/commands'
 import { hiddenGemWithPhotosValidator } from '#validators/cloudinary_photo'
+import db from '@adonisjs/lucid/services/db'
 
 @inject()
 export default class HiddenGemsController {
@@ -14,7 +16,7 @@ export default class HiddenGemsController {
     private tierService: TierService
   ) {}
 
-//   List all hidden gems
+  //   List all hidden gems
   async index({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -40,7 +42,7 @@ export default class HiddenGemsController {
     }
   }
 
-//   Show one hidden gem based on id GET /hidden_gem/:id
+  //   Show one hidden gem based on id GET /hidden_gem/:id
 
   async show({ response, auth, params }: HttpContext) {
     try {
@@ -68,27 +70,98 @@ export default class HiddenGemsController {
     }
   }
 
-//   Create a hidden gem POST
+  //   Create a hidden gem POST
 
-  async store({request, response, auth}: HttpContext){
-    try{
-        const user = auth.getUserOrFail()
-        const data = await request.validateUsing(hiddenGemWithPhotosValidator)
+  async store({ request, response, auth }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const data = await request.validateUsing(hiddenGemWithPhotosValidator)
 
-        const gemCheck = await this.tierService.canCreateGem(user.id)
+      const gemCheck = await this.tierService.canCreateGem(user.id)
 
-        if(!gemCheck.canCreate){
-            return response.forbidden({
-                message: gemCheck.message,
-                current: gemCheck.currentCount,
-                limit: gemCheck.limit,
-                upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'unlimited gems')
+      // Check if user can create more gems
+
+      if (!gemCheck.canCreate) {
+        return response.forbidden({
+          message: gemCheck.message,
+          current: gemCheck.currentCount,
+          limit: gemCheck.limit,
+          upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'unlimited gems'),
+        })
+      }
+
+      // check if the photos submitted by user are within tier limits
+
+      if (data.photos && data.photos.length > 0) {
+        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, data.photos.length)
+        if (!photoCheck.canAdd) {
+          return response.forbidden({
+            message: photoCheck.message,
+            attempted: data.photos.length,
+            limit: photoCheck.limit,
+            upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more photos per gem'),
+          })
+        }
+
+        // validate each photo metadata submitted by user
+
+        for (const photo of data.photos) {
+          if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
+            return response.badRequest({
+              message: 'Invalid photo data',
+              code: 'INVALID_PHOTO_DATA',
             })
+          }
+        }
+      }
+
+      // Create new hidden gem with any photo submitted
+
+      const gem = await db.transaction(async (trx) => {
+        const newGem = await HiddenGem.create(
+          {
+            userId: user.id,
+            name: data.name,
+            location: data.location,
+            description: data.description,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            isPublic: false,
+          },
+          { client: trx }
+        )
+
+        if (data.photos && data.photos.length > 0) {
+          const photoData = data.photos.map((photo, index) => ({
+            hiddenGemId: newGem.id,
+            publicId: photo.public_id,
+            url: photo.url,
+            secureUrl: photo.secure_url,
+            fileName: photo.original_filename || `photo-${index + 1}.jpg`,
+            caption: photo.caption || null,
+            isPrimary: index === 0, // First photo is primary
+          }))
+
+          await Photo.createMany(photoData, { client: trx })
         }
 
-        if(data.photos && data.photos.length > 0){
-            const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, data.photos.length)
-        }
+        return newGem
+      })
+
+      const gemWithPhotos = await HiddenGem.query().where('id', gem.id).preload('photos').first()
+
+      return response.created({
+        message: 'Hidden gem created successfully',
+        data: gemWithPhotos,
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Validation failed',
+          errors: error.messages,
+        })
+      }
+      throw error
     }
   }
 }

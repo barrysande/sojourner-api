@@ -23,6 +23,7 @@ export const hiddenGemWithPhotosValidator = vine.compile(
           secure_url: vine.string().url(),
           public_id: vine.string().minLength(1),
           original_filename: vine.string().optional(),
+          caption: vine.string().optional(),
         })
       )
       .optional(),
