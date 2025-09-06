@@ -56,7 +56,7 @@ export default class TierService {
   }
 
   //   Check if user can add photos bases on tier limits set in limits object.
-  async canAddPhotoCount(
+  async canAddPhotosToGem(
     userId: number,
     gemId: number,
     photosToAdd: number
@@ -64,9 +64,15 @@ export default class TierService {
     const user = await User.findOrFail(userId)
     const limits = this.getTierLimits(user.tier)
 
-    const currentPhotoCount = await Photo.query().where('hidden_gem_id', gemId).count('* as total')
+    let currentCount = 0
 
-    const currentCount = currentPhotoCount[0].$extras.total
+    if (gemId > 0) {
+      const currentPhotoCount = await Photo.query()
+        .where('hidden_gem_id', gemId)
+        .count('* as total')
+
+      currentCount = currentPhotoCount[0].$extras.total
+    }
     const wouldExceedLimit = currentCount + photosToAdd > limits.maxPhotosPerGem
 
     if (wouldExceedLimit) {
@@ -81,6 +87,12 @@ export default class TierService {
       canAdd: true,
       currentCount,
       limit: limits.maxPhotosPerGem,
+    }
+  }
+
+  async getUpgrageMessage(userTier: string, feature: string) {
+    if (userTier === 'free') {
+      return `Upgrade to Individual Plan to unlock ${feature}`
     }
   }
 }

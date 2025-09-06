@@ -4,6 +4,7 @@ import { loginValidator, registerValidator } from '#validators/auth'
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
 import vine from '@vinejs/vine'
+import logger from '@adonisjs/core/services/logger'
 
 export default class AuthController {
   async register({ request, response }: HttpContext) {
@@ -21,7 +22,7 @@ export default class AuthController {
         },
       })
     } catch (error) {
-      // Validation errors are automatically handled by AdonisJS
+      // Validation errors are automatically handled by AdonisJS Error Handler
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
@@ -38,7 +39,7 @@ export default class AuthController {
       }
 
       // Log the error for debugging
-      console.error('Registration error:', error)
+      logger.error('Registration error:', error)
 
       return response.internalServerError({
         message: 'An error occurred during registration',
@@ -85,7 +86,7 @@ export default class AuthController {
         })
       }
 
-      console.error('Login error:', error)
+      logger.error('Login error:', error)
 
       return response.internalServerError({
         message: 'An error occurred during login',
@@ -98,7 +99,7 @@ export default class AuthController {
       await auth.use('web').logout()
       return response.ok({ message: 'Logout successful' })
     } catch (error) {
-      console.error('Logout error:', error)
+      logger.error('Logout error:', error)
 
       return response.internalServerError({
         message: 'An error occurred during logout',
@@ -126,7 +127,7 @@ export default class AuthController {
         })
       }
 
-      console.error('Me endpoint error:', error)
+      logger.error('Me endpoint error:', error)
 
       return response.internalServerError({
         message: 'An error occurred while fetching user data',
@@ -178,7 +179,7 @@ export default class AuthController {
         })
       }
 
-      console.error('Change password error:', error)
+      logger.error('Change password error:', error)
 
       return response.internalServerError({
         message: 'An error occurred while changing password',
