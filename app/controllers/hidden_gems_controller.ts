@@ -164,4 +164,100 @@ export default class HiddenGemsController {
       throw error
     }
   }
+  async update({ params, response, request, auth }: HttpContext) {
+    try {
+      const user = await auth.getUserOrFail()
+      const data = await request.validateUsing(hiddenGemWithPhotosValidator)
+
+      const gem = await HiddenGem.query()
+        .where('id', params.id)
+        .where('userId', user.id)
+        .firstOrFail()
+
+      // check photos being added against photo limits
+      if (data.photos && data.photos.length > 0) {
+        const currentPhotoCount = await Photo.query()
+          .where('hiddenGemId', gem.id)
+          .count('* as total')
+
+        const currentCount = currentPhotoCount[0].$extras.total
+        const photoCheck = await this.tierService.canAddPhotosToGem(
+          user.id,
+          gem.id,
+          data.photos.length
+        )
+
+        if (currentCount + data.photos.length > photoCheck.limit) {
+          return response.forbidden({
+            message: `Adding ${data.photos.length} photos would exceed the limit of ${photoCheck.limit}`,
+            current: currentCount,
+            limit: photoCheck.limit,
+            attempted: data.photos.length,
+          })
+        }
+
+        // validate the photo data
+
+        for (const photo of data.photos) {
+          if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
+            return response.badRequest({
+              message: 'Invalid phot data',
+              code: 'INVALID_PHOTO_DATA',
+            })
+          }
+        }
+      }
+
+      await db.transaction(async (trx) => {
+        gem.useTransaction(trx)
+        await gem
+          .merge({
+            name: data.name,
+            location: data.location,
+            description: data.description,
+            latitude: data.latitude,
+            longitude: data.longitude,
+          })
+          .save()
+
+        // add new photos
+
+        if (data.photos && data.photos.length > 0) {
+          const photoData = data.photos.map((photo) => ({
+            hiddenGemId: gem.id,
+            cloudinaryPublicId: photo.public_id,
+            cloudinaryUrl: photo.url,
+            cloudinarySecureUrl: photo.secure_url,
+            fileName: photo.original_filename || 'uploaded-photo.jpg',
+            caption: photo.caption || null,
+            isPrimary: false,
+          }))
+          await Photo.createMany(photoData, { client: trx })
+        }
+
+        return gem
+      })
+
+      const updatedGem = await HiddenGem.query().where('id', gem.id).preload('photos').first()
+
+      return response.ok({
+        message: 'Hidden Gem updated successfully',
+        data: updatedGem,
+      })
+    } catch (error) {
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.notFound({
+          message: 'Hidden gem not found',
+          code: 'GEM_NOT_FOUND',
+        })
+      }
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Validation failed',
+          errors: error.messages,
+        })
+      }
+      throw error
+    }
+  }
 }
