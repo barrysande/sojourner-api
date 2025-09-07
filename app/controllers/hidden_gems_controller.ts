@@ -59,7 +59,7 @@ export default class HiddenGemsController {
 
       return response.ok(gem)
     } catch (error) {
-      if (error === 'E_ROW_NOT_FOUND') {
+      if (error.code === 'E_ROW_NOT_FOUND') {
         return response.notFound({
           message: 'Hidden gem not found',
           code: 'GEM_NOT_FOUND',
@@ -76,16 +76,15 @@ export default class HiddenGemsController {
       const user = auth.getUserOrFail()
       const data = await request.validateUsing(hiddenGemWithPhotosValidator)
 
-      const gemCheck = await this.tierService.canCreateGem(user.id)
-
       // Check if user can create more gems
+      const gemCheck = await this.tierService.canCreateGem(user.id)
 
       if (!gemCheck.canCreate) {
         return response.forbidden({
           message: gemCheck.message,
           current: gemCheck.currentCount,
           limit: gemCheck.limit,
-          upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'unlimited gems'),
+          upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more gems'),
         })
       }
 
@@ -102,15 +101,15 @@ export default class HiddenGemsController {
           })
         }
 
-        // validate each photo metadata submitted by user
+        // validate each photo metadata submitted by user using the validatePhotosBatch method
 
-        for (const photo of data.photos) {
-          if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
-            return response.badRequest({
-              message: 'Invalid photo data',
-              code: 'INVALID_PHOTO_DATA',
-            })
-          }
+        const photoValidation = this.validatePhotosBatch(data.photos)
+        if (!photoValidation.isValid) {
+          return response.badRequest({
+            message: photoValidation.error,
+            code: 'INVALID_PHOTO_DATA',
+            invalidPhotoIndex: photoValidation.invalidIndex,
+          })
         }
       }
 
@@ -133,9 +132,9 @@ export default class HiddenGemsController {
         if (data.photos && data.photos.length > 0) {
           const photoData = data.photos.map((photo, index) => ({
             hiddenGemId: newGem.id,
-            publicId: photo.public_id,
-            url: photo.url,
-            secureUrl: photo.secure_url,
+            cloudinaryPublicId: photo.public_id,
+            cloudinaryUrl: photo.url,
+            cloudinarySecureUrl: photo.secure_url,
             fileName: photo.original_filename || `photo-${index + 1}.jpg`,
             caption: photo.caption || null,
             isPrimary: index === 0, // First photo is primary
@@ -163,6 +162,29 @@ export default class HiddenGemsController {
       throw error
     }
   }
+
+  // helper function to validate photos
+  private validatePhotosBatch(photos: any[]): {
+    isValid: boolean
+    error?: string
+    invalidIndex?: number
+  } {
+    if (!photos || photos.length === 0) {
+      return { isValid: true }
+    }
+
+    for (const [i, photo] of photos.entries()) {
+      if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
+        return {
+          isValid: false,
+          error: `Photo #${i + 1} has invalid data. Please remove and re-upload it.`,
+          invalidIndex: i,
+        }
+      }
+    }
+    return { isValid: true }
+  }
+
   async update({ params, response, request, auth }: HttpContext) {
     try {
       const user = await auth.getUserOrFail()
@@ -175,21 +197,18 @@ export default class HiddenGemsController {
 
       // check photos being added against photo limits
       if (data.photos && data.photos.length > 0) {
-        const currentPhotoCount = await Photo.query()
-          .where('hiddenGemId', gem.id)
-          .count('* as total')
-
-        const currentCount = currentPhotoCount[0].$extras.total
         const photoCheck = await this.tierService.canAddPhotosToGem(
           user.id,
           gem.id,
           data.photos.length
         )
 
-        if (currentCount + data.photos.length > photoCheck.limit) {
+        if (!photoCheck.canAdd) {
           return response.forbidden({
-            message: `Adding ${data.photos.length} photos would exceed the limit of ${photoCheck.limit}`,
-            current: currentCount,
+            message:
+              photoCheck.message ||
+              `Adding ${data.photos.length} photos would exceed the limit of ${photoCheck.limit}`,
+            current: photoCheck.currentCount,
             limit: photoCheck.limit,
             attempted: data.photos.length,
           })
@@ -320,7 +339,7 @@ export default class HiddenGemsController {
 
       const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
       if (!photoCheck.canAdd) {
-        response.forbidden({
+        return response.forbidden({
           message: photoCheck.message,
           current: photoCheck.currentCount,
           limit: photoCheck.limit,
@@ -396,6 +415,8 @@ export default class HiddenGemsController {
           code: 'PHOTO_NOT_FOUND',
         })
       }
+
+      throw error
     }
   }
 }
