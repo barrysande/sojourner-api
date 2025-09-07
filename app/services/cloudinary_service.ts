@@ -18,7 +18,7 @@ export default class CloudinaryService {
       const expectedDomain = `res.cloudinary.com/${cloudName}/`
       return url.includes(expectedDomain)
     } catch (error) {
-      logger.error('ERror validating Cloudinary URL', {
+      logger.error('Error validating Cloudinary URL', {
         url: url?.substring(0, 50),
         error: error.message,
       })
@@ -67,11 +67,13 @@ export default class CloudinaryService {
           publicId,
           result: result.result,
         })
+        return { success: true }
       } else {
         logger.warn('Cloudinary deletion returned non-OK result', {
           publicId,
           result: result.result,
         })
+        return { success: false, error: `Deletion failed: ${result.result}` }
       }
     } catch (error) {
       logger.error('Cloudinary image deletion failed', {
@@ -112,7 +114,7 @@ export default class CloudinaryService {
       logger.error('Failed to generate Cloudinary upload parameters', {
         error: error.message,
       })
-      throw new Error('Ubable to configure photo upload,')
+      throw new Error('Unable to configure photo upload,')
     }
   }
 
