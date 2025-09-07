@@ -387,6 +387,27 @@ export default class HiddenGemsController {
     }
   }
 
+  // method to reassign the primary photo if primary photo is deleted
+
+  async reassignPrimaryPhoto(gemId: number): Promise<void> {
+    const primaryPhoto = await Photo.query()
+      .where('hiddenGemId', gemId)
+      .where('isPrimary', true)
+      .first()
+
+    if (!primaryPhoto) {
+      const firstPhoto = await Photo.query()
+        .where('hiddenGemId', gemId)
+        .orderBy('createdAt', 'asc')
+        .first()
+
+      if (firstPhoto) {
+        firstPhoto.isPrimary = true
+        firstPhoto.save()
+      }
+    }
+  }
+
   // delete one photo
 
   async deletePhoto({ params, auth, response }: HttpContext) {
@@ -400,9 +421,15 @@ export default class HiddenGemsController {
         })
         .firstOrFail()
 
+      const wasPrimary = photo.isPrimary
+
       const deleteResult = await this.cloudinaryService.deleteImage(photo.cloudinaryPublicId)
 
       await photo.delete()
+
+      if (wasPrimary) {
+        await this.reassignPrimaryPhoto(params.id)
+      }
 
       return response.ok({
         message: 'Photo deleted successfully',
