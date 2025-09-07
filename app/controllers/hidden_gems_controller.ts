@@ -1,5 +1,4 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import User from '#models/user'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
 import { inject } from '@adonisjs/core'
@@ -258,6 +257,145 @@ export default class HiddenGemsController {
         })
       }
       throw error
+    }
+  }
+
+  async destroy({ params, response, auth }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+
+      const gem = await HiddenGem.query()
+        .where('id', params.id)
+        .where('userId', user.id)
+        .preload('photos')
+        .firstOrFail()
+
+      const photoCleanupResults = []
+      for (const photo of gem.photos) {
+        const deleteResult = await this.cloudinaryService.deleteImage(photo.cloudinaryPublicId)
+        photoCleanupResults.push({
+          photoId: photo.id,
+          publicId: photo.cloudinaryPublicId,
+          success: deleteResult.success,
+        })
+      }
+
+      // Delete gem (cascade will handle photos table)
+      await gem.delete()
+
+      return response.ok({
+        message: 'Hidden gem deleted successfully',
+        photoCleanup: photoCleanupResults,
+      })
+    } catch (error) {
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.notFound({
+          message: 'Hidden gem not found',
+          code: 'GEM_NOT_FOUND',
+        })
+      }
+
+      throw error
+    }
+  }
+
+  //adding photos to an existing gem
+  async addPhotos({ params, auth, request, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const photos = request.input('photos', [])
+
+      if (!photos || photos.length === 0) {
+        return response.badRequest({
+          message: 'No photos provided!',
+          code: 'NO PHOTOS_PROVIDED',
+        })
+      }
+      const gem = await HiddenGem.query()
+        .where('id', params.id)
+        .where('userId', user.id)
+        .firstOrFail()
+
+      // check users' tier limits
+
+      const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
+      if (!photoCheck.canAdd) {
+        response.forbidden({
+          message: photoCheck.message,
+          current: photoCheck.currentCount,
+          limit: photoCheck.limit,
+          attempted: photos.length,
+        })
+      }
+
+      // validate cloudinary metadata
+      for (const photo of photos) {
+        if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
+          return response.badRequest({
+            message: 'Invalid photo data',
+            code: 'INVALID_PHOTO_DATA',
+          })
+        }
+      }
+
+      // create photo records if tests pass
+
+      const photoData = photos.map((photo: any) => ({
+        hiddenGemId: gem.id,
+        cloudinaryPublicId: photo.public_id,
+        cloudinaryUrl: photo.url,
+        cloudinarySecureUrl: photo.secure_url,
+        fileName: photo.original_filename || 'uploaded-photo.jpg',
+        caption: photo.caption || null,
+        isPrimary: false,
+      }))
+
+      const newPhotos = await Photo.createMany(photoData)
+
+      return response.created({
+        message: 'Photos added successfully',
+        date: newPhotos,
+      })
+    } catch (error) {
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.notFound({
+          message: 'Hidden gem not found',
+          code: 'GEM_NOT_FOUND',
+        })
+      }
+
+      throw error
+    }
+  }
+
+  // delete one photo
+
+  async deletePhoto({ params, auth, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+
+      const photo = await Photo.query()
+        .where('id', params.photoId)
+        .whereHas('hiddenGem', (query) => {
+          query.where('userId', user.id).where('id', params.id)
+        })
+        .firstOrFail()
+
+      const deleteResult = await this.cloudinaryService.deleteImage(photo.cloudinaryPublicId)
+
+      await photo.delete()
+
+      return response.ok({
+        message: 'Photo deleted successfully',
+        cloudinaryDeleted: deleteResult.success,
+      })
+    } catch (error) {
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.notFound({
+          message: 'Photo not found',
+          code: 'PHOTO_NOT_FOUND',
+        })
+      }
     }
   }
 }

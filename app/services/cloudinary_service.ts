@@ -13,20 +13,36 @@ export default class CloudinaryService {
   }
 
   validateCloudinaryUrl(url: string): boolean {
-    const cloudName = env.get('CLOUDINARY_CLOUD_NAME')
-    const expectedDomain = `res.cloudinary.com/${cloudName}/`
-    return url.includes(expectedDomain)
+    try {
+      const cloudName = env.get('CLOUDINARY_CLOUD_NAME')
+      const expectedDomain = `res.cloudinary.com/${cloudName}/`
+      return url.includes(expectedDomain)
+    } catch (error) {
+      logger.error('ERror validating Cloudinary URL', {
+        url: url?.substring(0, 50),
+        error: error.message,
+      })
+      return false
+    }
   }
 
   validateCloudinaryResponse(data: any): boolean {
-    const requiredFields = ['url', 'secure_url', 'public_id']
-    const hasAllFields = requiredFields.every((field) => {
-      data[field] !== undefined && data[field] !== ''
-    })
+    try {
+      const requiredFields = ['url', 'secure_url', 'public_id']
+      const hasAllFields = requiredFields.every((field) => {
+        data[field] !== undefined && data[field] !== ''
+      })
 
-    const isValidUrl = this.validateCloudinaryUrl(data.url)
-    const isValidSecureUrl = this.validateCloudinaryUrl(data.secure_url)
-    return hasAllFields && isValidUrl && isValidSecureUrl
+      const isValidUrl = this.validateCloudinaryUrl(data.url)
+      const isValidSecureUrl = this.validateCloudinaryUrl(data.secure_url)
+      return hasAllFields && isValidUrl && isValidSecureUrl
+    } catch (error) {
+      logger.error('Error validating Cloudinary response', {
+        error: error.message,
+      })
+
+      return false
+    }
   }
 
   getUploadPreset(userTier: string): string {
@@ -41,14 +57,30 @@ export default class CloudinaryService {
     }
   }
 
-  async deleteImage(publicId: string): Promise<boolean> {
+  async deleteImage(publicId: string): Promise<{ success: boolean; error?: string }> {
     try {
       const result = await cloudinary.uploader.destroy(publicId)
-      return result.result === 'ok'
+      const success = result.result === 'ok'
+
+      if (success) {
+        logger.info('Cloudinary image deleted successfully', {
+          publicId,
+          result: result.result,
+        })
+      } else {
+        logger.warn('Cloudinary deletion returned non-OK result', {
+          publicId,
+          result: result.result,
+        })
+      }
     } catch (error) {
-      logger.error('Error deleting image from Cloudinary:', error)
-      return false
+      logger.error('Cloudinary image deletion failed', {
+        publicId,
+        error: error.message,
+        errorCode: error.code,
+      })
     }
+    return { success: false, error: 'Failed to delete image' }
   }
 
   generateSignedUploadParams(userTier: string, userId: number, gemId?: number) {
@@ -61,6 +93,7 @@ export default class CloudinaryService {
       const timestamp = Math.round(new Date().getTime() / 1000)
 
       const folder = gemId ? `users/${userId}/gems/${gemId}` : `users/${userId}/temp`
+
       const params = {
         upload_preset: uploadPreset,
         timestamp: timestamp,
@@ -81,5 +114,30 @@ export default class CloudinaryService {
       })
       throw new Error('Ubable to configure photo upload,')
     }
+  }
+
+  async deleteMultipleImages(publicIds: string[]): Promise<{
+    successful: string[]
+    failed: { publicId: string; error: string }[]
+  }> {
+    const successful: string[] = []
+    const failed: { publicId: string; error: string }[] = []
+    for (const publicId of publicIds) {
+      const result = await this.deleteImage(publicId)
+
+      if (result.success) {
+        successful.push(publicId)
+      } else {
+        failed.push({ publicId, error: result.error || 'Unknown Error' })
+      }
+    }
+
+    logger.info('Bulk Cloudinary deletion completed', {
+      total: publicIds.length,
+      successful: successful.length,
+      failed: failed.length,
+    })
+
+    return { successful, failed }
   }
 }
