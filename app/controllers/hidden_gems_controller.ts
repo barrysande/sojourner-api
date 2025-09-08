@@ -15,7 +15,29 @@ export default class HiddenGemsController {
     private tierService: TierService
   ) {}
 
-  //   List all hidden gems
+  // HELPER FUNCTION TO VALIDATE PHOTOS IN BATCHES
+  private validatePhotosBatch(photos: any[]): {
+    isValid: boolean
+    error?: string
+    invalidIndex?: number
+  } {
+    if (!photos || photos.length === 0) {
+      return { isValid: true }
+    }
+
+    for (const [i, photo] of photos.entries()) {
+      if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
+        return {
+          isValid: false,
+          error: `Photo #${i + 1} has invalid data. Please remove and re-upload it.`,
+          invalidIndex: i,
+        }
+      }
+    }
+    return { isValid: true }
+  }
+
+  //   LIST ALL HIDDEN GEMS
   async index({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -41,8 +63,7 @@ export default class HiddenGemsController {
     }
   }
 
-  //   Show one hidden gem based on id GET /hidden_gem/:id
-
+  //SHOW ONE HIDDEN GEM BASED ON THE ID
   async show({ response, auth, params }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -69,8 +90,7 @@ export default class HiddenGemsController {
     }
   }
 
-  //   Create a hidden gem POST
-
+  // POST CREATE A HIDDEN GEM POST
   async store({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -89,7 +109,6 @@ export default class HiddenGemsController {
       }
 
       // check if the photos submitted by user are within tier limits
-
       if (data.photos && data.photos.length > 0) {
         const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, data.photos.length)
         if (!photoCheck.canAdd) {
@@ -101,8 +120,7 @@ export default class HiddenGemsController {
           })
         }
 
-        // validate each photo metadata submitted by user using the validatePhotosBatch method
-
+        // validate cloudinary photos metadata using validatePhotosBatch method
         const photoValidation = this.validatePhotosBatch(data.photos)
         if (!photoValidation.isValid) {
           return response.badRequest({
@@ -114,7 +132,6 @@ export default class HiddenGemsController {
       }
 
       // Create new hidden gem with any photo submitted
-
       const gem = await db.transaction(async (trx) => {
         const newGem = await HiddenGem.create(
           {
@@ -163,28 +180,7 @@ export default class HiddenGemsController {
     }
   }
 
-  // helper function to validate photos
-  private validatePhotosBatch(photos: any[]): {
-    isValid: boolean
-    error?: string
-    invalidIndex?: number
-  } {
-    if (!photos || photos.length === 0) {
-      return { isValid: true }
-    }
-
-    for (const [i, photo] of photos.entries()) {
-      if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
-        return {
-          isValid: false,
-          error: `Photo #${i + 1} has invalid data. Please remove and re-upload it.`,
-          invalidIndex: i,
-        }
-      }
-    }
-    return { isValid: true }
-  }
-
+  // UPDATE A HIDDEN GEM BASED ON ID
   async update({ params, response, request, auth }: HttpContext) {
     try {
       const user = await auth.getUserOrFail()
@@ -214,15 +210,14 @@ export default class HiddenGemsController {
           })
         }
 
-        // validate the photo data
-
-        for (const photo of data.photos) {
-          if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
-            return response.badRequest({
-              message: 'Invalid phot data',
-              code: 'INVALID_PHOTO_DATA',
-            })
-          }
+        // validate cloudinary photos metadata using validatePhotosBatch method
+        const photoValidation = this.validatePhotosBatch(data.photos)
+        if (!photoValidation.isValid) {
+          return response.badRequest({
+            message: photoValidation.error,
+            code: 'INVALID_PHOTO_DATA',
+            invalidPhotoIndex: photoValidation.invalidIndex,
+          })
         }
       }
 
@@ -239,7 +234,6 @@ export default class HiddenGemsController {
           .save()
 
         // add new photos
-
         if (data.photos && data.photos.length > 0) {
           const photoData = data.photos.map((photo) => ({
             hiddenGemId: gem.id,
@@ -279,6 +273,7 @@ export default class HiddenGemsController {
     }
   }
 
+  // DELETE HIDDEN GEM AND CLEANUP PHOTOS ON CLOUDINARY
   async destroy({ params, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -289,22 +284,19 @@ export default class HiddenGemsController {
         .preload('photos')
         .firstOrFail()
 
-      const photoCleanupResults = []
-      for (const photo of gem.photos) {
-        const deleteResult = await this.cloudinaryService.deleteImage(photo.cloudinaryPublicId)
-        photoCleanupResults.push({
-          photoId: photo.id,
-          publicId: photo.cloudinaryPublicId,
-          success: deleteResult.success,
-        })
-      }
+      const publicIds = gem.photos.map((photo) => photo.cloudinaryPublicId)
+
+      const bulkDeleteResult = await this.cloudinaryService.deleteMultipleImages(publicIds)
 
       // Delete gem (cascade will handle photos table)
       await gem.delete()
 
       return response.ok({
         message: 'Hidden gem deleted successfully',
-        photoCleanup: photoCleanupResults,
+        photoCleanup: {
+          successful: bulkDeleteResult.successful,
+          failed: bulkDeleteResult.failed,
+        },
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -318,7 +310,7 @@ export default class HiddenGemsController {
     }
   }
 
-  //adding photos to an existing gem
+  //ADDING PHOTOS TO AN EXISTING GEM
   async addPhotos({ params, auth, request, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -336,7 +328,6 @@ export default class HiddenGemsController {
         .firstOrFail()
 
       // check users' tier limits
-
       const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
       if (!photoCheck.canAdd) {
         return response.forbidden({
@@ -347,18 +338,17 @@ export default class HiddenGemsController {
         })
       }
 
-      // validate cloudinary metadata
-      for (const photo of photos) {
-        if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
-          return response.badRequest({
-            message: 'Invalid photo data',
-            code: 'INVALID_PHOTO_DATA',
-          })
-        }
+      // validate cloudinary photos metadata using validatePhotosBatch method
+      const photoValidation = this.validatePhotosBatch(photos)
+      if (!photoValidation.isValid) {
+        return response.badRequest({
+          message: photoValidation.error,
+          code: 'INVALID_PHOTO_DATA',
+          invalidPhotoIndex: photoValidation.invalidIndex,
+        })
       }
 
       // create photo records if tests pass
-
       const photoData = photos.map((photo: any) => ({
         hiddenGemId: gem.id,
         cloudinaryPublicId: photo.public_id,
@@ -373,7 +363,7 @@ export default class HiddenGemsController {
 
       return response.created({
         message: 'Photos added successfully',
-        date: newPhotos,
+        data: newPhotos,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -387,8 +377,7 @@ export default class HiddenGemsController {
     }
   }
 
-  // method to reassign the primary photo if primary photo is deleted
-
+  // REASSIGN THE PRIMARY PHOTO INCASE ITS DELETED
   async reassignPrimaryPhoto(gemId: number): Promise<void> {
     const primaryPhoto = await Photo.query()
       .where('hiddenGemId', gemId)
@@ -403,13 +392,13 @@ export default class HiddenGemsController {
 
       if (firstPhoto) {
         firstPhoto.isPrimary = true
-        firstPhoto.save()
+
+        await firstPhoto.save()
       }
     }
   }
 
-  // delete one photo
-
+  // DELETE ONE PHOTO
   async deletePhoto({ params, auth, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
