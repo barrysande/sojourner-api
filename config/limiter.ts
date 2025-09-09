@@ -4,10 +4,6 @@ import { defineConfig, stores } from '@adonisjs/limiter'
 const limiterConfig = defineConfig({
   default: env.get('LIMITER_STORE'),
   stores: {
-    redis: stores.redis({
-      connectionName: 'main',
-      rejectIfRedisNotReady: false,
-    }),
     /**
      * Database store to save rate limiting data inside a
      * MYSQL or PostgreSQL database.
