@@ -1,10 +1,10 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
-import { loginValidator, registerValidator } from '#validators/auth'
+import { loginValidator, registerValidator, changePasswordValidator } from '#validators/auth'
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
-import vine from '@vinejs/vine'
 import logger from '@adonisjs/core/services/logger'
+import limiter from '@adonisjs/limiter/services/main'
 
 export default class AuthController {
   async register({ request, response }: HttpContext) {
@@ -47,11 +47,32 @@ export default class AuthController {
     }
   }
 
-  async login({ request, response, auth }: HttpContext) {
+  async login({ request, response, auth, session }: HttpContext) {
     try {
       const { email, password } = await request.validateUsing(loginValidator)
 
-      const user = await User.verifyCredentials(email, password)
+      // login limitter
+      const loginLimiter = limiter.use({
+        requests: 5,
+        duration: '1 min',
+        blockDuration: '20 mins',
+      })
+
+      const key = `login_${request.ip()}_${email}`
+
+      const [error, user] = await loginLimiter.penalize(key, () => {
+        return User.verifyCredentials(email, password)
+      })
+
+      if (error) {
+        session.flashAll()
+        session.flashErrors({
+          E_TOO_MANY_REQUESTS: `Too many login requests. Try again after ${error.response.availableIn} seconds`,
+        })
+        return response.redirect().back()
+      }
+
+      // login user
       await auth.use('web').login(user)
 
       return response.ok({
@@ -139,14 +160,6 @@ export default class AuthController {
   async changePassword({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-
-      // Create validator for change password
-      const changePasswordValidator = vine.compile(
-        vine.object({
-          currentPassword: vine.string(),
-          newPassword: vine.string().minLength(8),
-        })
-      )
 
       const { currentPassword, newPassword } = await request.validateUsing(changePasswordValidator)
 

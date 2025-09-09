@@ -14,3 +14,10 @@ export const loginValidator = vine.compile(
     password: vine.string(),
   })
 )
+
+export const changePasswordValidator = vine.compile(
+  vine.object({
+    currentPassword: vine.string(),
+    newPassword: vine.string().minLength(8),
+  })
+)

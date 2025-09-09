@@ -9,6 +9,7 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
+import { apiThrottle } from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
 
 router.get('/', async () => {
@@ -26,3 +27,4 @@ router
     router.patch('/change-password', [AuthController, 'changePassword']).use(middleware.auth())
   })
   .prefix('/auth')
+  .use(apiThrottle)
