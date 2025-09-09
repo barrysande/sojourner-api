@@ -6,6 +6,13 @@ import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
 import limiter from '@adonisjs/limiter/services/main'
 
+// login limiter
+const loginLimiter = limiter.use({
+  requests: 5,
+  duration: '1 min',
+  blockDuration: '20 mins',
+})
+
 export default class AuthController {
   async register({ request, response }: HttpContext) {
     try {
@@ -47,29 +54,29 @@ export default class AuthController {
     }
   }
 
-  async login({ request, response, auth, session }: HttpContext) {
+  async login({ request, response, auth }: HttpContext) {
     try {
       const { email, password } = await request.validateUsing(loginValidator)
 
-      // login limitter
-      const loginLimiter = limiter.use({
-        requests: 5,
-        duration: '1 min',
-        blockDuration: '20 mins',
-      })
+      // construct key to pass to the limiter config instance - loginLimiter
 
-      const key = `login_${request.ip()}_${email}`
+      const key = `login_${request.ip()}_${email.toLocaleLowerCase().trim()}`
 
       const [error, user] = await loginLimiter.penalize(key, () => {
         return User.verifyCredentials(email, password)
       })
 
       if (error) {
-        session.flashAll()
-        session.flashErrors({
-          E_TOO_MANY_REQUESTS: `Too many login requests. Try again after ${error.response.availableIn} seconds`,
+        response.header('X-RateLimit-Limit', '5')
+        response.header('X-RateLimit-Remaining', '0')
+        response.header('Retry-After', error.response.availableIn.toString())
+        return response.tooManyRequests({
+          message: 'Too many login attempts',
+          error: {
+            type: 'E_TOO_MANY_REQUESTS',
+            retryAfter: error.response.availableIn,
+          },
         })
-        return response.redirect().back()
       }
 
       // login user
