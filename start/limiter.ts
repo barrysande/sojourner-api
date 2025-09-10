@@ -15,14 +15,10 @@ export const throttle = limiter.define('global', () => {
   return limiter.allowRequests(10).every('1 minute')
 })
 
-export const apiThrottle = limiter.define('api', (ctx) => {
-  if (ctx.auth.user) {
-    return limiter.allowRequests(100).every('1 minute').usingKey(`user_${ctx.auth.user.id}`)
-  }
-
+export const registerThrottle = limiter.define('api', (ctx) => {
   return limiter
-    .allowRequests(10)
+    .allowRequests(5)
     .every('1 minute')
     .usingKey(`ip_${ctx.request.ip}`)
-    .blockFor('30 mins')
+    .blockFor('1 hour')
 })

@@ -39,7 +39,6 @@ export default class AuthController {
 
       // Database constraint errors (unique email) - Avoids race condition of manually checking the user using User.findBy('email', data.email) then creating a user.
       if (error.code === '23505') {
-        // PostgreSQL unique violation
         return response.conflict({
           message: 'User with this email already exists',
         })
@@ -60,7 +59,7 @@ export default class AuthController {
 
       // construct key to pass to the limiter config instance - loginLimiter
 
-      const key = `login_${request.ip()}_${email.toLocaleLowerCase().trim()}`
+      const key = `login_${request.ip()}_${email.toLowerCase().trim()}`
 
       const [error, user] = await loginLimiter.penalize(key, () => {
         return User.verifyCredentials(email, password)

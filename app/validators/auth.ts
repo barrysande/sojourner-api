@@ -21,3 +21,24 @@ export const changePasswordValidator = vine.compile(
     newPassword: vine.string().minLength(8),
   })
 )
+
+export const forgotPasswordValidator = vine.compile(
+  vine.object({
+    email: vine.string().email(),
+  })
+)
+
+export const resetPasswordValidator = vine.compile(
+  vine.object({
+    email: vine.string().email(),
+    token: vine.string().minLength(32),
+    password: vine.string().minLength(8).confirmed(),
+  })
+)
+
+export const verifyResetTokenValidator = vine.compile(
+  vine.object({
+    email: vine.string().email(),
+    token: vine.string().minLength(32),
+  })
+)
