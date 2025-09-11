@@ -107,7 +107,7 @@ export default class PasswordResetService {
     user.password = newPassword
     await user.save()
 
-    await this.markTokenAsUsed(token)
+    await this.markTokenAsUsed(email)
     logger.info('Password reset successful', {
       userId: user.id,
       email,

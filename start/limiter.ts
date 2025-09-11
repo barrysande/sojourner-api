@@ -25,7 +25,7 @@ export const registerThrottle = limiter.define('api', (ctx) => {
 
 export const passwordResetThrottle = limiter.define('password-reset', (ctx) => {
   return limiter
-    .allowRequests(10)
+    .allowRequests(5)
     .every('1 hour')
     .usingKey(`password_reset_${ctx.request.ip()}`)
     .blockFor('2 hours')
