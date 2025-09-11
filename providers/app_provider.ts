@@ -19,12 +19,21 @@ export default class AppProvider {
     })
   }
 
+  protected registerPasswordResetService() {
+    this.app.container.singleton('passwordResetService', async () => {
+      const { default: PasswordResetService } = await import('#services/password_reset_service')
+
+      return new PasswordResetService()
+    })
+  }
+
   /**
    * Register bindings to the container
    */
   register() {
     this.registerCloudinaryService()
     this.registerTierService()
+    this.registerPasswordResetService()
   }
 
   /**

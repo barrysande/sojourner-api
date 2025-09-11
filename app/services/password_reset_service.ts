@@ -124,4 +124,19 @@ export default class PasswordResetService {
   }
 
   // Clean up used tokens
+
+  async cleanupExpiredTokens(): Promise<number> {
+    const result = await PasswordResetToken.query()
+      .where('expires_at', '<', DateTime.now().toSQL())
+      .orWhereNotNull('used_at')
+      .delete()
+
+    const deletedCount = result[0].$extras?.affected || 0
+
+    logger.info('Cleaned up expired password reset tokens', {
+      count: deletedCount,
+    })
+
+    return deletedCount
+  }
 }

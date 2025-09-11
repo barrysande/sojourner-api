@@ -1,10 +1,18 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
-import { loginValidator, registerValidator, changePasswordValidator } from '#validators/auth'
+import {
+  loginValidator,
+  registerValidator,
+  changePasswordValidator,
+  forgotPasswordValidator,
+  resetPasswordValidator,
+} from '#validators/auth'
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
 import limiter from '@adonisjs/limiter/services/main'
+import PasswordResetService from '#services/password_reset_service'
+import { inject } from '@adonisjs/core'
 
 // login limiter
 const loginLimiter = limiter.use({
@@ -13,7 +21,9 @@ const loginLimiter = limiter.use({
   blockDuration: '20 mins',
 })
 
+@inject()
 export default class AuthController {
+  constructor(private passwordResetService: PasswordResetService) {}
   async register({ request, response }: HttpContext) {
     try {
       const data = await request.validateUsing(registerValidator)
@@ -202,6 +212,61 @@ export default class AuthController {
 
       return response.internalServerError({
         message: 'An error occurred while changing password',
+      })
+    }
+  }
+
+  async forgotPassword({ request, response }: HttpContext) {
+    try {
+      const { email } = await request.validateUsing(forgotPasswordValidator)
+      await this.passwordResetService.sendResetEmail(email)
+
+      return response.ok({
+        message:
+          'If an account exists with this email, you will receive password reset instructions.',
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Invalid email address',
+          errors: error.messages,
+        })
+      }
+
+      logger.error('Forgot password error:', error)
+
+      return response.internalServerError({
+        message: 'Unable to process password reset request',
+      })
+    }
+  }
+
+  async resetPassword({ request, response }: HttpContext) {
+    try {
+      const { email, token, password } = await request.validateUsing(resetPasswordValidator)
+
+      const success = await this.passwordResetService.resetPassword(email, token, password)
+
+      if (!success) {
+        return response.badRequest({
+          message: 'Invalid or expired reset token',
+        })
+      }
+
+      return response.ok({
+        message: 'Password has been reset successfully. You can now login with your new password.',
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Validation failed',
+          errors: error.messages,
+        })
+      }
+      logger.error('Password reset error:', error)
+
+      return response.internalServerError({
+        message: 'Unable to reset password',
       })
     }
   }
