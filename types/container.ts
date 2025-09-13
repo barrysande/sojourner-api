@@ -4,8 +4,8 @@ import type PasswordResetService from '#services/password_reset_service'
 
 declare module '@adonisjs/core/types' {
   interface ContainerBindings {
-    cloudinary: CloudinaryService
-    tier: TierService
+    cloudinaryService: CloudinaryService
+    tierService: TierService
     passwordResetService: PasswordResetService
   }
 }

@@ -3,8 +3,17 @@ import type { ApplicationService } from '@adonisjs/core/types'
 export default class AppProvider {
   constructor(protected app: ApplicationService) {}
 
+  /**
+   * Register bindings to the container
+   */
+  register() {
+    this.registerCloudinaryService()
+    this.registerTierService()
+    this.registerPasswordResetService()
+  }
+
   protected registerCloudinaryService() {
-    this.app.container.singleton('cloudinary', async () => {
+    this.app.container.singleton('cloudinaryService', async () => {
       const { default: CloudinaryService } = await import('#services/cloudinary_service')
 
       return new CloudinaryService()
@@ -12,7 +21,7 @@ export default class AppProvider {
   }
 
   protected registerTierService() {
-    this.app.container.singleton('tier', async () => {
+    this.app.container.singleton('tierService', async () => {
       const { default: TierService } = await import('#services/tier_service')
 
       return new TierService()
@@ -25,15 +34,6 @@ export default class AppProvider {
 
       return new PasswordResetService()
     })
-  }
-
-  /**
-   * Register bindings to the container
-   */
-  register() {
-    this.registerCloudinaryService()
-    this.registerTierService()
-    this.registerPasswordResetService()
   }
 
   /**

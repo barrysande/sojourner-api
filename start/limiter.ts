@@ -11,8 +11,8 @@
 
 import limiter from '@adonisjs/limiter/services/main'
 
-export const throttle = limiter.define('global', () => {
-  return limiter.allowRequests(10).every('1 minute')
+export const throttle = limiter.define('global', (ctx) => {
+  return limiter.allowRequests(10).every('1 minute').usingKey(`ip_${ctx.request.ip()}`)
 })
 
 export const registerThrottle = limiter.define('api', (ctx) => {

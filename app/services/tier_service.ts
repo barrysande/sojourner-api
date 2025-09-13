@@ -38,7 +38,7 @@ export default class TierService {
     // count the current gems i.e currentCount
 
     const currentGemCount = await HiddenGem.query().where('user_id', userId).count('* as total')
-    const currentCount = currentGemCount[0].$extras.total
+    const currentCount = Number(currentGemCount[0].$extras.total)
 
     if (currentCount >= limits.maxGemsTotal) {
       return {
@@ -71,7 +71,7 @@ export default class TierService {
         .where('hidden_gem_id', gemId)
         .count('* as total')
 
-      currentCount = currentPhotoCount[0].$extras.total
+      currentCount = Number(currentPhotoCount[0].$extras.total)
     }
     const wouldExceedLimit = currentCount + photosToAdd > limits.maxPhotosPerGem
 

@@ -12,9 +12,13 @@ export default class CloudinaryService {
     })
   }
 
-  validateCloudinaryUrl(url: string): boolean {
+  async validateCloudinaryUrl(url: string): Promise<boolean> {
     try {
       const cloudName = env.get('CLOUDINARY_CLOUD_NAME')
+      if (!cloudName) {
+        logger.error('CLOUDINARY_CLOUD_NAME not found in environment')
+        return false
+      }
       const expectedDomain = `res.cloudinary.com/${cloudName}/`
       return url.includes(expectedDomain)
     } catch (error) {
@@ -26,21 +30,21 @@ export default class CloudinaryService {
     }
   }
 
-  validateCloudinaryResponse(data: any): boolean {
+  async validateCloudinaryResponse(data: any): Promise<boolean> {
     try {
       const requiredFields = ['url', 'secure_url', 'public_id']
       const hasAllFields = requiredFields.every((field) => {
-        data[field] !== undefined && data[field] !== ''
+        return data[field] !== undefined && data[field] !== ''
       })
 
-      const isValidUrl = this.validateCloudinaryUrl(data.url)
-      const isValidSecureUrl = this.validateCloudinaryUrl(data.secure_url)
+      const isValidUrl = await this.validateCloudinaryUrl(data.url)
+      const isValidSecureUrl = await this.validateCloudinaryUrl(data.secure_url)
+
       return hasAllFields && isValidUrl && isValidSecureUrl
     } catch (error) {
       logger.error('Error validating Cloudinary response', {
         error: error.message,
       })
-
       return false
     }
   }
@@ -143,3 +147,5 @@ export default class CloudinaryService {
     return { successful, failed }
   }
 }
+
+//curl -b cookies.txt -X POST -H "Content-Type: application/json" -d '{"name": "Secret Beach Paradise", "location": "Malindi, Kenya", "description": "A hidden beach with crystal clear waters and white sand", "latitude": -3.2194, "longitude": 40.1169, "photos": [{"public_id": "users/1/gems/beach_sunset_abc123", "url": "http://res.cloudinary.com/ddfdetlys/image/upload/v1234567890/users/1/gems/beach_sunset_abc123.jpg", "secure_url": "https://res.cloudinary.com/ddfdetlys/image/upload/v1234567890/users/1/gems/beach_sunset_abc123.jpg", "original_filename": "beach_sunset.jpg", "caption": "Beautiful sunset over the ocean"}, {"public_id": "users/1/gems/palm_trees_def456", "url": "http://res.cloudinary.com/ddfdetlys/image/upload/v1234567890/users/1/gems/palm_trees_def456.jpg", "secure_url": "https://res.cloudinary.com/ddfdetlys/image/upload/v1234567890/users/1/gems/palm_trees_def456.jpg", "original_filename": "palm_trees.jpg", "caption": "Swaying palm trees"}]}' http://localhost:3333/api/hidden-gems{"message":"Photo #1 has invalid data. Please remove and re-upload it.","code":"INVALID_PHOTO_DATA","invalidPhotoIndex":0}

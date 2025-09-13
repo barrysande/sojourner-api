@@ -123,8 +123,7 @@ export default class PasswordResetService {
       .update({ usedAt: DateTime.now() })
   }
 
-  // Clean up used tokens
-
+  // Clean up used tokens - command method to clean up used tokens. Can be scheduled.
   async cleanupExpiredTokens(): Promise<number> {
     const result = await PasswordResetToken.query()
       .where('expires_at', '<', DateTime.now().toSQL())

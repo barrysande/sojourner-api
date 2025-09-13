@@ -11,13 +11,15 @@ import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
 import { registerThrottle, passwordResetThrottle } from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
+const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
 
-router.get('/', async () => {
-  return {
-    hello: 'world',
-  }
-})
+// router.get('/', async () => {
+//   return {
+//     hello: 'world',
+//   }
+// })
 
+// AUTH ROUTES
 router
   .group(() => {
     router.post('/register', [AuthController, 'register']).use(registerThrottle)
@@ -29,3 +31,17 @@ router
     router.post('/reset-password', [AuthController, 'resetPassword']).use(passwordResetThrottle)
   })
   .prefix('/auth')
+
+// HIDDEN GEMS ROUTES
+router
+  .group(() => {
+    router.get('/hidden-gems', [HiddenGemsController, 'index'])
+    router.get('/hidden-gems/:id', [HiddenGemsController, 'show'])
+    router.post('/hidden-gems', [HiddenGemsController, 'store'])
+    router.put('/hidden-gems/:id', [HiddenGemsController, 'update'])
+    router.delete('/hidden-gems/:id', [HiddenGemsController, 'destroy'])
+    router.post('/hidden-gems/:id/photos', [HiddenGemsController, 'addPhotos'])
+    router.delete('/hidden-gems/:id/photos/:photoId', [HiddenGemsController, 'deletePhoto'])
+  })
+  .prefix('api')
+  .use(middleware.auth())
