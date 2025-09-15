@@ -94,7 +94,7 @@ export default class HiddenGemsController {
       // Make tier service instance
       const tierService = await app.container.make('tierService')
 
-      // Check if user can create more gems
+      // Use tierService to check if user can create more gems
       const gemCheck = await tierService.canCreateGem(user.id)
 
       if (!gemCheck.canCreate) {
