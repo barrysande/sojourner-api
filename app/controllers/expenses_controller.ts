@@ -153,7 +153,7 @@ export default class ExpensesController {
     }
   }
 
-  async delete({ response, auth, params }: HttpContext) {
+  async destroy({ response, auth, params }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
 

@@ -12,6 +12,7 @@ import { middleware } from './kernel.js'
 import { registerThrottle, passwordResetThrottle } from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
+const ExpensesController = () => import('#controllers/expenses_controller')
 
 // router.get('/', async () => {
 //   return {
@@ -42,6 +43,13 @@ router
     router.delete('/hidden-gems/:id', [HiddenGemsController, 'destroy'])
     router.post('/hidden-gems/:id/photos', [HiddenGemsController, 'addPhotos'])
     router.delete('/hidden-gems/:id/photos/:photoId', [HiddenGemsController, 'deletePhoto'])
+
+    // Expenses
+    router.get('/hidden-gems/:gemId/expenses', [ExpensesController, 'index'])
+    router.get('/hidden-gems/:gemId/expenses/:expensesId', [ExpensesController, 'show'])
+    router.post('/hidden-gems/:gemId/expenses', [ExpensesController, 'store'])
+    router.put('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'update'])
+    router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
   })
   .prefix('api')
   .use(middleware.auth())
