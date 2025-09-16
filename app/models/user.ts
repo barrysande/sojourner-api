@@ -6,6 +6,9 @@ import { withAuthFinder } from '@adonisjs/auth/mixins/lucid'
 import type { HasMany } from '@adonisjs/lucid/types/relations'
 import HiddenGem from './hidden_gem.js'
 import SharedGem from './shared_gem.js'
+import ShareGroup from './share_group.js'
+import ShareGroupMember from './share_group_member.js'
+import Notification from './notification.js'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -23,7 +26,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare password: string
 
   @column()
-  declare fullName: string | null
+  declare fullName: string
 
   @column()
   declare tier: 'free' | 'individual_paid' | 'group_paid'
@@ -37,10 +40,18 @@ export default class User extends compose(BaseModel, AuthFinder) {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
-  // New relationships
   @hasMany(() => HiddenGem)
   declare hiddenGems: HasMany<typeof HiddenGem>
 
   @hasMany(() => SharedGem)
   declare sharedGems: HasMany<typeof SharedGem>
+
+  @hasMany(() => ShareGroup, { foreignKey: 'createdBy' })
+  declare createdShareGroups: HasMany<typeof ShareGroup>
+
+  @hasMany(() => ShareGroupMember)
+  declare shareGroupMemberships: HasMany<typeof ShareGroupMember>
+
+  @hasMany(() => Notification)
+  declare notifications: HasMany<typeof Notification>
 }

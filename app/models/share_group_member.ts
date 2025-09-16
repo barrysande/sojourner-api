@@ -1,31 +1,33 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
-import HiddenGem from './hidden_gem.js'
-import User from './user.js'
 import ShareGroup from './share_group.js'
+import User from './user.js'
 
-export default class SharedGem extends BaseModel {
+export default class ShareGroupMember extends BaseModel {
   @column({ isPrimary: true })
   declare id: number
-
-  @column()
-  declare hiddenGemId: number
-
-  @column()
-  declare userId: number
 
   @column()
   declare shareGroupId: number
 
   @column()
-  declare sharedBy: number
+  declare userId: number
 
   @column()
-  declare permissionLevel: 'view' | 'edit' | 'admin'
+  declare invitedBy: number
+
+  @column()
+  declare status: 'pending' | 'active' | 'left'
+
+  @column()
+  declare role: 'creator' | 'member'
 
   @column.dateTime()
-  declare sharedAt: DateTime
+  declare invitedAt: DateTime
+
+  @column.dateTime()
+  declare joinedAt: DateTime | null
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -33,15 +35,12 @@ export default class SharedGem extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
-  @belongsTo(() => HiddenGem)
-  declare hiddenGem: BelongsTo<typeof HiddenGem>
-
-  @belongsTo(() => User)
-  declare user: BelongsTo<typeof User>
-
   @belongsTo(() => ShareGroup)
   declare shareGroup: BelongsTo<typeof ShareGroup>
 
-  @belongsTo(() => User, { foreignKey: 'sharedBy' })
-  declare sharer: BelongsTo<typeof User>
+  @belongsTo(() => User, { foreignKey: 'userId' })
+  declare user: BelongsTo<typeof User>
+
+  @belongsTo(() => User, { foreignKey: 'invitedBy' })
+  declare inviter: BelongsTo<typeof User>
 }
