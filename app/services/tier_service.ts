@@ -7,21 +7,15 @@ export default class TierService {
     const limits = {
       free: {
         maxPhotosPerGem: 3,
-        maxGemsTotal: 10,
+        maxGemsTotal: 3,
         canShare: false,
         maxFileSize: 5 * 1024 * 1024, // 5MB
       },
       individual_paid: {
-        maxPhotosPerGem: 50,
+        maxPhotosPerGem: 6,
         maxGemsTotal: 1000,
         canShare: true,
-        maxFileSize: 20 * 1024 * 1024, // 20MB
-      },
-      group_paid: {
-        maxPhotosPerGem: 100,
-        maxGemsTotal: 5000,
-        canShare: true,
-        maxFileSize: 50 * 1024 * 1024, // 50MB
+        maxFileSize: 5 * 1024 * 1024, // 5MB
       },
     }
     return limits[tier as keyof typeof limits] || limits.free
@@ -55,7 +49,7 @@ export default class TierService {
     }
   }
 
-  //   Check if user can add photos bases on tier limits set in limits object.
+  //   Check if user can add photos based on tier limits set in limits object.
   async canAddPhotosToGem(
     userId: number,
     gemId: number,

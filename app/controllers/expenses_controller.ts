@@ -71,6 +71,8 @@ export default class ExpensesController {
       throw error
     }
   }
+
+  //   CREATE OR ADD AN EXPENSE TO A GEM
   async store({ request, response, params, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
