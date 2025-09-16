@@ -150,36 +150,4 @@ export class ShareGroupService {
       .where('share_group_id', shareGroupId)
       .first()
   }
-
-  async shareGemsWithGroup(data: {
-    gemIds: number[]
-    shareGroupId: number
-    sharedBy: number
-    permissionLevel?: 'view' | 'edit' | 'admin'
-  }): Promise<SharedGem[]> {
-    const sharedGems: SharedGem[] = []
-
-    for (const gemId of data.gemIds) {
-      const sharedGem = await SharedGem.create({
-        hiddenGemId: gemId,
-        userId: data.sharedBy,
-        shareGroupId: data.shareGroupId,
-        sharedBy: data.sharedBy,
-        permissionLevel: data.permissionLevel || 'view',
-        sharedAt: DateTime.now(),
-      })
-
-      sharedGems.push(sharedGem)
-    }
-    return sharedGems
-  }
-
-  async unshareGemFromGroup(gemId: number, shareGroupId: number) {
-    const gemToUnshare = await SharedGem.query()
-      .where('hidden_gem_id', gemId)
-      .where('share_group_id', shareGroupId)
-      .firstOrFail()
-
-    await gemToUnshare.delete()
-  }
 }
