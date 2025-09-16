@@ -1,6 +1,7 @@
 import User from '#models/user'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
+import ShareGroup from '#models/share_group'
 
 export default class TierService {
   getTierLimits(tier: string) {
@@ -9,12 +10,16 @@ export default class TierService {
         maxPhotosPerGem: 3,
         maxGemsTotal: 3,
         canShare: false,
+        maxShareGroups: 0,
+        maxMembersPerGroup: 0,
         maxFileSize: 5 * 1024 * 1024, // 5MB
       },
       individual_paid: {
         maxPhotosPerGem: 6,
         maxGemsTotal: 1000,
         canShare: true,
+        maxShareGroups: 10,
+        maxMembersPerGroup: 10,
         maxFileSize: 5 * 1024 * 1024, // 5MB
       },
     }
@@ -87,6 +92,54 @@ export default class TierService {
   async getUpgrageMessage(userTier: string, feature: string) {
     if (userTier === 'free') {
       return `Upgrade to Individual Plan to unlock ${feature}`
+    }
+  }
+
+  async canCreateShareGroup(userId: number): Promise<{ canCreate: boolean; message?: string }> {
+    const user = await User.findOrFail(userId)
+    const limits = this.getTierLimits(user.tier)
+
+    if (!limits.canShare) {
+      return {
+        canCreate: false,
+        message: `Upgrade from ${user.tier} to Individual Plan to share gems`,
+      }
+    }
+    return {
+      canCreate: true,
+    }
+  }
+
+  async canJoinShareGroup(userId: number): Promise<{ canJoin: boolean; message?: string }> {
+    const user = await User.findOrFail(userId)
+    const limits = this.getTierLimits(user.tier)
+
+    if (!limits.canShare) {
+      return {
+        canJoin: false,
+        message: `Upgrade from ${user.tier} to the Individual Plan to join a share group`,
+      }
+    }
+    return {
+      canJoin: true,
+    }
+  }
+
+  async getMaxShareGroups(userId: number): Promise<{ maxGroups: number }> {
+    const user = await User.findOrFail(userId)
+    const limits = this.getTierLimits(user.tier)
+
+    return {
+      maxGroups: limits.maxShareGroups,
+    }
+  }
+
+  async getMaxMembersPerGroup(userId: number): Promise<{ maxMembers: number }> {
+    const user = await User.findOrFail(userId)
+    const limits = this.getTierLimits(user.tier)
+
+    return {
+      maxMembers: limits.maxMembersPerGroup,
     }
   }
 }

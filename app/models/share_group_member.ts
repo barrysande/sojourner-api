@@ -38,7 +38,7 @@ export default class ShareGroupMember extends BaseModel {
   @belongsTo(() => ShareGroup)
   declare shareGroup: BelongsTo<typeof ShareGroup>
 
-  @belongsTo(() => User, { foreignKey: 'userId' })
+  @belongsTo(() => User)
   declare user: BelongsTo<typeof User>
 
   @belongsTo(() => User, { foreignKey: 'invitedBy' })
