@@ -1,7 +1,6 @@
 import User from '#models/user'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
-import ShareGroup from '#models/share_group'
 
 export default class TierService {
   getTierLimits(tier: string) {
