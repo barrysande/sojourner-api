@@ -3,15 +3,6 @@ import type { ApplicationService } from '@adonisjs/core/types'
 export default class AppProvider {
   constructor(protected app: ApplicationService) {}
 
-  /**
-   * Register bindings to the container
-   */
-  register() {
-    this.registerCloudinaryService()
-    this.registerTierService()
-    this.registerPasswordResetService()
-  }
-
   protected registerCloudinaryService() {
     this.app.container.singleton('cloudinaryService', async () => {
       const { default: CloudinaryService } = await import('#services/cloudinary_service')
@@ -34,6 +25,42 @@ export default class AppProvider {
 
       return new PasswordResetService()
     })
+  }
+
+  // protected registerNotificationService() {
+  //   this.app.container.singleton('notificationService', async () => {
+  //     const { default: NotificationService } = await import('#services/notification_service')
+
+  //     return new NotificationService()
+  //   })
+  // }
+
+  // protected registerSharingService() {
+  //   this.app.container.singleton('sharingService', async () => {
+  //     const { default: SharingService } = await import('#services/sharing_service')
+
+  //     return new SharingService()
+  //   })
+  // }
+
+  // protected registerShareGroupService() {
+  //   this.app.container.singleton('shareGroupService', async () => {
+  //     const { default: ShareGroupService } = await import('#services/share_group_service')
+
+  //     return new ShareGroupService()
+  //   })
+  // }
+
+  /**
+   * Register bindings to the container
+   */
+  register() {
+    this.registerCloudinaryService()
+    this.registerTierService()
+    this.registerPasswordResetService()
+    // this.registerNotificationService()
+    // this.registerSharingService()
+    // this.registerShareGroupService()
   }
 
   /**

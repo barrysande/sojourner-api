@@ -1,9 +1,8 @@
 import ShareGroup from '#models/share_group'
 import ShareGroupMember from '#models/share_group_member'
-import SharedGem from '#models/shared_gem'
 import { DateTime } from 'luxon'
 
-export class ShareGroupService {
+export default class ShareGroupService {
   generateUniqueInviteCode(): string {
     const timestamp = Date.now().toString(36).slice(-4)
     const random = Math.random().toString(36).slice(-4)
@@ -49,7 +48,7 @@ export class ShareGroupService {
 
   async getShareGroupByInviteCode(inviteCode: string): Promise<ShareGroup | null> {
     return await ShareGroup.query()
-      .where('invite_code', inviteCode.toLocaleUpperCase())
+      .where('invite_code', inviteCode.toUpperCase())
       .where('status', 'active')
       .first()
   }

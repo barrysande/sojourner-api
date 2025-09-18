@@ -2,7 +2,8 @@ import HiddenGem from '#models/hidden_gem'
 import SharedGem from '#models/shared_gem'
 import ShareGroupMember from '#models/share_group_member'
 import { DateTime } from 'luxon'
-export class SharingService {
+
+export default class SharingService {
   async shareGemsWithGroup(data: {
     gemIds: number[]
     shareGroupId: number
@@ -34,11 +35,11 @@ export class SharingService {
     }
   }
 
-  async unshareGemFromGroup(gemIds: number | number[], shareGroupId: number): Promise<number> {
+  async unshareGemsFromGroup(gemIds: number | number[], shareGroupId: number): Promise<number> {
     const gemIdArray = Array.isArray(gemIds) ? gemIds : [gemIds]
 
     const gemToUnshare = await SharedGem.query()
-      .where('hidden_gem_id', gemIdArray)
+      .whereIn('hidden_gem_id', gemIdArray)
       .where('share_group_id', shareGroupId)
       .delete()
 
@@ -47,7 +48,7 @@ export class SharingService {
 
   async getSharedGemsForUser(userId: number): Promise<HiddenGem[]> {
     return await HiddenGem.query()
-      .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gems.id')
+      .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gem_id')
       .innerJoin(
         'share_group_members',
         'shared_gems.share_group_id',
