@@ -191,4 +191,113 @@ export default class ShareGroupsController {
       })
     }
   }
+
+  /**
+   * GET /api/share-groups/:id
+   * Get specific share group details
+   */
+  async show({ auth, params, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const shareGroupId = params.id
+      const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
+
+      if (!isMember) {
+        return response.forbidden({
+          message: 'You cannot view this share group.',
+        })
+      }
+
+      const members = await this.shareGroupService.getGroupMembers(shareGroupId)
+
+      return response.ok({
+        message: 'Share group details retrieved',
+        members: members,
+      })
+    } catch (error) {
+      return response.internalServerError({
+        message: 'Failed to retrieve share group details',
+      })
+    }
+  }
+
+  /**
+   * POST /api/share-groups/join
+   * Join share group using invite code
+   */
+  async join({ request, response, auth }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
+
+      // Check tier permissions
+      const canJoin = await this.tierService.canJoinShareGroup(user.id)
+      if (!canJoin.canJoin) {
+        return response.forbidden({
+          message: canJoin.message,
+        })
+      }
+
+      // Find share group by invite code
+      const shareGroup = await this.shareGroupService.getShareGroupByInviteCode(inviteCode)
+      if (!shareGroup) {
+        return response.badRequest({
+          message: 'Invalid invite code',
+        })
+      }
+
+      // Check group capacity
+      const currentMembers = await this.shareGroupService.getGroupMembers(shareGroup.id)
+      if (currentMembers.length >= shareGroup.maxMembers) {
+        return response.badRequest({ message: 'Share group is full' })
+      }
+
+      // Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group
+      const existingMembership = await this.shareGroupService.findMembership(user.id, shareGroup.id)
+
+      if (existingMembership) {
+        if (existingMembership.status === 'active') {
+          return response.conflict({
+            message: 'You are already a member of this group',
+          })
+        } else if (existingMembership.status === 'pending') {
+          await this.shareGroupService.acceptGroupInvitation(user.id, shareGroup.id)
+
+          await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
+
+          return response.ok({
+            message: 'Successfully joined share group',
+            shareGroup: shareGroup,
+          })
+        }
+      }
+
+      await this.shareGroupService.createGroupMembership({
+        shareGroupId: shareGroup.id,
+        userId: user.id,
+        invitedBy: shareGroup.createdBy,
+        status: 'active',
+        role: 'member',
+        invitedAt: DateTime.now(),
+        joinedAt: DateTime.now(),
+      })
+
+      await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
+      return response.ok({
+        message: 'Successfully joined share group',
+        shareGroup: shareGroup,
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Invalid invite code format',
+          errors: error.messages,
+        })
+      }
+
+      return response.internalServerError({
+        message: 'Failed to join share group',
+      })
+    }
+  }
 }
