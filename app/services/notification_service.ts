@@ -32,38 +32,41 @@ export default class NotificationService {
     })
   }
 
-  async createGemSharedNotification(
-    userId: number,
+  async createGemSharedNotifications(
+    memberIds: number[],
     shareGroupId: number,
     sharedBy: number,
     gemIds: number[]
-  ): Promise<Notification> {
+  ): Promise<Notification[]> {
     const sharer = await User.findOrFail(sharedBy)
     const shareGroup = await ShareGroup.findOrFail(shareGroupId)
-
     const gems = await HiddenGem.query().whereIn('id', gemIds).select('id', 'name')
+
     const gemNames = gems.map((gem) => gem.name)
     const gemCount = gems.length
     const message =
       gemCount === 1
         ? `${sharer.fullName} shared "${gemNames[0]}" with ${shareGroup.name}`
         : `${sharer.fullName} shared ${gemCount} gems with ${shareGroup.name}`
-    return await Notification.create({
-      userId: userId,
-      type: 'gem_shared',
+
+    const notificationData = memberIds.map((memberId) => ({
+      userId: memberId,
+      type: 'gem_shared' as const,
       title: 'New Gems Shared',
-      message: message,
+      message,
       data: {
-        shareGroupId: shareGroupId,
-        sharedBy: sharedBy,
-        gemIds: gemIds,
-        gemNames: gemNames,
+        shareGroupId,
+        sharedBy,
+        gemIds,
+        gemNames,
         groupName: shareGroup.name,
         sharerName: sharer.fullName,
       },
       isRead: false,
       sentAt: DateTime.now(),
-    })
+    }))
+
+    return await Notification.createMany(notificationData)
   }
 
   async createGroupJoinedNotification(
