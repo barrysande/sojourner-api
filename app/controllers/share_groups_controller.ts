@@ -31,23 +31,20 @@ export default class ShareGroupsController {
     const sent: string[] = []
     const failed: string[] = []
 
-    // 1. Batch fetch all users by email (single query)
+    // 1. Batch fetch all users by email (single query) 2. Batch fetch existing memberships (single query) 3. Create lookup maps 4. Process each email using cached data 5. Check tier permissions- tier limits and membership status 6. Construct invitation. 7. Batch create them 8. Batch create memberships 9. Batch create notifications
     const normalizedEmails = emails.map((email) => email.toLowerCase().trim())
     const users = await User.query().whereIn('email', normalizedEmails)
 
-    // 2. Batch fetch existing memberships (single query)
     const userIds = users.map((user) => user.id)
     const existingMemberships = await ShareGroupMember.query()
       .where('share_group_id', shareGroupId)
       .whereIn('user_id', userIds)
 
-    // 3. Create lookup maps
     const usersByEmail = new Map(users.map((user) => [user.email, user]))
     const membershipsByUserId = new Map(
       existingMemberships.map((membership) => [membership.userId, membership])
     )
 
-    // 4. Process each email using cached data
     const validInvitations = []
 
     for (const email of emails) {
@@ -59,13 +56,11 @@ export default class ShareGroupsController {
         continue
       }
 
-      // Check tier permissions
       const tierLimits = this.tierService.getTierLimits(user.tier)
       if (!tierLimits.canShare) {
         failed.push(`${email}: Upgrade to paid Individual Plan`)
         continue
       }
-
       const existingMembership = membershipsByUserId.get(user.id)
       if (existingMembership) {
         if (existingMembership.status === 'active') {
@@ -78,7 +73,6 @@ export default class ShareGroupsController {
         }
       }
 
-      // Valid invitation
       validInvitations.push({
         userId: user.id,
         shareGroupId,
@@ -89,12 +83,9 @@ export default class ShareGroupsController {
       })
       sent.push(email)
     }
-
-    // 5. Batch create memberships
     if (validInvitations.length > 0) {
       await ShareGroupMember.createMany(validInvitations)
 
-      // 6. Batch create notifications
       const notificationData = validInvitations.map((invitation) => ({
         userId: invitation.userId,
         type: 'share_group_invite' as const,
@@ -136,6 +127,7 @@ export default class ShareGroupsController {
       const user = auth.getUserOrFail()
       const { name, inviteEmails } = await request.validateUsing(createShareGroupValidator)
 
+      // 1. check if user can create share groups 2. check if number of to-be members is within tier limits 3. generate invite code 4. create share group 5. create group membership 6. process the invitations
       const canCreate = await this.tierService.canCreateShareGroup(user.id)
 
       if (!canCreate.canCreate) {
@@ -201,8 +193,10 @@ export default class ShareGroupsController {
     try {
       const user = auth.getUserOrFail()
       const shareGroupId = params.id
-      const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
 
+      // 1. check membership status 2. show group details
+
+      const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
       if (!isMember) {
         return response.notFound({
           message: 'You cannot view this share group.',
@@ -231,7 +225,7 @@ export default class ShareGroupsController {
       const user = auth.getUserOrFail()
       const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
 
-      // Check tier permissions
+      // 1. Check tier permissions 2. Find share group by invite code 3. Check group capacity 4.  Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group
       const canJoin = await this.tierService.canJoinShareGroup(user.id)
       if (!canJoin.canJoin) {
         return response.forbidden({
@@ -239,7 +233,6 @@ export default class ShareGroupsController {
         })
       }
 
-      // Find share group by invite code
       const shareGroup = await this.shareGroupService.getShareGroupByInviteCode(inviteCode)
       if (!shareGroup) {
         return response.badRequest({
@@ -247,13 +240,11 @@ export default class ShareGroupsController {
         })
       }
 
-      // Check group capacity
       const currentMembers = await this.shareGroupService.getGroupMembers(shareGroup.id)
       if (currentMembers.length >= shareGroup.maxMembers) {
         return response.badRequest({ message: 'Share group is full' })
       }
 
-      // Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group
       const existingMembership = await this.shareGroupService.findMembership(user.id, shareGroup.id)
 
       if (existingMembership) {
@@ -363,6 +354,7 @@ export default class ShareGroupsController {
       const user = auth.getUserOrFail()
       const shareGroupId = params.id
 
+      // 1. check membership status 2. remove member 3. notify other group members
       const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
       if (!isMember) {
         return response.notFound({

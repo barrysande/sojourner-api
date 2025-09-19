@@ -5,6 +5,8 @@ import ShareGroupService from '#services/share_group_service'
 import NotificationService from '#services/notification_service'
 import TierService from '#services/tier_service'
 import { shareGemsValidator, unshareGemsValidator } from '#validators/sharing'
+import HiddenGem from '#models/hidden_gem'
+import SharedGem from '#models/shared_gem'
 
 @inject()
 export default class SharingController {
@@ -25,7 +27,7 @@ export default class SharingController {
       const shareGroupId = params.id
       const { gemIds, permissionLevel } = await request.validateUsing(shareGemsValidator)
 
-      // 1. check if user sharing is a group member 2. check if user can share the gems 3. check the number of gems the user has shared 4. share the gems 5. create the share notification
+      // 1. check if user sharing is a group member 2. check if user can share the gems based on tier limits 3. check is the user owns the gems being shared 4. share the gems 5. create the share notification
 
       const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
       if (!isMember) {
@@ -39,15 +41,10 @@ export default class SharingController {
         })
       }
 
-      const result = await this.sharingService.shareGemsWithGroup({
-        gemIds,
-        shareGroupId,
-        sharedBy: user.id,
-        permissionLevel,
-      })
-      if (!result.success) {
-        return response.badRequest({
-          message: result.message,
+      const userGems = await HiddenGem.query().whereIn('id', gemIds).where('user_id', user.id)
+      if (userGems.length !== gemIds.length) {
+        return response.forbidden({
+          message: 'You can only share gems that you own',
         })
       }
 
@@ -55,6 +52,19 @@ export default class SharingController {
       const memberIds = groupMembers
         .filter((member) => member.userId !== user.id)
         .map((member) => member.userId)
+
+      const result = await this.sharingService.shareGemsWithGroup({
+        gemIds,
+        shareGroupId,
+        sharedBy: user.id,
+        permissionLevel,
+      })
+
+      if (!result.success) {
+        return response.badRequest({
+          message: result.message,
+        })
+      }
 
       await this.notificationService.createGemSharedNotifications(
         memberIds,
@@ -91,11 +101,21 @@ export default class SharingController {
       const shareGroupId = params.id
       const { gemIds } = await request.validateUsing(unshareGemsValidator)
 
-      //1. check if user is a group member 2. ushare/delete shared gem
+      //1. check if user is a group member 2. check is the user shared the gems they are trying to delete 3. unshare/delete shared gem
       const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
       if (!isMember) {
         return response.forbidden({
           message: 'You are not a member of this share group',
+        })
+      }
+
+      const userSharedGems = await SharedGem.query()
+        .whereIn('hidden_gem_id', gemIds)
+        .where('share_group_id', shareGroupId)
+        .where('shared_by', user.id)
+      if (userSharedGems.length !== gemIds.length) {
+        return response.forbidden({
+          message: 'You can only unshare gems that you shared',
         })
       }
 
