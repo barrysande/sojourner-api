@@ -61,6 +61,7 @@ export default class SharingService {
       .preload('photos')
       .distinct()
   }
+
   async getSharedGemsInGroup(shareGroupId: number): Promise<HiddenGem[]> {
     return await HiddenGem.query()
       .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gem_id')

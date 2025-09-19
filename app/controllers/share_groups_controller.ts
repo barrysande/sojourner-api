@@ -12,6 +12,8 @@ import {
   inviteMembersValidator,
 } from '#validators/share_groups'
 import ShareGroupMember from '#models/share_group_member'
+import logger from '@adonisjs/core/services/logger'
+import ShareGroup from '#models/share_group'
 
 @inject()
 export default class ShareGroupsController {
@@ -58,9 +60,9 @@ export default class ShareGroupsController {
       }
 
       // Check tier permissions
-      const canJoin = await this.tierService.canJoinShareGroup(user.id)
-      if (!canJoin.canJoin) {
-        failed.push(`${email}: ${canJoin.message}`)
+      const tierLimits = this.tierService.getTierLimits(user.tier)
+      if (!tierLimits.canShare) {
+        failed.push(`${email}: Upgrade to paid Individual Plan`)
         continue
       }
 
@@ -78,7 +80,6 @@ export default class ShareGroupsController {
 
       // Valid invitation
       validInvitations.push({
-        email,
         userId: user.id,
         shareGroupId,
         invitedBy: inviterId,
@@ -203,7 +204,7 @@ export default class ShareGroupsController {
       const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
 
       if (!isMember) {
-        return response.forbidden({
+        return response.notFound({
           message: 'You cannot view this share group.',
         })
       }
@@ -297,6 +298,126 @@ export default class ShareGroupsController {
 
       return response.internalServerError({
         message: 'Failed to join share group',
+      })
+    }
+  }
+
+  /**
+   * POST /api/share-groups/:id/invite
+   * Invite additional members to existing group
+   */
+  async invite({ params, request, response, auth }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const shareGroupId = params.id
+      const { emails } = await request.validateUsing(inviteMembersValidator)
+      // 1. can user manage group? 2.  process invitations. 3. Check Group Capacity Check 4. Create Notification.
+
+      const canUserManageGroup = await this.shareGroupService.canUserManageGroup(
+        user.id,
+        shareGroupId
+      )
+      if (!canUserManageGroup) {
+        return response.forbidden({
+          message: 'Only group creators can invite members',
+        })
+      }
+
+      const shareGroup = await ShareGroup.findOrFail(shareGroupId)
+      const currentMembers = await this.shareGroupService.getGroupMembers(shareGroupId)
+
+      if (currentMembers.length + emails.length > shareGroup.maxMembers) {
+        return response.badRequest({
+          message: `Cannot invite ${emails.length} users. Group would exceed capacity.`,
+        })
+      }
+
+      const inviteResults = await this.processInvitations(shareGroupId, user.id, emails)
+
+      return response.ok({
+        message: 'Invitations sent',
+        inviteResults: inviteResults,
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Validation failed',
+          errors: error.messages,
+        })
+      }
+
+      logger.error('Invitation process failed:', error)
+
+      return response.internalServerError({
+        message: 'Failed to send invitations',
+      })
+    }
+  }
+
+  /**
+   * DELETE /api/share-groups/:id/leave
+   * Leave share group
+   */
+  async leave({ auth, response, params }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const shareGroupId = params.id
+
+      const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
+      if (!isMember) {
+        return response.notFound({
+          message: 'You are not a member of this group',
+        })
+      }
+
+      const leftMembership = await this.shareGroupService.leaveShareGroup(user.id, shareGroupId)
+      if (!leftMembership) {
+        return response.badRequest({
+          message: 'Failed to leave group',
+        })
+      }
+
+      await this.notificationService.createGroupLeftNotification(shareGroupId, user.id)
+      return response.ok({
+        message: 'Successfully left share group',
+      })
+    } catch (error) {
+      return response.internalServerError({
+        message: 'Failed to leave share group',
+      })
+    }
+  }
+
+  /**
+   * DELETE /api/share-groups/:id
+   * Dissolve share group (creator only)
+   */
+  async destroy({ auth, params, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const shareGroupId = params.id
+
+      const canManage = await this.shareGroupService.canUserManageGroup(user.id, shareGroupId)
+      if (!canManage) {
+        return response.forbidden({
+          message: 'Only group creators can dissolve groups',
+        })
+      }
+
+      const dissolvedGroup = await this.shareGroupService.dissolveShareGroup(shareGroupId)
+      if (!dissolvedGroup) {
+        return response.notFound({
+          message: 'Share group not found',
+        })
+      }
+
+      await this.notificationService.createGroupDissolvedNotification(shareGroupId, user.id)
+      return response.ok({
+        message: 'Share group dissolved successfully',
+      })
+    } catch (error) {
+      return response.internalServerError({
+        message: 'Failed to dissolve share group',
       })
     }
   }
