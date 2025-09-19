@@ -13,6 +13,9 @@ import { registerThrottle, passwordResetThrottle } from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
 const ExpensesController = () => import('#controllers/expenses_controller')
+const ShareGroupsController = () => import('#controllers/share_groups_controller')
+const SharingController = () => import('#controllers/sharing_controller')
+const NotificationsController = () => import('#controllers/notifications_controller')
 
 // router.get('/', async () => {
 //   return {
@@ -52,4 +55,42 @@ router
     router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
   })
   .prefix('api')
+  .use(middleware.auth())
+
+// SHARE GROUPS ROUTES
+router
+  .group(() => {
+    router.get('/share-groups', [ShareGroupsController, 'index'])
+    router.post('/share-groups', [ShareGroupsController, 'store'])
+    router.get('/share-groups/:id', [ShareGroupsController, 'show'])
+    router.post('/share-groups/join', [ShareGroupsController, 'join'])
+    router.post('/share-groups/:id/invite', [ShareGroupsController, 'invite'])
+    router.delete('/share-groups/:id/leave', [ShareGroupsController, 'leave'])
+    router.delete('/share-groups/:id', [ShareGroupsController, 'destroy'])
+  })
+  .prefix('/api')
+  .use(middleware.auth())
+
+// SHARING ROUTES
+router
+  .group(() => {
+    router.post('/share-groups/:id/gems', [SharingController, 'store'])
+    router.delete('/share-groups/:id/gems', [SharingController, 'destroy'])
+    router.get('/shared-gems', [SharingController, 'index'])
+    router.get('/share-groups/:id/gems', [SharingController, 'showGroupGems'])
+  })
+  .prefix('/api')
+  .use(middleware.auth())
+
+// NOTIFICATIONS ROUTES
+router
+  .group(() => {
+    router.get('/notifications', [NotificationsController, 'index'])
+    router.get('/notifications/unread-count', [NotificationsController, 'unreadCount'])
+    router.get('/notifications/:id', [NotificationsController, 'show'])
+    router.put('/notifications/:id/read', [NotificationsController, 'update'])
+    router.put('/notifications/read-all', [NotificationsController, 'markAllRead'])
+    router.delete('/notifications/:id', [NotificationsController, 'destroy'])
+  })
+  .prefix('/api')
   .use(middleware.auth())

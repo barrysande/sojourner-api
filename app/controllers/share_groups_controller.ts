@@ -14,6 +14,7 @@ import {
 import ShareGroupMember from '#models/share_group_member'
 import logger from '@adonisjs/core/services/logger'
 import ShareGroup from '#models/share_group'
+import mail from '@adonisjs/mail/services/main'
 
 @inject()
 export default class ShareGroupsController {
@@ -31,7 +32,7 @@ export default class ShareGroupsController {
     const sent: string[] = []
     const failed: string[] = []
 
-    // 1. Batch fetch all users by email (single query) 2. Batch fetch existing memberships (single query) 3. Create lookup maps 4. Process each email using cached data 5. Check tier permissions- tier limits and membership status 6. Construct invitation. 7. Batch create them 8. Batch create memberships 9. Batch create notifications
+    // 1. Batch fetch all users by email (single query) 2. Batch fetch existing memberships (single query) 3. Create lookup maps 4. Process each email using cached data 5. Check tier permissions- tier limits and membership status 6. Construct invitation. 7. Batch create them 8. Batch create memberships 9. Batch create notifications 10. send invitation code via email.
     const normalizedEmails = emails.map((email) => email.toLowerCase().trim())
     const users = await User.query().whereIn('email', normalizedEmails)
 
