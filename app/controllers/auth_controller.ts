@@ -10,16 +10,9 @@ import {
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
-import limiter from '@adonisjs/limiter/services/main'
+import { loginLimiter } from '#start/limiter'
 import PasswordResetService from '#services/password_reset_service'
 import { inject } from '@adonisjs/core'
-
-// login limiter
-const loginLimiter = limiter.use({
-  requests: 5,
-  duration: '1 min',
-  blockDuration: '20 mins',
-})
 
 @inject()
 export default class AuthController {
@@ -39,7 +32,6 @@ export default class AuthController {
         },
       })
     } catch (error) {
-      // Validation errors are automatically handled by AdonisJS Error Handler
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
@@ -54,7 +46,6 @@ export default class AuthController {
         })
       }
 
-      // Log the error for debugging
       logger.error('Registration error:', error)
 
       return response.internalServerError({
@@ -68,9 +59,7 @@ export default class AuthController {
       const { email, password } = await request.validateUsing(loginValidator)
 
       // construct key to pass to the limiter config instance - loginLimiter
-
       const key = `login_${request.ip()}_${email.toLowerCase().trim()}`
-
       const [error, user] = await loginLimiter.penalize(key, () => {
         return User.verifyCredentials(email, password)
       })
@@ -100,7 +89,6 @@ export default class AuthController {
         },
       })
     } catch (error) {
-      // Invalid credentials
       if (error instanceof authErrors.E_INVALID_CREDENTIALS) {
         return response.badRequest({
           message: 'Invalid email or password',
@@ -108,7 +96,6 @@ export default class AuthController {
         })
       }
 
-      // Validation errors
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
@@ -116,7 +103,6 @@ export default class AuthController {
         })
       }
 
-      // User not found or other auth errors
       if (error.message?.includes('Unable to verify user credentials')) {
         return response.badRequest({
           message: 'Invalid email or password',
@@ -172,14 +158,14 @@ export default class AuthController {
     }
   }
 
-  // Changing password
+  // CHANGING PASSWORD WHILE LOGGED-IN
   async changePassword({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
 
       const { currentPassword, newPassword } = await request.validateUsing(changePasswordValidator)
 
-      // Verify current password using AdonisJS auth method
+      // 1. Verify current password using AdonisJS auth method 2. Update password
       const isValidPassword = await hash.verify(user.password, currentPassword)
       if (!isValidPassword) {
         return response.badRequest({
@@ -187,7 +173,6 @@ export default class AuthController {
         })
       }
 
-      // Update password
       user.password = newPassword
       await user.save()
 
@@ -216,7 +201,9 @@ export default class AuthController {
     }
   }
 
+  // CHANGGING PASSWORD WHILE LOGGED OUT
   async forgotPassword({ request, response }: HttpContext) {
+    // 1. send password reset token if email provided is associated to a user
     try {
       const { email } = await request.validateUsing(forgotPasswordValidator)
       await this.passwordResetService.sendResetEmail(email)
@@ -241,6 +228,7 @@ export default class AuthController {
     }
   }
 
+  // RESET PASSWORD USING RESET TOKEN SENT TO EMAIL
   async resetPassword({ request, response }: HttpContext) {
     try {
       const { email, token, password } = await request.validateUsing(resetPasswordValidator)

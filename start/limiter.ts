@@ -23,6 +23,12 @@ export const registerThrottle = limiter.define('api', (ctx) => {
     .blockFor('1 hour')
 })
 
+export const loginLimiter = limiter.use({
+  requests: 5,
+  duration: '1 min',
+  blockDuration: '20 mins',
+})
+
 export const passwordResetThrottle = limiter.define('password-reset', (ctx) => {
   return limiter
     .allowRequests(5)

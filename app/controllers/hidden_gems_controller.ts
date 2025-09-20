@@ -4,14 +4,19 @@ import HiddenGem from '#models/hidden_gem'
 import { getMetaData } from '@adonisjs/core/commands'
 import { hiddenGemWithPhotosValidator } from '#validators/cloudinary_photo'
 import db from '@adonisjs/lucid/services/db'
-import app from '@adonisjs/core/services/app'
+import { inject } from '@adonisjs/core'
+import TierService from '#services/tier_service'
+import CloudinaryService from '#services/cloudinary_service'
 
+@inject()
 export default class HiddenGemsController {
+  constructor(
+    private tierService: TierService,
+    private cloudinaryService: CloudinaryService
+  ) {}
+
   // HELPER FUNCTION TO VALIDATE PHOTOS IN BATCHES
-  private async validatePhotosBatch(
-    photos: any[],
-    cloudinaryService: any
-  ): Promise<{
+  private async validatePhotosBatch(photos: any[]): Promise<{
     isValid: boolean
     error?: string
     invalidIndex?: number
@@ -21,7 +26,7 @@ export default class HiddenGemsController {
     }
 
     for (const [i, photo] of photos.entries()) {
-      if (!cloudinaryService.validateCloudinaryResponse(photo)) {
+      if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
         return {
           isValid: false,
           error: `Photo #${i + 1} has invalid data. Please remove and re-upload it.`,
@@ -91,39 +96,30 @@ export default class HiddenGemsController {
       const user = auth.getUserOrFail()
       const data = await request.validateUsing(hiddenGemWithPhotosValidator)
 
-      // Make tier service instance
-      const tierService = await app.container.make('tierService')
-
-      // Use tierService to check if user can create more gems
-      const gemCheck = await tierService.canCreateGem(user.id)
+      // 1. Use tierService to check if user can create more gems 2. check if the photos submitted by user are within tier limits 3. validate cloudinary photos metadata using validatePhotosBatch method 4. Create new hidden gem with any photo submitted 5. return the created gem
+      const gemCheck = await this.tierService.canCreateGem(user.id)
 
       if (!gemCheck.canCreate) {
         return response.forbidden({
           message: gemCheck.message,
           current: gemCheck.currentCount,
           limit: gemCheck.limit,
-          upgradeMessage: tierService.getUpgrageMessage(user.tier, 'more gems'),
+          upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more gems'),
         })
       }
 
-      // check if the photos submitted by user are within tier limits
       if (data.photos && data.photos.length > 0) {
-        const photoCheck = await tierService.canAddPhotosToGem(user.id, 0, data.photos.length)
+        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, data.photos.length)
         if (!photoCheck.canAdd) {
           return response.forbidden({
             message: photoCheck.message,
             attempted: data.photos.length,
             limit: photoCheck.limit,
-            upgradeMessage: tierService.getUpgrageMessage(user.tier, 'more photos per gem'),
+            upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more photos per gem'),
           })
         }
 
-        // make an instance of the cloudinary service to pass as param to the validatePhotosBach() method
-        const cloudinaryService = await app.container.make('cloudinaryService')
-
-        // validate cloudinary photos metadata using validatePhotosBatch method
-
-        const photoValidation = await this.validatePhotosBatch(data.photos, cloudinaryService)
+        const photoValidation = await this.validatePhotosBatch(data.photos)
         if (!photoValidation.isValid) {
           return response.badRequest({
             message: photoValidation.error,
@@ -133,7 +129,6 @@ export default class HiddenGemsController {
         }
       }
 
-      // Create new hidden gem with any photo submitted
       const gem = await db.transaction(async (trx) => {
         const newGem = await HiddenGem.create(
           {
@@ -156,7 +151,7 @@ export default class HiddenGemsController {
             cloudinarySecureUrl: photo.secure_url,
             fileName: photo.original_filename || `photo-${index + 1}.jpg`,
             caption: photo.caption || null,
-            isPrimary: index === 0, // First photo is primary
+            isPrimary: index === 0, // make the first photo is primary
           }))
 
           await Photo.createMany(photoData, { client: trx })
@@ -188,18 +183,18 @@ export default class HiddenGemsController {
       const user = auth.getUserOrFail()
       const data = await request.validateUsing(hiddenGemWithPhotosValidator)
 
+      // 1. get the hidden gem based on id and userId 2. use tierService to check photos to be added against limits 3. validate cloudinary photos metadata using validatePhotosBatch method 4. update the hidden gem 5. return the updated gem
       const gem = await HiddenGem.query()
         .where('id', params.id)
         .where('userId', user.id)
         .firstOrFail()
 
-      // Make tier service instance
-      const tierService = await app.container.make('tierService')
-
-      // check photos being added against photo limits
       if (data.photos && data.photos.length > 0) {
-        const photoCheck = await tierService.canAddPhotosToGem(user.id, gem.id, data.photos.length)
-
+        const photoCheck = await this.tierService.canAddPhotosToGem(
+          user.id,
+          gem.id,
+          data.photos.length
+        )
         if (!photoCheck.canAdd) {
           return response.forbidden({
             message:
@@ -211,11 +206,7 @@ export default class HiddenGemsController {
           })
         }
 
-        // make an instance of the cloudinary service to pass as param to the validatePhotosBach() method
-        const cloudinaryService = await app.container.make('cloudinaryService')
-
-        // validate cloudinary photos metadata using validatePhotosBatch method
-        const photoValidation = await this.validatePhotosBatch(data.photos, cloudinaryService)
+        const photoValidation = await this.validatePhotosBatch(data.photos)
         if (!photoValidation.isValid) {
           return response.badRequest({
             message: photoValidation.error,
@@ -237,7 +228,6 @@ export default class HiddenGemsController {
           })
           .save()
 
-        // add new photos
         if (data.photos && data.photos.length > 0) {
           const photoData = data.photos.map((photo) => ({
             hiddenGemId: gem.id,
@@ -279,6 +269,7 @@ export default class HiddenGemsController {
 
   // DELETE HIDDEN GEM AND CLEANUP PHOTOS ON CLOUDINARY
   async destroy({ params, response, auth }: HttpContext) {
+    // 1. get the gem to be deleted using id and userId 2. get the gem photos' cloudinaryPublicIds 3. cleanup/delete the gem's photos on cloudinary 4. check for failed cloudinary cleanups. 4. delete hidden gem
     try {
       const user = auth.getUserOrFail()
 
@@ -290,12 +281,15 @@ export default class HiddenGemsController {
 
       const publicIds = gem.photos.map((photo) => photo.cloudinaryPublicId)
 
-      // Make cloudinary service instance
-      const cloudinaryService = await app.container.make('cloudinaryService')
+      const bulkDeleteResult = await this.cloudinaryService.deleteMultipleImages(publicIds)
 
-      const bulkDeleteResult = await cloudinaryService.deleteMultipleImages(publicIds)
+      if (bulkDeleteResult.failed.length > 0) {
+        return response.badRequest({
+          message: 'Failed to cleanup some photos. Gem not deleted.',
+          failedPhotos: bulkDeleteResult.failed,
+        })
+      }
 
-      // Delete gem (cascade will handle photos table)
       await gem.delete()
 
       return response.ok({
@@ -323,22 +317,21 @@ export default class HiddenGemsController {
       const user = auth.getUserOrFail()
       const photos = request.input('photos', [])
 
+      // 1. check if request has photos 2. get the gem using gem id and userId 3. check users' tier limits 4. check if user can add photos based on tier limits 5. validate cloudinary photos metadata using validatePhotosBatch method 6. create photo records if tests pass
+
       if (!photos || photos.length === 0) {
         return response.badRequest({
           message: 'No photos provided!',
           code: 'NO PHOTOS_PROVIDED',
         })
       }
+
       const gem = await HiddenGem.query()
         .where('id', params.id)
         .where('userId', user.id)
         .firstOrFail()
 
-      // Make tier service instance
-      const tierService = await app.container.make('tierService')
-
-      // check users' tier limits
-      const photoCheck = await tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
+      const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
       if (!photoCheck.canAdd) {
         return response.forbidden({
           message: photoCheck.message,
@@ -348,11 +341,7 @@ export default class HiddenGemsController {
         })
       }
 
-      // make an instance of the cloudinary service to pass as param to the validatePhotosBach() method
-      const cloudinaryService = await app.container.make('cloudinaryService')
-
-      // validate cloudinary photos metadata using validatePhotosBatch method
-      const photoValidation = await this.validatePhotosBatch(photos, cloudinaryService)
+      const photoValidation = await this.validatePhotosBatch(photos)
       if (!photoValidation.isValid) {
         return response.badRequest({
           message: photoValidation.error,
@@ -361,7 +350,6 @@ export default class HiddenGemsController {
         })
       }
 
-      // create photo records if tests pass
       const photoData = photos.map((photo: any) => ({
         hiddenGemId: gem.id,
         cloudinaryPublicId: photo.public_id,
@@ -371,7 +359,6 @@ export default class HiddenGemsController {
         caption: photo.caption || null,
         isPrimary: false,
       }))
-
       const newPhotos = await Photo.createMany(photoData)
 
       return response.created({
@@ -391,28 +378,22 @@ export default class HiddenGemsController {
   }
 
   // REASSIGN THE PRIMARY PHOTO INCASE ITS DELETED
-  async reassignPrimaryPhoto(gemId: number): Promise<void> {
-    const primaryPhoto = await Photo.query()
+  private async reassignPrimaryPhoto(gemId: number): Promise<void> {
+    const firstPhoto = await Photo.query()
       .where('hiddenGemId', gemId)
-      .where('isPrimary', true)
+      .orderBy('createdAt', 'asc')
       .first()
 
-    if (!primaryPhoto) {
-      const firstPhoto = await Photo.query()
-        .where('hiddenGemId', gemId)
-        .orderBy('createdAt', 'asc')
-        .first()
+    if (firstPhoto) {
+      firstPhoto.isPrimary = true
 
-      if (firstPhoto) {
-        firstPhoto.isPrimary = true
-
-        await firstPhoto.save()
-      }
+      await firstPhoto.save()
     }
   }
 
   // DELETE ONE PHOTO
   async deletePhoto({ params, auth, response }: HttpContext) {
+    // 1. get photo to be deleted using photo id and userId 2. create variable to hold primary photo 3. delete photo from cloudinary then database 4. check if deleted photo was primary then reassign primary status to next photo.
     try {
       const user = auth.getUserOrFail()
 
@@ -425,10 +406,7 @@ export default class HiddenGemsController {
 
       const wasPrimary = photo.isPrimary
 
-      // Make cloudinary service instance
-      const cloudinaryService = await app.container.make('cloudinaryService')
-
-      const deleteResult = await cloudinaryService.deleteImage(photo.cloudinaryPublicId)
+      const deleteResult = await this.cloudinaryService.deleteImage(photo.cloudinaryPublicId)
 
       await photo.delete()
 
