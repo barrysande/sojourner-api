@@ -55,7 +55,7 @@ router
     router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
   })
   .prefix('api')
-  .use(middleware.auth())
+  .use([middleware.requestTimeout({ timeout: 10000 }), middleware.auth()])
 
 // SHARE GROUPS ROUTES
 router
@@ -69,7 +69,7 @@ router
     router.delete('/share-groups/:id', [ShareGroupsController, 'destroy'])
   })
   .prefix('/api')
-  .use(middleware.auth())
+  .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
 
 // SHARING ROUTES
 router
@@ -80,7 +80,7 @@ router
     router.get('/share-groups/:id/gems', [SharingController, 'showGroupGems'])
   })
   .prefix('/api')
-  .use(middleware.auth())
+  .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
 
 // NOTIFICATIONS ROUTES
 router

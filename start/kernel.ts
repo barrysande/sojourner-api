@@ -43,6 +43,7 @@ router.use([
  * the routes or the routes group.
  */
 export const middleware = router.named({
+  requestTimeout: () => import('#middleware/request_timeout_middleware'),
   guest: () => import('#middleware/guest_middleware'),
   auth: () => import('#middleware/auth_middleware'),
 })
