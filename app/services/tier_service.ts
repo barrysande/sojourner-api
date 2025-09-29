@@ -6,7 +6,7 @@ export default class TierService {
   getTierLimits(tier: string) {
     const limits = {
       free: {
-        maxPhotosPerGem: 3,
+        maxPhotosPerGem: 1,
         maxGemsTotal: 3,
         canShare: false,
         maxShareGroups: 0,
@@ -14,19 +14,18 @@ export default class TierService {
         maxFileSize: 5 * 1024 * 1024, // 5MB
       },
       individual_paid: {
-        maxPhotosPerGem: 6,
-        maxGemsTotal: 1000,
+        maxPhotosPerGem: 3,
+        maxGemsTotal: 500,
         canShare: true,
         maxShareGroups: 10,
         maxMembersPerGroup: 10,
-        maxFileSize: 5 * 1024 * 1024, // 5MB
+        maxFileSize: 10 * 1024 * 1024, // 10MB
       },
     }
     return limits[tier as keyof typeof limits] || limits.free
   }
 
-  //   Check if user can add photos bases on tier limits set in limits object.
-
+  //Check if user can add photos bases on tier limits set in limits object.
   async canCreateGem(
     userId: number
   ): Promise<{ canCreate: boolean; currentCount: number; limit: number; message?: string }> {
@@ -34,7 +33,6 @@ export default class TierService {
     const limits = this.getTierLimits(user.tier)
 
     // count the current gems i.e currentCount
-
     const currentGemCount = await HiddenGem.query().where('user_id', userId).count('* as total')
     const currentCount = Number(currentGemCount[0].$extras.total)
 
@@ -53,7 +51,7 @@ export default class TierService {
     }
   }
 
-  //   Check if user can add photos based on tier limits set in limits object.
+  //Check if user can add photos based on tier limits set in limits object.
   async canAddPhotosToGem(
     userId: number,
     gemId: number,
