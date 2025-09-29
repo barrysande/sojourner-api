@@ -45,22 +45,6 @@ export default class ChatMessage extends BaseModel {
   @belongsTo(() => User)
   declare user: BelongsTo<typeof User>
 
-  @belongsTo(() => ChatRoom)
+  @belongsTo(() => ChatRoom, { serializeAs: null })
   declare chatRoom: BelongsTo<typeof ChatRoom>
-
-  serialize() {
-    return {
-      id: this.id,
-      chatRoomId: this.chatRoomId,
-      message: this.message,
-      messageType: this.messageType,
-      metadata: this.metadata,
-      createdAt: this.createdAt.toISO(),
-      user: {
-        id: this.user.id,
-        fullName: this.user.fullName,
-        email: this.user.email,
-      },
-    }
-  }
 }
