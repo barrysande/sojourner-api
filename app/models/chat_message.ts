@@ -4,9 +4,9 @@ import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 import User from './user.js'
 import ChatRoom from './chat_room.js'
 
-type MessageType = 'text' | 'system'
+export type MessageType = 'text' | 'system'
 
-interface SystemMessageMetadata {
+export interface SystemMessageMetadata {
   action?: 'user_joined' | 'user_left' | 'gem_shared' | 'group_dissolved'
   targetUserId?: number
   targetUserName?: string

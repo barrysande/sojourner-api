@@ -17,10 +17,14 @@ export default class ChatRoom extends BaseModel {
   @column({ serialize: (value: DateTime) => value.toISO() })
   declare lastActivityAt: DateTime
 
-  @column.dateTime({ autoCreate: true })
+  @column.dateTime({ autoCreate: true, serialize: (value: DateTime) => value.toISO() })
   declare createdAt: DateTime
 
-  @column.dateTime({ autoCreate: true, autoUpdate: true })
+  @column.dateTime({
+    autoCreate: true,
+    autoUpdate: true,
+    serialize: (value: DateTime) => value.toISO(),
+  })
   declare updatedAt: DateTime
 
   @belongsTo(() => ShareGroup)
