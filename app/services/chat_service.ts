@@ -5,6 +5,7 @@ import ShareGroupMember from '#models/share_group_member'
 import { DateTime } from 'luxon'
 import HiddenGem from '#models/hidden_gem'
 import ShareGroup from '#models/share_group'
+import logger from '@adonisjs/core/services/logger'
 
 export class ChatService {
   async createChatRoomForGroup(shareGroupId: number): Promise<ChatRoom> {
@@ -190,12 +191,20 @@ export class ChatService {
     )
   }
 
-  async deleteUserMessagesFromGroup(userId: number, shareGroupId: number): Promise<void> {
+  async deleteUserMessagesFromGroup(userId: number, shareGroupId: number): Promise<number> {
     const chatRoom = await this.getChatRoomByGroupId(shareGroupId)
 
-    if (!chatRoom) return
+    if (!chatRoom) return 0
 
-    await ChatMessage.query().where('chat_room_id', chatRoom.id).where('user_id', userId).delete()
+    const deletedMessages = await ChatMessage.query()
+      .where('chat_room_id', chatRoom.id)
+      .where('user_id', userId)
+      .delete()
+
+    logger.info(
+      `Deleted ${deletedMessages.length} messages for user ${userId} from group ${shareGroupId}`
+    )
+    return deletedMessages.length
   }
 
   async deleteChatRoom(shareGroupId: number): Promise<void> {
