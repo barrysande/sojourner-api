@@ -1,12 +1,6 @@
 import type { ApplicationService } from '@adonisjs/core/types'
 import { Server } from 'socket.io'
 
-declare module '@adonisjs/core/types' {
-  interface ContainerBindings {
-    'socket.io': Server | null
-  }
-}
-
 export default class SocketProvider {
   constructor(protected app: ApplicationService) {}
 
@@ -29,10 +23,10 @@ export default class SocketProvider {
    * The application has been booted
    */
   async start() {
-    const httpServer = await this.app.container.make('server')
+    const adonisHttpServer = await this.app.container.make('server')
 
     // Access the underlying Node.js server
-    this.io = new Server(httpServer.getNodeServer(), {
+    this.io = new Server(adonisHttpServer.getNodeServer(), {
       cors: {
         origin: process.env.FRONTEND_URL || 'http://localhost:5173',
         methods: ['GET', 'POST'],
