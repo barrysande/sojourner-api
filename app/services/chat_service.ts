@@ -1,9 +1,10 @@
 import ChatMessage, { MessageType, SystemMessageMetadata } from '#models/chat_message'
 import ChatRoom from '#models/chat_room'
-import ShareGroup from '#models/share_group'
 import User from '#models/user'
 import ShareGroupMember from '#models/share_group_member'
 import { DateTime } from 'luxon'
+import HiddenGem from '#models/hidden_gem'
+import ShareGroup from '#models/share_group'
 
 export class ChatService {
   async createChatRoomForGroup(shareGroupId: number): Promise<ChatRoom> {
@@ -83,5 +84,125 @@ export class ChatService {
       .first()
 
     return !!membership
+  }
+
+  async getUserChatRooms(userId: number) {
+    const activeMemberships = await ShareGroupMember.query()
+      .where('user_id', userId)
+      .where('status', 'active')
+      .select('share_group_id')
+
+    const groupIds = activeMemberships.map((m) => m.shareGroupId)
+
+    if (groupIds.length === 0) {
+      return []
+    }
+
+    const chatRooms = await ChatRoom.query()
+      .whereIn('share_group_id', groupIds)
+      .preload('shareGroup')
+      .orderBy('last_activity_at', 'desc')
+
+    return chatRooms.map((room) => room.toJSON())
+  }
+
+  async createGroupJoinedSystemMessage(
+    shareGroupId: number,
+    newUserId: number
+  ): Promise<ChatMessage> {
+    const newUser = await User.findOrFail(newUserId)
+
+    const chatRoom = await this.createChatRoomForGroup(shareGroupId)
+
+    return await this.saveMessage(
+      chatRoom.id,
+      newUserId,
+      `${newUser.fullName} joined the group`,
+      'system',
+      {
+        action: 'user_joined',
+        targetUserId: newUserId,
+        targetUserName: newUser.fullName,
+      }
+    )
+  }
+
+  async createGroupLeftSystemMessage(
+    shareGroupId: number,
+    leftUserId: number
+  ): Promise<ChatMessage> {
+    const leftUser = await User.findOrFail(leftUserId)
+    const chatRoom = await this.createOrFindChatRoom(shareGroupId)
+
+    return await this.saveMessage(
+      chatRoom.id,
+      leftUserId,
+      `${leftUser.fullName} left the group`,
+      'system',
+      {
+        action: 'user_left',
+        targetUserId: leftUserId,
+        targetUserName: leftUser.fullName,
+      }
+    )
+  }
+
+  async createGemSharedSystemMessage(
+    shareGroupId: number,
+    sharedBy: number,
+    gemIds: number[]
+  ): Promise<ChatMessage> {
+    const sharer = await User.findOrFail(sharedBy)
+
+    const gems = await HiddenGem.query().whereIn('id', gemIds).select('id', 'name')
+
+    const chatRoom = await this.createOrFindChatRoom(shareGroupId)
+
+    const gemNames = gems.map((gem) => gem.name)
+    const message =
+      gemIds.length === 1
+        ? `${sharer.fullName} shared "${gemNames[0]}" with the group`
+        : `${sharer.fullName} shared ${gemIds.length} gems with the group`
+
+    return await this.saveMessage(chatRoom.id, sharedBy, message, 'system', {
+      action: 'gem_shared',
+      gemIds: gemIds,
+      gemNames: gemNames,
+    })
+  }
+
+  async createGroupDissolvedSystemMessage(
+    shareGroupId: number,
+    dissolvedBy: number
+  ): Promise<ChatMessage> {
+    const chatRoom = await this.createOrFindChatRoom(shareGroupId)
+    const dissolver = await User.findOrFail(dissolvedBy)
+    const shareGroup = await ShareGroup.findOrFail(shareGroupId)
+
+    return await this.saveMessage(
+      chatRoom.id,
+      dissolvedBy,
+      `${dissolver.fullName} dissolved the ${shareGroup.name} share group`,
+      'system',
+      {
+        action: 'group_dissolved',
+      }
+    )
+  }
+
+  async deleteUserMessagesFromGroup(userId: number, shareGroupId: number): Promise<void> {
+    const chatRoom = await this.getChatRoomByGroupId(shareGroupId)
+
+    if (!chatRoom) return
+
+    await ChatMessage.query().where('chat_room_id', chatRoom.id).where('user_id', userId).delete()
+  }
+
+  async deleteChatRoom(shareGroupId: number): Promise<void> {
+    const chatRoom = await this.getChatRoomByGroupId(shareGroupId)
+
+    if (!chatRoom) return
+
+    await chatRoom.delete()
   }
 }
