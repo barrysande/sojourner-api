@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column, hasMany } from '@adonisjs/lucid/orm'
+import { BaseModel, column, belongsTo, hasMany } from '@adonisjs/lucid/orm'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import ShareGroup from './share_group.js'
 import ChatMessage from './chat_message.js'
@@ -14,10 +14,15 @@ export default class ChatRoom extends BaseModel {
   @column()
   declare roomName: string | null
 
-  @column({ serialize: (value: DateTime) => value.toISO() })
+  @column.dateTime({
+    serialize: (value: DateTime) => value.toISO(),
+  })
   declare lastActivityAt: DateTime
 
-  @column.dateTime({ autoCreate: true, serialize: (value: DateTime) => value.toISO() })
+  @column.dateTime({
+    autoCreate: true,
+    serialize: (value: DateTime) => value.toISO(),
+  })
   declare createdAt: DateTime
 
   @column.dateTime({

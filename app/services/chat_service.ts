@@ -1,13 +1,15 @@
-import ChatMessage, { MessageType, SystemMessageMetadata } from '#models/chat_message'
+import ChatMessage, { type MessageType, type SystemMessageMetadata } from '#models/chat_message'
 import ChatRoom from '#models/chat_room'
 import User from '#models/user'
 import ShareGroupMember from '#models/share_group_member'
-import { DateTime } from 'luxon'
 import HiddenGem from '#models/hidden_gem'
 import ShareGroup from '#models/share_group'
+import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 
 export class ChatService {
+  private readonly MAX_MESSAGE_LENGTH = 2000
+
   async createChatRoomForGroup(shareGroupId: number): Promise<ChatRoom> {
     return await ChatRoom.create({ shareGroupId, lastActivityAt: DateTime.now() })
   }
@@ -23,8 +25,20 @@ export class ChatService {
     let chatRoom = await this.getChatRoomByGroupId(shareGroupId)
 
     if (!chatRoom) {
-      chatRoom = await this.createChatRoomForGroup(shareGroupId)
-      chatRoom.load('shareGroup')
+      try {
+        chatRoom = await this.createChatRoomForGroup(shareGroupId)
+        await chatRoom.load('shareGroup')
+      } catch (error) {
+        // Handle duplicate key violation (PostgreSQL code 23505)
+        if (error.code === '23505') {
+          chatRoom = await this.getChatRoomByGroupId(shareGroupId)
+          if (!chatRoom) {
+            throw new Error('Failed to create or find chat room after race condition')
+          }
+        } else {
+          throw error
+        }
+      }
     }
 
     return chatRoom
@@ -37,21 +51,25 @@ export class ChatService {
     type: MessageType = 'text',
     metadata: SystemMessageMetadata | null = null
   ): Promise<ChatMessage> {
-    // 1. check for message limit 2. save the chat message 3. update last activity.
-    if (message.length > 280) {
-      throw new Error('Message exceeds 280 character limit.')
+    const trimmedMessage = message.trim()
+    if (trimmedMessage.length === 0) {
+      throw new Error('Message cannot be empty')
+    }
+
+    if (trimmedMessage.length > this.MAX_MESSAGE_LENGTH) {
+      throw new Error(`Message exceeds the ${this.MAX_MESSAGE_LENGTH} character limit`)
     }
 
     const chatMessage = await ChatMessage.create({
       chatRoomId: roomId,
       userId,
-      message: message.trim(),
+      message: trimmedMessage,
       messageType: type,
       metadata,
     })
 
     const chatRoom = await ChatRoom.findOrFail(roomId)
-    chatRoom.updateLastActivity()
+    await chatRoom.updateLastActivity()
 
     return chatMessage
   }
@@ -65,15 +83,12 @@ export class ChatService {
       .orderBy('created_at', 'desc')
       .paginate(page, limit)
 
-    messages.reverse()
+    // https://lucid.adonisjs.com/docs/model-query-builder#paginate
+    const serialized = messages.serialize()
 
     return {
-      messages: messages.map((msg) => msg.toJSON()),
-      pagination: {
-        page: messages.currentPage,
-        perPage: messages.perPage,
-        total: messages.total,
-      },
+      messages: serialized.data.reverse(),
+      meta: serialized.meta,
     }
   }
 
@@ -88,12 +103,12 @@ export class ChatService {
   }
 
   async getUserChatRooms(userId: number) {
-    const activeMemberships = await ShareGroupMember.query()
+    const userMemberships = await ShareGroupMember.query()
       .where('user_id', userId)
       .where('status', 'active')
       .select('share_group_id')
 
-    const groupIds = activeMemberships.map((m) => m.shareGroupId)
+    const groupIds = userMemberships.map((m) => m.shareGroupId)
 
     if (groupIds.length === 0) {
       return []
@@ -113,7 +128,7 @@ export class ChatService {
   ): Promise<ChatMessage> {
     const newUser = await User.findOrFail(newUserId)
 
-    const chatRoom = await this.createChatRoomForGroup(shareGroupId)
+    const chatRoom = await this.createOrFindChatRoom(shareGroupId)
 
     return await this.saveMessage(
       chatRoom.id,
@@ -153,6 +168,9 @@ export class ChatService {
     sharedBy: number,
     gemIds: number[]
   ): Promise<ChatMessage> {
+    if (gemIds.length === 0) {
+      throw new Error('Cannot create gem shared message without gems.')
+    }
     const sharer = await User.findOrFail(sharedBy)
 
     const gems = await HiddenGem.query().whereIn('id', gemIds).select('id', 'name')
@@ -196,15 +214,13 @@ export class ChatService {
 
     if (!chatRoom) return 0
 
-    const deletedMessages = await ChatMessage.query()
+    const deletedCount = await ChatMessage.query()
       .where('chat_room_id', chatRoom.id)
       .where('user_id', userId)
       .delete()
 
-    logger.info(
-      `Deleted ${deletedMessages.length} messages for user ${userId} from group ${shareGroupId}`
-    )
-    return deletedMessages.length
+    logger.info(`Deleted ${deletedCount[0]} messages for user ${userId} from group ${shareGroupId}`)
+    return deletedCount[0]
   }
 
   async deleteChatRoom(shareGroupId: number): Promise<void> {

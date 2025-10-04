@@ -1,8 +1,8 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column } from '@adonisjs/lucid/orm'
+import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
-import User from './user.js'
 import ChatRoom from './chat_room.js'
+import User from './user.js'
 
 export type MessageType = 'text' | 'system'
 
@@ -36,15 +36,17 @@ export default class ChatMessage extends BaseModel {
   })
   declare metadata: SystemMessageMetadata | null
 
-  @column.dateTime({ autoCreate: true })
+  @column.dateTime({
+    autoCreate: true,
+    serialize: (value: DateTime) => value.toISO(),
+  })
   declare createdAt: DateTime
 
-  @column.dateTime({ autoCreate: true, autoUpdate: true })
-  declare updatedAt: DateTime
+  @belongsTo(() => ChatRoom, {
+    serializeAs: null,
+  })
+  declare chatRoom: BelongsTo<typeof ChatRoom>
 
   @belongsTo(() => User)
   declare user: BelongsTo<typeof User>
-
-  @belongsTo(() => ChatRoom, { serializeAs: null })
-  declare chatRoom: BelongsTo<typeof ChatRoom>
 }

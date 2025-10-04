@@ -11,7 +11,7 @@ export default class extends BaseSchema {
         .unsigned()
         .references('id')
         .inTable('chat_rooms')
-        .onDelete('CASCASE')
+        .onDelete('CASCADE')
 
       table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE')
 
@@ -22,7 +22,7 @@ export default class extends BaseSchema {
       table.index(['chat_room_id', 'created_at'], 'chat_messages_room_time_index')
       table.index(['user_id'], 'chat_messages_use_index')
 
-      table.timestamp('created_at').defaultTo(this.now).notNullable()
+      table.timestamp('created_at').defaultTo(this.now()).notNullable()
       table.timestamp('updated_at')
     })
   }

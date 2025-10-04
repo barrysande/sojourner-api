@@ -67,5 +67,4 @@ export default await Env.create(new URL('../', import.meta.url), {
   MAIL_FROM_NAME: Env.schema.string(),
   MAIL_FROM_ADDRESS: Env.schema.string(),
   FRONTEND_URL: Env.schema.string(),
-  JWT_SECRET: Env.schema.string(),
 })
