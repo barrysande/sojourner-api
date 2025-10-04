@@ -88,6 +88,7 @@ export function setupWebsocketsHandlers(io: Server) {
     })
 
     socket.on('typing_start', async (data: { roomId: number }) => {
+      // 1. A user start typing, check for typingTimeouts and clear any existing for that room - clear old ones so no races 2. set an autoclear every 5 seconds - auto clear for users who abruptly close chat without emitting a typing_stop event 3. add user to typingUsers 4. emit typing to the chat 5.
       const typingKey = `${data.roomId}_${user.id}`
 
       if (typingTimeouts.has(typingKey)) {
@@ -113,6 +114,108 @@ export function setupWebsocketsHandlers(io: Server) {
       }
 
       typingUsers.get(data.roomId)!.add(user.id)
+
+      const roomName = `room_${data.roomId}`
+      socket.to(roomName).emit('typing_users', {
+        users: Array.from(typingUsers.get(data.roomId)!),
+      })
+    })
+
+    socket.on('typing_stop', async (data: { roomId: number }) => {
+      const typingKey = `${data.roomId}_${user.id}`
+
+      if (typingTimeouts.has(typingKey)) {
+        clearTimeout(typingTimeouts.get(typingKey)!)
+        typingTimeouts.delete(typingKey)
+      }
+
+      const typing = typingUsers.get(data.roomId)
+
+      if (!typing) return
+
+      typing.delete(user.id)
+
+      const roomName = `room_${data.roomId}`
+      socket.to(roomName).emit('typing_users', {
+        users: Array.from(typing),
+      })
+
+      if (typing.size === 0) {
+        typingUsers.delete(data.roomId)
+      }
+    })
+
+    socket.on('disconnect', () => {
+      logger.info(`User ${user.fullName} (ID: ${user.id}) disconnected`)
+
+      const connections = userConnections.get(user.id)
+      if (connections) {
+        connections.delete(socket.id)
+        if (connections.size === 0) {
+          userConnections.delete(user.id)
+        }
+      }
+
+      for (const [roomId, typing] of typingUsers.entries()) {
+        if (typing.has(user.id)) {
+          typing.delete(user.id)
+
+          const typingKey = `${roomId}_${user.id}`
+          if (typingTimeouts.has(typingKey)) {
+            clearTimeout(typingTimeouts.get(typingKey)!)
+            typingTimeouts.delete(typingKey)
+          }
+
+          const roomName = `room_${roomId}`
+          socket.to(roomName).emit('typing_users', {
+            users: Array.from(typing),
+          })
+
+          if (typing.size === 0) {
+            typingUsers.delete(roomId)
+          }
+        }
+      }
     })
   })
+}
+
+export async function disconnectUserFromGroup(io: Server, userId: number, shareGroupId: number) {
+  const chatService = await app.container.make(ChatService)
+  const chatRoom = await chatService.getChatRoomByGroupId(shareGroupId)
+
+  if (!chatRoom) {
+    return
+  }
+
+  const roomName = `room_${chatRoom.id}`
+  const userSocketIds = userConnections.get(userId)
+
+  if (userSocketIds) {
+    for (const socketId of userSocketIds) {
+      const socket = io.sockets.sockets.get(socketId)
+
+      if (socket) {
+        socket.leave(roomName)
+        socket.emit('kicked_from_room', {
+          message: 'You have been removed from this group',
+          shareGroupId,
+        })
+      }
+    }
+  }
+
+  const typing = typingUsers.get(chatRoom.id)
+  if (typing && typing.has(userId)) {
+    typing.delete(userId)
+
+    const typingKey = `${chatRoom.id}_${userId}`
+    if (typingTimeouts.has(typingKey)) {
+      typingTimeouts.delete(typingKey)
+    }
+
+    io.to(roomName).emit('typing_users', {
+      users: Array.from(typing),
+    })
+  }
 }
