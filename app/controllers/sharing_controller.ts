@@ -7,6 +7,8 @@ import TierService from '#services/tier_service'
 import { shareGemsValidator, unshareGemsValidator } from '#validators/sharing'
 import HiddenGem from '#models/hidden_gem'
 import SharedGem from '#models/shared_gem'
+import { ChatService } from '#services/chat_service'
+import logger from '@adonisjs/core/services/logger'
 
 @inject()
 export default class SharingController {
@@ -14,7 +16,8 @@ export default class SharingController {
     private sharingService: SharingService,
     private shareGroupService: ShareGroupService,
     private notificationService: NotificationService,
-    private tierService: TierService
+    private tierService: TierService,
+    private chatService: ChatService
   ) {}
 
   /**
@@ -72,6 +75,12 @@ export default class SharingController {
         user.id,
         gemIds
       )
+
+      try {
+        await this.chatService.createGemSharedSystemMessage(shareGroupId, user.id, gemIds)
+      } catch (error) {
+        logger.error('Failed to create gem shared system message:', error)
+      }
 
       return response.created({
         message: `Successfully shared ${gemIds.length} gem(s) with the group`,

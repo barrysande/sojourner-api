@@ -14,13 +14,17 @@ import {
 import ShareGroupMember from '#models/share_group_member'
 import logger from '@adonisjs/core/services/logger'
 import ShareGroup from '#models/share_group'
+import { ChatService } from '#services/chat_service'
+import { disconnectUserFromGroup } from '#services/websocket_service'
+import socket from '#services/socket'
 
 @inject()
 export default class ShareGroupsController {
   constructor(
     private shareGroupService: ShareGroupService,
     private notificationService: NotificationService,
-    private tierService: TierService
+    private tierService: TierService,
+    private chatService: ChatService
   ) {}
 
   private async processInvitations(
@@ -121,13 +125,13 @@ export default class ShareGroupsController {
   }
 
   //   POST /api/share-groups
-  //   CREATE NEW SHARE GROUPS & SEND NOTIFICATIONS
+  //   CREATE NEW SHARE GROUPS, CREATE CHAT ROOM & SEND NOTIFICATIONS
   async store({ auth, request, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
       const { name, inviteEmails } = await request.validateUsing(createShareGroupValidator)
 
-      // 1. check if user can create share groups 2. check if number of to-be members is within tier limits 3. generate invite code 4. create share group 5. create group membership 6. process the invitations
+      // 1. check if user can create share groups 2. check if number of to-be members is within tier limits 3. generate invite code 4. create share group 5. create group membership 6. Create Chat room 7. process the invitations
       const canCreate = await this.tierService.canCreateShareGroup(user.id)
 
       if (!canCreate.canCreate) {
@@ -163,6 +167,12 @@ export default class ShareGroupsController {
         invitedAt: DateTime.now(),
         joinedAt: DateTime.now(),
       })
+
+      try {
+        await this.chatService.createChatRoomForGroup(shareGroup.id)
+      } catch (error) {
+        logger.error('Failed to create chat room:', error)
+      }
 
       const inviteResults = await this.processInvitations(shareGroup.id, user.id, inviteEmails)
 
@@ -225,7 +235,7 @@ export default class ShareGroupsController {
       const user = auth.getUserOrFail()
       const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
 
-      // 1. Check tier permissions 2. Find share group by invite code 3. Check group capacity 4.  Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group
+      // 1. Check tier permissions 2. Find share group by invite code 3. Check group capacity 4.  Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group 4. create notification 5. create system chat joined notification.
       const canJoin = await this.tierService.canJoinShareGroup(user.id)
       if (!canJoin.canJoin) {
         return response.forbidden({
@@ -257,6 +267,12 @@ export default class ShareGroupsController {
 
           await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
 
+          try {
+            await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
+          } catch (error) {
+            logger.error('Failed to create join system message:', error)
+          }
+
           return response.ok({
             message: 'Successfully joined share group',
             shareGroup: shareGroup,
@@ -275,6 +291,12 @@ export default class ShareGroupsController {
       })
 
       await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
+
+      try {
+        await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
+      } catch (error) {
+        logger.error('Failed to create join system message:', error)
+      }
       return response.ok({
         message: 'Successfully joined share group',
         shareGroup: shareGroup,
@@ -370,6 +392,21 @@ export default class ShareGroupsController {
       }
 
       await this.notificationService.createGroupLeftNotification(shareGroupId, user.id)
+
+      try {
+        await this.chatService.createGroupLeftSystemMessage(shareGroupId, user.id)
+
+        const deletedCount = await this.chatService.deleteUserMessagesFromGroup(
+          user.id,
+          shareGroupId
+        )
+
+        logger.info(`Deleted ${deletedCount} messages for user ${user.id}`)
+
+        await disconnectUserFromGroup(socket.io, user.id, shareGroupId)
+      } catch (error) {
+        logger.error('Failed to handle leave chat cleanup:', error)
+      }
       return response.ok({
         message: 'Successfully left share group',
       })
@@ -394,6 +431,12 @@ export default class ShareGroupsController {
         return response.forbidden({
           message: 'Only group creators can dissolve groups',
         })
+      }
+
+      try {
+        await this.chatService.createGroupDissolvedSystemMessage(shareGroupId, user.id)
+      } catch (error) {
+        logger.error('Failed to create dissolution message:', error)
       }
 
       const dissolvedGroup = await this.shareGroupService.dissolveShareGroup(shareGroupId)
