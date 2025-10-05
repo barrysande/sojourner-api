@@ -14,7 +14,6 @@ import {
 import ShareGroupMember from '#models/share_group_member'
 import logger from '@adonisjs/core/services/logger'
 import ShareGroup from '#models/share_group'
-import mail from '@adonisjs/mail/services/main'
 
 @inject()
 export default class ShareGroupsController {

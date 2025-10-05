@@ -9,6 +9,7 @@ import SharedGem from './shared_gem.js'
 import ShareGroup from './share_group.js'
 import ShareGroupMember from './share_group_member.js'
 import Notification from './notification.js'
+import ChatMessage from './chat_message.js'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -54,4 +55,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @hasMany(() => Notification)
   declare notifications: HasMany<typeof Notification>
+
+  @hasMany(() => ChatMessage)
+  declare chatMessage: HasMany<typeof ChatMessage>
 }

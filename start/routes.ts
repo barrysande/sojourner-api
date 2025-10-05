@@ -16,6 +16,7 @@ const ExpensesController = () => import('#controllers/expenses_controller')
 const ShareGroupsController = () => import('#controllers/share_groups_controller')
 const SharingController = () => import('#controllers/sharing_controller')
 const NotificationsController = () => import('#controllers/notifications_controller')
+const ChatsController = () => import('#controllers/chats_controller')
 
 // router.get('/', async () => {
 //   return {
@@ -93,4 +94,16 @@ router
     router.delete('/notifications/:id', [NotificationsController, 'destroy'])
   })
   .prefix('/api')
+  .use(middleware.auth())
+
+// CHAT ROUTES
+router
+  .group(() => {
+    router.get('/rooms', [ChatsController, 'getUserRooms'])
+    router.get('/groups/:shareGroupId', [ChatsController, 'getGroupChatRoom'])
+    router.get('/rooms/:roomId/messages', [ChatsController, 'getMessages'])
+    router.delete('/messages/:messageId', [ChatsController, 'deleteMessage'])
+    router.delete('/groups/:shareGroupId/my-messages', [ChatsController, 'deleteAllMyMessages'])
+  })
+  .prefix('/api/chat')
   .use(middleware.auth())

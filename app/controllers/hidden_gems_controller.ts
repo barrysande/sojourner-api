@@ -1,7 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
-import { getMetaData } from '@adonisjs/core/commands'
 import { hiddenGemWithPhotosValidator } from '#validators/cloudinary_photo'
 import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
@@ -54,9 +53,10 @@ export default class HiddenGemsController {
         .orderBy('createdAt', 'desc')
         .paginate(page, limit)
 
+      const serialized = gems.serialize()
       return response.ok({
-        data: gems.toJSON(),
-        meta: getMetaData(),
+        data: serialized.data,
+        meta: serialized.meta,
       })
     } catch (error) {
       throw error
