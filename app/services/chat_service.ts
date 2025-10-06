@@ -21,6 +21,10 @@ export class ChatService {
       .first()
   }
 
+  async getChatRoomById(roomId: number): Promise<ChatRoom | null> {
+    return await ChatRoom.query().where('id', roomId).preload('shareGroup').first()
+  }
+
   async createOrFindChatRoom(shareGroupId: number): Promise<ChatRoom> {
     let chatRoom = await this.getChatRoomByGroupId(shareGroupId)
 

@@ -2,11 +2,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import { ChatService } from '#services/chat_service'
 import ChatMessage from '#models/chat_message'
-import {
-  chatGroupValidator,
-  messageHistoryValidator,
-  deleteMessageValidator,
-} from '#validators/chat'
+import { messageHistoryValidator, deleteMessageValidator } from '#validators/chat'
 
 @inject()
 export default class ChatsController {
@@ -14,7 +10,11 @@ export default class ChatsController {
 
   async getGroupChatRoom({ auth, params, response }: HttpContext) {
     const user = auth.getUserOrFail()
-    const { shareGroupId } = await chatGroupValidator.validate(params)
+    const shareGroupId = Number(params.shareGroupId)
+
+    if (Number.isNaN(shareGroupId)) {
+      return response.badRequest({ message: 'Invalid share group ID' })
+    }
 
     const hasAccess = await this.chatService.validateChatAccess(user.id, shareGroupId)
 
@@ -24,20 +24,20 @@ export default class ChatsController {
 
     const chatRoom = await this.chatService.createOrFindChatRoom(shareGroupId)
 
-    return response.ok({ chatRoom: chatRoom.serialize() })
+    return response.ok({ chatRoom: chatRoom.toJSON() })
   }
 
   async getMessages({ auth, params, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
-    const roomId = Number(params.id)
+    const roomId = Number(params.roomId)
 
-    if (!roomId) {
+    if (Number.isNaN(roomId)) {
       return response.badRequest({ message: 'Invalid room ID' })
     }
 
     const { page, limit } = await messageHistoryValidator.validate(request.qs())
 
-    const chatRoom = await this.chatService.getChatRoomByGroupId(roomId)
+    const chatRoom = await this.chatService.getChatRoomById(roomId)
     if (!chatRoom) {
       return response.notFound({ message: 'Chat room not found' })
     }
@@ -50,7 +50,7 @@ export default class ChatsController {
 
     const history = await this.chatService.getChatHistory(roomId, page, limit)
 
-    response.ok({ history })
+    return response.ok({ history })
   }
 
   async getUserRooms({ auth, response }: HttpContext) {
@@ -81,7 +81,7 @@ export default class ChatsController {
     const user = auth.getUserOrFail()
     const shareGroupId = Number(params.shareGroupId)
 
-    if (!shareGroupId) {
+    if (Number.isNaN(shareGroupId)) {
       return response.badRequest({ message: 'Invalid share group ID' })
     }
 
