@@ -56,7 +56,7 @@ export default class AuthController {
 
   async login({ request, response, auth }: HttpContext) {
     try {
-      const { email, password } = await request.validateUsing(loginValidator)
+      const { email, password, rememberMe } = await request.validateUsing(loginValidator)
 
       // construct key to pass to the limiter config instance - loginLimiter
       const key = `login_${request.ip()}_${email.toLowerCase().trim()}`
@@ -78,7 +78,7 @@ export default class AuthController {
       }
 
       // login user
-      await auth.use('web').login(user)
+      await auth.use('web').login(user, !!rememberMe)
 
       return response.ok({
         message: 'Login successful',

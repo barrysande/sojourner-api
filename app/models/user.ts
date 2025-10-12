@@ -10,6 +10,7 @@ import ShareGroup from './share_group.js'
 import ShareGroupMember from './share_group_member.js'
 import Notification from './notification.js'
 import ChatMessage from './chat_message.js'
+import { DbRememberMeTokensProvider } from '@adonisjs/auth/session'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -40,6 +41,8 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
+
+  static rememberMeTokens = DbRememberMeTokensProvider.forModel(User)
 
   @hasMany(() => HiddenGem)
   declare hiddenGems: HasMany<typeof HiddenGem>

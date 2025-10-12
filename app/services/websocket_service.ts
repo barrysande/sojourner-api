@@ -63,7 +63,7 @@ export function setupWebsocketsHandlers(io: Server) {
 
     socket.on('send_message', async (data: { roomId: number; message: string }) => {
       try {
-        // 1. check if message is empty 2. save chat message contents 3. load user's chat message 4. send message to group 5. clear typing indicator
+        // 1. check if message is empty 2. save chat message contents 3. load user's chat message that has been sent 4. send message to group 5. clear typing indicator
         if (!data.message?.trim()) {
           socket.emit('error', { message: 'Message cannot be empty' })
         }
