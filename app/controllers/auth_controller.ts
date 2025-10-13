@@ -139,6 +139,7 @@ export default class AuthController {
           id: user.id,
           email: user.email,
           fullName: user.fullName,
+          tier: user.tier,
           createdAt: user.createdAt,
         },
       })
