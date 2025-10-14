@@ -9,7 +9,7 @@
 
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
-import { registerThrottle, passwordResetThrottle } from './limiter.js'
+import { registerThrottle, passwordResetThrottle, loginThrottle } from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
 const ExpensesController = () => import('#controllers/expenses_controller')
@@ -28,7 +28,7 @@ const ChatsController = () => import('#controllers/chats_controller')
 router
   .group(() => {
     router.post('/register', [AuthController, 'register']).use(registerThrottle)
-    router.post('/login', [AuthController, 'login'])
+    router.post('/login', [AuthController, 'login']).use(loginThrottle)
     router.post('/logout', [AuthController, 'logout']).use(middleware.auth())
     router.get('/me', [AuthController, 'me']).use(middleware.auth())
     router.patch('/change-password', [AuthController, 'changePassword']).use(middleware.auth())

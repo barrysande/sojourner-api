@@ -10,7 +10,6 @@ import {
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
-import { loginLimiter } from '#start/limiter'
 import PasswordResetService from '#services/password_reset_service'
 import { inject } from '@adonisjs/core'
 
@@ -58,26 +57,8 @@ export default class AuthController {
     try {
       const { email, password, rememberMe } = await request.validateUsing(loginValidator)
 
-      // construct key to pass to the limiter config instance - loginLimiter
-      const key = `login_${request.ip()}_${email.toLowerCase().trim()}`
-      const [error, user] = await loginLimiter.penalize(key, () => {
-        return User.verifyCredentials(email, password)
-      })
-
-      if (error) {
-        response.header('X-RateLimit-Limit', '5')
-        response.header('X-RateLimit-Remaining', '0')
-        response.header('Retry-After', error.response.availableIn.toString())
-        return response.tooManyRequests({
-          message: 'Too many login attempts',
-          error: {
-            type: 'E_TOO_MANY_REQUESTS',
-            retryAfter: error.response.availableIn,
-          },
-        })
-      }
-
       // login user
+      const user = await User.verifyCredentials(email, password)
       await auth.use('web').login(user, !!rememberMe)
 
       return response.ok({
@@ -202,7 +183,7 @@ export default class AuthController {
     }
   }
 
-  // CHANGGING PASSWORD WHILE LOGGED OUT
+  // CHANGING PASSWORD WHILE LOGGED OUT
   async forgotPassword({ request, response }: HttpContext) {
     // 1. send password reset token if email provided is associated to a user
     try {
