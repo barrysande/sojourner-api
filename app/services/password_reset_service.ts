@@ -37,7 +37,7 @@ export default class PasswordResetService {
       token,
     })
 
-    return `${frontendUrl}/reset-password?${params.toString()}`
+    return `${frontendUrl}/auth/reset-password?${params.toString()}`
   }
 
   async sendResetEmail(email: string): Promise<boolean> {
