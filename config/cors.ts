@@ -11,7 +11,7 @@ const corsConfig = defineConfig({
   origin: true,
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'DELETE'],
   headers: true,
-  exposeHeaders: [],
+  exposeHeaders: ['set-cookie'], // important for forwarding cookies
   credentials: true,
   maxAge: 90,
 })
