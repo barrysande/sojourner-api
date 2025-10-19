@@ -13,10 +13,10 @@ export default class SocketProvider {
     logger.info('Socket.io server started')
   }
 
-  async shutdown() {
-    if (socket.io) {
-      socket.io?.close()
-      logger.info('Socket.io server stopped')
-    }
-  }
+  // async shutdown() {
+  //   if (socket.io) {
+  //     socket.io.close()
+  //     logger.info('Socket.io server stopped')
+  //   }
+  // }
 }
