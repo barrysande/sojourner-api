@@ -36,6 +36,14 @@ export default class TierService {
         maxMembersPerGroup: 10,
         maxFileSize: 10 * 1024 * 1024, // 10MB
       },
+      group_paid: {
+        maxPhotosPerGem: 3,
+        maxGemsTotal: 500,
+        canShare: true,
+        maxShareGroups: 10,
+        maxMembersPerGroup: 10,
+        maxFileSize: 10 * 1024 * 1024, // 10MB
+      },
     }
     return limits[tier as keyof typeof limits] || limits.free
   }
@@ -225,11 +233,11 @@ export default class TierService {
     const user = await User.findOrFail(userId)
     const oldTier = user.tier
 
-    // calc effective tier using above method.
+    // calc effective tier using the calculateEffectiveTier method.
     const tierResult = await this.calculateEffectiveTier(userId)
     const newTier = tierResult.tier
 
-    // only update tier if tier changes
+    // only update tier if user wants to change tier
     if (oldTier === newTier) {
       logger.info('Tier unchanged for user', {
         userId,
@@ -268,7 +276,7 @@ export default class TierService {
 
   /**
    * Detect and report tier conflicts
-   * Used to prevent creating conflicting subscriptions BEFORE they're created
+   * Used to prevent creating conflicting subscriptions before they're created
    * @param userId - User to check
    * @returns Object with conflict status and details
    */
@@ -293,6 +301,7 @@ export default class TierService {
       })
       .first()
 
+    // check if the user owns a group subscription
     const ownedGroupSubscription = await GroupSubscription.query()
       .where('owner_user_id', userId)
       .where('status', 'active')
