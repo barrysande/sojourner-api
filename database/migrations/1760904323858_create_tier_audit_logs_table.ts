@@ -28,7 +28,6 @@ export default class extends BaseSchema {
         'chk_audit_triggered_by'
       )
 
-      // Indexes
       table.index(['user_id', 'created_at'], 'idx_tier_audit_user')
       table.index('created_at', 'idx_tier_audit_created')
     })

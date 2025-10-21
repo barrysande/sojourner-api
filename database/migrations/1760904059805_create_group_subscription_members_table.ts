@@ -32,7 +32,7 @@ export default class extends BaseSchema {
       table.index('status', 'idx_group_members_status')
     })
 
-    // Partial unique index
+    // Partial unique index. Deferred to ensure that the dependent columns are created first. See docs at https://lucid.adonisjs.com/docs/migrations#performing-other-database-operations
     this.defer(async (db) => {
       await db.rawQuery(
         `CREATE UNIQUE INDEX one_active_group_per_user 

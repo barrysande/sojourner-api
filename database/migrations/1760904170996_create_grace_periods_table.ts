@@ -33,7 +33,7 @@ export default class extends BaseSchema {
       table.index(['expires_at', 'resolved'], 'idx_grace_periods_expiry')
     })
 
-    // Partial unique index
+    // Partial unique index. Deferred to ensure that the dependent columns are created first. See docs at https://lucid.adonisjs.com/docs/migrations#performing-other-database-operations
     this.defer(async (db) => {
       await db.rawQuery(
         `CREATE UNIQUE INDEX one_active_grace_per_user 

@@ -29,6 +29,12 @@ export default class extends BaseSchema {
       table.index('dodo_subscription_id', 'idx_group_subs_dodo')
       table.index('invite_code', 'idx_group_subs_code')
     })
+
+    this.defer(async (db) => {
+      await db.rawQuery(
+        `CREATE UNIQUE INDEX one_active_plan_per_owner ON ${this.tableName} (owner_user_id, status) WHERE status = 'active'`
+      )
+    })
   }
 
   async down() {
