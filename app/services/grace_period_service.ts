@@ -48,7 +48,7 @@ export class GracePeriodService {
     let deletedCount = 0
     const cloudinaryPublicIds: string[] = []
 
-    // get all non-primary cloudinary public ids
+    // 2. Get all non-primary cloudinary public ids
     for (const gem of gems) {
       for (const photo of gem.photos) {
         cloudinaryPublicIds.push(photo.cloudinaryPublicId)
@@ -61,7 +61,7 @@ export class GracePeriodService {
       return 0
     }
 
-    // Bulk delete from cloudinary
+    // 3. Bulk delete from Cloudinary
     const cloudinaryResult = await this.cloudinaryService.deleteMultipleImages(cloudinaryPublicIds)
     if (cloudinaryResult.failed.length > 0) {
       logger.warn('Some Cloudinary deletions failed during degradation', {
@@ -70,7 +70,7 @@ export class GracePeriodService {
       })
     }
 
-    // delete photos from database
+    // 4. Delete photos from database
     await Photo.query({ client: trx })
       .whereHas('hiddenGem', (query) => {
         query.where('user_id', userId)
@@ -118,6 +118,47 @@ export class GracePeriodService {
     // 2. show first 3 and lock the rest
     const gemsToKeep = allGems.slice(0, freeTierLimit)
     const gemsToLock = allGems.slice(freeTierLimit)
+
+    // 3. Mark gems as locked
+    for (const gem of gemsToLock) {
+      gem.locked = true
+      await gem.save()
+    }
+
+    logger.info('Excess gems locked', {
+      userId,
+      totalGems: allGems.length,
+      kept: gemsToKeep.length,
+      locked: gemsToLock.length,
+    })
+
+    return gemsToLock.length
+  }
+
+  /**
+   * Remove user from all share groups
+   * Updates membership status to 'left'
+   *
+   * @param userId - User to remove from groups
+   * @param trx - Database transaction
+   * @returns Number of groups removed from
+   */
+  private async removeFromAllShareGroups(userId: number, trx: any): Promise<number> {
+    const activeMemberships = await ShareGroupMember.query({ client: trx })
+      .where('user_id', userId)
+      .where('status', 'active')
+
+    for (const membership of activeMemberships) {
+      membership.status = 'left'
+      await membership.save()
+    }
+
+    logger.info('User removed from share groups', {
+      userId,
+      groupCount: activeMemberships.length,
+    })
+
+    return activeMemberships.length
   }
 
   /**
@@ -149,7 +190,7 @@ export class GracePeriodService {
         throw new Error('User already has an active grace period')
       }
 
-      // 2. Create grace period record if no record
+      // 2. Create grace period record if there is none
       const duration = this.calculateGracePeriodDuration(type)
       const startedAt = DateTime.now()
       const expiresAt = startedAt.plus(duration)
@@ -164,6 +205,20 @@ export class GracePeriodService {
           resolved: false,
         },
         { client: trx }
+      )
+
+      // 3. update the user's tier
+      await this.tierService.updateUserTier(
+        userId,
+        `Grace period started: ${type}`,
+        'manual',
+        {
+          gracePeriodId: gracePeriod.id,
+          type,
+          expiresAt: expiresAt.toISO(),
+          originalTier,
+        },
+        trx
       )
 
       logger.info('Grace period started', {
@@ -186,6 +241,7 @@ export class GracePeriodService {
    */
   async clearGracePeriod(userId: number): Promise<void> {
     await db.transaction(async (trx) => {
+      // 1. check if user has an unresolved grace period
       const gracePeriod = await GracePeriod.query({ client: trx })
         .where('user_id', userId)
         .where('resolved', false)
@@ -199,7 +255,7 @@ export class GracePeriodService {
       gracePeriod.resolved = true
       await gracePeriod.save()
 
-      // Update user's tier to reflect their actual subscription status
+      // 2. update user's tier to reflect their actual subscription status
       await this.tierService.updateUserTier(
         userId,
         'Grace period cleared - subscription restored',
@@ -249,10 +305,46 @@ export class GracePeriodService {
       })
 
       // 1. Delete non-primary photos (keep first photo per gem)
-      const deletePhotos = await this.deleteNonPrimaryPhotos(userId, trx)
+      const deletedPhotos = await this.deleteNonPrimaryPhotos(userId, trx)
 
       // 2. Lock gems over free tier limit (keep first 3)
-      // const lockedGems = await this.
+      const lockedGems = await this.lockExcessGems(userId, trx)
+
+      // 3. Remove user from share group(s)
+      const removeFromAllShareGroups = await this.removeFromAllShareGroups(userId, trx)
+
+      // 4. Resolve grace period
+      const gracePeriod = await GracePeriod.query({ client: trx })
+        .where('user_id', userId)
+        .where('resolved', false)
+        .first()
+
+      if (gracePeriod) {
+        gracePeriod.resolved = true
+        await gracePeriod.save()
+      }
+
+      // 5. Update user tier to free
+      await this.tierService.updateUserTier(
+        userId,
+        'Grace period expired - degraded to free tier',
+        'cron',
+        {
+          gracePeriodId: gracePeriod?.id,
+          gracePeriodType: gracePeriod?.type,
+          deletedPhotos,
+          lockedGems,
+          removeFromAllShareGroups,
+        },
+        trx
+      )
+
+      logger.info('User degradation completed', {
+        userId,
+        deletedPhotos,
+        lockedGems,
+        removeFromAllShareGroups,
+      })
     })
   }
 
@@ -273,9 +365,11 @@ export class GracePeriodService {
     })
 
     let degradedCount = 0
+
     for (const gracePeriod of expiredGracePeriods) {
       try {
-        // await this.degradeUserToFree(gracePeriod.userId)degradedCount++
+        await this.degradeUserToFree(gracePeriod.userId)
+        degradedCount++
       } catch (error) {
         logger.error('Failed to degrade user after grace period expiry', {
           userId: gracePeriod.userId,
@@ -292,5 +386,56 @@ export class GracePeriodService {
     })
 
     return degradedCount
+  }
+
+  /**
+   * Send warning emails to users in active grace periods
+   * Called daily by cron job
+   * Warns users their grace period is expiring soon
+   *
+   * @returns Number of warnings sent
+   */
+  async sendGracePeriodWarnings(): Promise<number> {
+    const now = DateTime.now()
+    const warningThreshold = now.plus({ hours: 24 })
+
+    const gracePeriods = await GracePeriod.query()
+      .where('resolved', false)
+      .where('expires_at', '>', now.toSQL())
+      .where('expires_at', '<=', warningThreshold.toSQL())
+      .preload('user')
+
+    let warningsSent = 0
+
+    for (const gracePeriod of gracePeriods) {
+      try {
+        // TODO: Send actual email notification
+        // await mail.send(new GracePeriodWarningMail(gracePeriod.user, gracePeriod))
+
+        logger.info('Grace period warning sent (placeholder)', {
+          userId: gracePeriod.userId,
+          email: gracePeriod.user.email,
+          type: gracePeriod.type,
+          expiresAt: gracePeriod.expiresAt.toISO(),
+          hoursRemaining: gracePeriod.expiresAt.diff(now, 'hours').hours,
+        })
+
+        warningsSent++
+      } catch (error) {
+        logger.error('Failed to send grace period warning', {
+          userId: gracePeriod.userId,
+          gracePeriodId: gracePeriod.id,
+          error: error.message,
+        })
+      }
+    }
+
+    logger.info('Grace period warnings processed', {
+      total: gracePeriods.length,
+      sent: warningsSent,
+      failed: gracePeriods.length - warningsSent,
+    })
+
+    return warningsSent
   }
 }

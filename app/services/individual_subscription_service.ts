@@ -4,6 +4,9 @@ import logger from '@adonisjs/core/services/logger'
 import IndividualSubscription from '#models/individual_subscription'
 import User from '#models/user'
 import TierService from './tier_service.js'
+import { GracePeriodService } from './grace_period_service.js'
+import db from '@adonisjs/lucid/services/db'
+import TierAuditLog from '#models/tier_audit_log'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
@@ -24,7 +27,25 @@ interface CustomerData {
 
 @inject()
 export class IndividualSubscriptionService {
-  constructor(protected tierService: TierService) {}
+  constructor(
+    protected tierService: TierService,
+    protected gracePeriodService: GracePeriodService
+  ) {}
+
+  private calculateExpiresAt(planType: PlanType): DateTime {
+    const now = DateTime.now()
+    switch (planType) {
+      case 'monthly':
+        return now.plus({ months: 1 })
+      case 'quarterly':
+        return now.plus({ months: 3 })
+      case 'annual':
+        return now.plus({ years: 1 })
+      default:
+        throw new Error(`Invalid plan type: ${planType}`)
+    }
+  }
+
   /**
    * Create individual subscription via Dodo Payments
    * @param userId - User subscribing
@@ -33,7 +54,6 @@ export class IndividualSubscriptionService {
    * @param billingAddress - Customer billing address
    * @param customer - Customer information for Dodo
    */
-
   async createIndividualSubscription(
     userId: number,
     planType: PlanType,
@@ -58,24 +78,36 @@ export class IndividualSubscriptionService {
       throw new Error('User already has an active individual subscription')
     }
 
-    // Note that steps 3, 4, and 5 should be locked in a transaction.
+    return await db.transaction(async (trx) => {
+      // 3. call dodo payments api
 
-    // 3. call dodo payments api
+      // 4. Store subscription record
 
-    // 4. Store subscription record
+      const subscription = await IndividualSubscription.create(
+        {
+          userId,
+          planType,
+          status: 'active',
+          expiresAt: this.calculateExpiresAt(planType),
+        },
+        { client: trx }
+      )
 
-    const subscription = await IndividualSubscription.create({
-      userId,
-      planType,
-      status: 'active',
-      expiresAt: this.calculateExpiresAt(planType),
+      // 5. Update the user's tier
+      await this.tierService.updateUserTier(
+        userId,
+        `Individual ${planType} subscription created`,
+        'manual',
+        {
+          subscriptionId: subscription.id,
+          // dodoSubscriptionId: dodoResponse.subscription_id,
+        }
+      )
+      return {
+        subscription,
+        // paymentUrl: dodoResponse.payment_link,
+      }
     })
-
-    // 5. Update the user's tier
-    return {
-      subscription,
-      // paymentUrl
-    }
   }
 
   /**
@@ -114,7 +146,7 @@ export class IndividualSubscriptionService {
     newPlanType: PlanType,
     newProductId: string
   ): Promise<IndividualSubscription> {
-    // 1. chcke user's subscription status
+    // 1. check user's subscription status
     const subscription = await IndividualSubscription.query()
       .where('user_id', userId)
       .where('status', 'active')
@@ -122,35 +154,51 @@ export class IndividualSubscriptionService {
     if (subscription.planType === newPlanType) {
       throw new Error(`Already subscribed to ${newPlanType} plan`)
     }
-
-    // 2. if newPlan not same as current plan call dodo api to change subscription and prorate immediately
-
-    // 3. if successful, get current plan, then assign new plan to the subscription.planType, set expiry date, and save to db.
-
-    logger.info('Individual subscription plan changed', {
-      userId,
-      subscriptionId: subscription.id,
-      // oldPlanType,
-      newPlanType,
-    })
-
-    return subscription
-  }
-
-  private calculateExpiresAt(planType: PlanType): DateTime {
-    const now = DateTime.now()
-    switch (planType) {
-      case 'monthly':
-        return now.plus({ months: 1 })
-      case 'quarterly':
-        return now.plus({ months: 3 })
-      case 'annual':
-        return now.plus({ years: 1 })
-      default:
-        throw new Error(`Invalid plan type: ${planType}`)
+    if (subscription.planType === newPlanType) {
+      throw new Error(`Already subscribed to ${newPlanType} plan`)
     }
+
+    return db.transaction(async (trx) => {
+      // 2. if newPlan not same as current plan call dodo api to change subscription and prorate immediately
+      // 3. if successful, get current plan, then assign new plan to the subscription.planType, and save to db. No need to calculate and set expiry, dodo will set it based on
+      const oldPlanType = subscription.planType
+      subscription.useTransaction(trx)
+      subscription.planType = newPlanType
+      subscription.expiresAt = this.calculateExpiresAt(newPlanType)
+      await subscription.save()
+
+      // 4. log tier change
+      await TierAuditLog.create(
+        {
+          userId,
+          oldTier: 'individual_paid',
+          newTier: 'individual_paid',
+          reason: `Plan changed from ${oldPlanType} to ${newPlanType}`,
+          triggeredBy: 'manual',
+          metadata: {
+            oldPlanType,
+            newPlanType,
+            dodoSubscriptionId: subscription.dodoSubscriptionId,
+            // proratedCharge: dodoResponse.prorated_amount,
+          },
+        },
+        { client: trx }
+      )
+
+      logger.info('Individual subscription plan changed', {
+        userId,
+        subscriptionId: subscription.id,
+        oldPlanType,
+        newPlanType,
+      })
+
+      return subscription
+    })
   }
 
+  /**
+   * Get active individual subscription for user
+   */
   async getActiveIndividualSubscription(userId: number): Promise<IndividualSubscription | null> {
     return await IndividualSubscription.query()
       .where('user_id', userId)
@@ -159,4 +207,19 @@ export class IndividualSubscriptionService {
       .orderBy('created_at', 'desc')
       .first()
   }
+
+  /**
+   * Handle payment success webhook from Dodo
+   * Extends expires_at and clears grace periods
+   */
+
+  /**
+   * Handle payment failure webhook from Dodo
+   * Starts 3-day grace period
+   */
+
+  /**
+   * Handle subscription expired webhook from Dodo
+   * Marks subscription as expired and updates tier
+   */
 }

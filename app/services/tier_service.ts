@@ -216,6 +216,7 @@ export default class TierService {
       details: 'No active subscriptions or grace periods',
     }
   }
+
   /**
    * Update user's tier and log the change to audit trail
    * @param userId - User ID to update
@@ -224,7 +225,6 @@ export default class TierService {
    * @param metadata - Additional context for the change
    * @param trx - Optional database transaction for atomic operations
    */
-
   async updateUserTier(
     userId: number,
     reason: string,
@@ -235,11 +235,11 @@ export default class TierService {
     const user = await User.findOrFail(userId)
     const oldTier = user.tier
 
-    // calc effective tier using the calculateEffectiveTier method.
+    // 1. calc effective tier using the calculateEffectiveTier method.
     const tierResult = await this.calculateEffectiveTier(userId)
     const newTier = tierResult.tier
 
-    // only update tier if user wants to change tier
+    // 2. only update tier if user wants to change tier
     if (oldTier === newTier) {
       logger.info('Tier unchanged for user', {
         userId,

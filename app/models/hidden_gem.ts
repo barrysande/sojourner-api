@@ -31,6 +31,9 @@ export default class HiddenGem extends BaseModel {
   @column()
   declare isPublic: boolean
 
+  @column()
+  declare locked: boolean
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 

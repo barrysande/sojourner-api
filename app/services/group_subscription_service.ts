@@ -138,7 +138,7 @@ export class GroupSubscriptionService {
           ownerUserId: ownerId,
           // dodoSubscriptionId: dodoResponse.subscription_id,
           totalSeats,
-          inviteCode,
+          inviteCode: inviteCode!,
           inviteCodeExpiresAt: this.calculateInviteCodeExpiry(),
           status: 'active',
           expiresAt: this.calculateExpiresAt(planType),
