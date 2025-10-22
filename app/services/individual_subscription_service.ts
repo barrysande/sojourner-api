@@ -58,6 +58,8 @@ export class IndividualSubscriptionService {
       throw new Error('User already has an active individual subscription')
     }
 
+    // Note that steps 3, 4, and 5 should be locked in a transaction.
+
     // 3. call dodo payments api
 
     // 4. Store subscription record
@@ -69,7 +71,7 @@ export class IndividualSubscriptionService {
       expiresAt: this.calculateExpiresAt(planType),
     })
 
-    // Update the user's tier
+    // 5. Update the user's tier
     return {
       subscription,
       // paymentUrl
@@ -147,5 +149,14 @@ export class IndividualSubscriptionService {
       default:
         throw new Error(`Invalid plan type: ${planType}`)
     }
+  }
+
+  async getActiveIndividualSubscription(userId: number): Promise<IndividualSubscription | null> {
+    return await IndividualSubscription.query()
+      .where('user_id', userId)
+      .where('status', 'active')
+      .where('expires_at', '>', DateTime.now().toSQL())
+      .orderBy('created_at', 'desc')
+      .first()
   }
 }

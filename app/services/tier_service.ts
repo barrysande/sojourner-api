@@ -222,13 +222,15 @@ export default class TierService {
    * @param reason - Human-readable reason for tier change
    * @param triggeredBy - System component that triggered the change
    * @param metadata - Additional context for the change
+   * @param trx - Optional database transaction for atomic operations
    */
 
   async updateUserTier(
     userId: number,
     reason: string,
     triggeredBy: 'webhook' | 'manual' | 'cron' | 'join' | 'leave',
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
+    trx?: any
   ): Promise<void> {
     const user = await User.findOrFail(userId)
     const oldTier = user.tier
@@ -248,22 +250,29 @@ export default class TierService {
       return
     }
 
+    if (trx) {
+      user.useTransaction(trx)
+    }
+
     user.tier = newTier
     user.tierUpdatedAt = DateTime.now()
-    user.save()
+    await user.save()
 
-    await TierAuditLog.create({
-      userId,
-      oldTier,
-      newTier,
-      reason,
-      triggeredBy,
-      metadata: {
-        ...metadata,
-        source: tierResult.source,
-        details: tierResult.details,
+    await TierAuditLog.create(
+      {
+        userId,
+        oldTier,
+        newTier,
+        reason,
+        triggeredBy,
+        metadata: {
+          ...metadata,
+          source: tierResult.source,
+          details: tierResult.details,
+        },
       },
-    })
+      trx ? { client: trx } : {}
+    )
 
     logger.info('User tier updated', {
       userId,
