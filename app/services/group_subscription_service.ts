@@ -6,6 +6,7 @@ import GroupSubscription from '#models/group_subscription'
 import GroupSubscriptionMember from '#models/group_subscription_member'
 import User from '#models/user'
 import TierService from './tier_service.js'
+import { GracePeriodService } from './grace_period_service.js'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
@@ -26,7 +27,10 @@ interface CustomerData {
 
 @inject()
 export class GroupSubscriptionService {
-  constructor(protected tierService: TierService) {}
+  constructor(
+    protected tierService: TierService,
+    protected gracePeriodService: GracePeriodService
+  ) {}
 
   /**
    * Generate 8-character alphanumeric invite code
@@ -610,5 +614,145 @@ export class GroupSubscriptionService {
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
       .first()
+  }
+
+  /**
+   * Handle payment success webhook from Dodo for group subscription
+   * Extends expires_at for all members
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
+   */
+  async handlePaymentSuccess(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    // 1. get sub
+    const subscription = await GroupSubscription.query()
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('owner')
+      .preload('members')
+      .firstOrFail()
+
+    // 2. extend expiry date
+    subscription.expiresAt = this.calculateExpiresAt(subscription.planType)
+    subscription.status = 'active'
+    await subscription.save()
+
+    // 3. update tier for all members
+    const activeMembers = subscription.members.filter((m) => m.status === 'active')
+
+    for (const member of activeMembers) {
+      await this.gracePeriodService.clearGracePeriod(member.userId)
+
+      // 4. update tier
+      await this.tierService.updateUserTier(
+        member.userId,
+        'Group subscription payment successful',
+        'webhook',
+        {
+          groupSubscriptionId: subscription.id,
+          dodoSubscriptionId,
+          eventId,
+          expiresAt: subscription.expiresAt.toISO(),
+        }
+      )
+    }
+
+    logger.info('Group subscription payment successful', {
+      ownerId: subscription.ownerUserId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      eventId,
+      memberCount: activeMembers.length,
+      newExpiresAt: subscription.expiresAt.toISO(),
+    })
+  }
+
+  /**
+   * Handle payment failure webhook from Dodo for group subscription
+   * Starts 3-day grace period for owner (not all members)
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
+   */
+  async handlePaymentFailure(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    // 1. get sub
+    const subscription = await GroupSubscription.query()
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('owner')
+      .firstOrFail()
+
+    // 2. Start 3-day grace period for owner. Members keep access during grace period
+    await this.gracePeriodService.startGracePeriod(
+      subscription.ownerUserId,
+      'payment_failure',
+      'group_paid'
+    )
+
+    logger.warn('Group subscription payment failed - grace period started', {
+      ownerId: subscription.ownerUserId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      eventId,
+      expiresAt: subscription.expiresAt.toISO(),
+    })
+
+    // 3. TODO: Send email notification to owner about payment failure
+    // await this.emailService.sendPaymentFailureEmail(subscription.owner.email)
+  }
+
+  /**
+   * Handle subscription expired webhook from Dodo for group subscription
+   * Marks subscription as expired and starts 7-day grace for all members
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
+   */
+  async handleSubscriptionExpired(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    // 1. get sub
+    const subscription = await GroupSubscription.query()
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('members')
+      .firstOrFail()
+
+    // 2. mark sub as expired
+    subscription.status = 'expired'
+    await subscription.save()
+
+    // 3. Start 7-day grace period for all active members
+    const activeMembers = subscription.members.filter((m) => m.status === 'active')
+
+    for (const member of activeMembers) {
+      await this.gracePeriodService.startGracePeriod(member.userId, 'group_removal', 'group_paid')
+
+      // 4. Update member status to removed
+      member.status = 'removed'
+      await member.save()
+
+      logger.info('Group subscription expired - member removed with grace period', {
+        userId: member.userId,
+        groupSubscriptionId: subscription.id,
+        eventId,
+      })
+    }
+
+    logger.info('Group subscription expired - all members in grace period', {
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      eventId,
+      memberCount: activeMembers.length,
+    })
+
+    // TODO: Send email notifications to all members
+    // for (const member of activeMembers) {
+    //   await this.emailService.sendGroupSubscriptionExpiredEmail(member.user.email)
+    // }
+  }
+  /**
+   * Handle subscription renewal (same as payment success)
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
+   */
+  async handleSubscriptionRenewed(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    await this.handlePaymentSuccess(dodoSubscriptionId, eventId)
   }
 }

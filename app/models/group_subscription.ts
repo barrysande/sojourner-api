@@ -15,6 +15,9 @@ export default class GroupSubscription extends BaseModel {
   declare dodoSubscriptionId: string
 
   @column()
+  declare planType: 'monthly' | 'quarterly' | 'annual'
+
+  @column()
   declare totalSeats: number
 
   @column()

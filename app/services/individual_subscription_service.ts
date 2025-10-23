@@ -211,15 +211,113 @@ export class IndividualSubscriptionService {
   /**
    * Handle payment success webhook from Dodo
    * Extends expires_at and clears grace periods
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
    */
+  async handlePaymentSuccess(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    // 1. get sub
+    const subscription = await IndividualSubscription.query()
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .firstOrFail()
+
+    // 2. extend expiry date on the sub
+    subscription.expiresAt = this.calculateExpiresAt(subscription.planType)
+    subscription.status = 'active'
+    await subscription.save()
+
+    // 3. clear active grace period
+    await this.gracePeriodService.clearGracePeriod(subscription.userId)
+
+    // 4. Update tier (in case user was in grace period)
+    await this.tierService.updateUserTier(
+      subscription.userId,
+      'Payment successful - subscription renewed',
+      'webhook',
+      {
+        dodoSubscriptionId,
+        eventId,
+        expiresAt: subscription.expiresAt.toISO(),
+      }
+    )
+
+    logger.info('Individual subscription payment successful', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      eventId,
+      newExpiresAt: subscription.expiresAt.toISO(),
+    })
+  }
 
   /**
    * Handle payment failure webhook from Dodo
    * Starts 3-day grace period
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
    */
+  async handlePaymentFailure(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    // 1. get sub
+    const subscription = await IndividualSubscription.query()
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .firstOrFail()
 
+    // 2. start grace period
+    await this.gracePeriodService.startGracePeriod(
+      subscription.userId,
+      'payment_failure',
+      'individual_paid'
+    )
+
+    logger.warn('Individual subscription payment failed - grace period started', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      eventId,
+      expiresAt: subscription.expiresAt.toISO(),
+    })
+
+    // 3. TODO: Send email notification to user about payment failure
+    // await this.emailService.sendPaymentFailureEmail(subscription.user.email)
+  }
   /**
    * Handle subscription expired webhook from Dodo
    * Marks subscription as expired and updates tier
+   *
+   * @param dodoSubscriptionId - Dodo subscription ID
+   * @param eventId - Webhook event ID for logging/auditing
    */
+  async handleSubscriptionExpired(dodoSubscriptionId: string, eventId: string): Promise<void> {
+    // 1. get sub
+    const subscription = await IndividualSubscription.query()
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .firstOrFail()
+
+    // 2. set sub status to expired
+    subscription.status = 'expired'
+    await subscription.save()
+
+    // 3. update user tier for
+    await this.tierService.updateUserTier(
+      subscription.userId,
+      'Individual subscription expired',
+      'webhook',
+      {
+        dodoSubscriptionId,
+        eventId,
+        expiredAt: subscription.expiresAt.toISO(),
+      }
+    )
+
+    logger.info('Individual subscription expired', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      eventId,
+    })
+  }
 }

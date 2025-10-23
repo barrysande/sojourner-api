@@ -14,6 +14,7 @@ export default class extends BaseSchema {
         .inTable('users')
         .onDelete('CASCADE')
       table.string('dodo_subscription_id', 255).notNullable().unique()
+      table.string('plan_type', 50).notNullable()
       table.integer('total_seats').notNullable()
       table.string('invite_code', 8).notNullable().unique()
       table.timestamp('invite_code_expires_at').notNullable()
