@@ -356,12 +356,12 @@ export class GroupSubscriptionService {
     }
 
     return await db.transaction(async (trx) => {
-      // 3. Call Dodo endpoint change_plan_subscriptions with new quantity
-      await this.callDodoChangePlan(groupSub.dodoSubscriptionId, {
-        product_id: groupSub.dodoSubscriptionId, // Keep same product
-        quantity: newQuantity,
-        proration_billing_mode: 'prorated_immediately', // Charge difference now
-      })
+      // 3. TODO: Call Dodo endpoint change_plan_subscriptions with new quantity
+      // await this.callDodoChangePlan(groupSub.dodoSubscriptionId, {
+      //   product_id: groupSub.dodoSubscriptionId, // Keep same product
+      //   quantity: newQuantity,
+      //   proration_billing_mode: 'prorated_immediately',
+      // })
 
       // 4. Update seat count
       const oldSeats = groupSub.totalSeats
@@ -424,12 +424,12 @@ export class GroupSubscriptionService {
         )
       }
 
-      // 5. Call Dodo change_plan_subscriptions with new quantity
-      await this.callDodoChangePlan(lockedSub.dodoSubscriptionId, {
-        product_id: lockedSub.dodoSubscriptionId, // Keep same product
-        quantity: newQuantity,
-        proration_billing_mode: 'prorated_immediately', // Credit difference now
-      })
+      // 5. TODO: Call Dodo change_plan_subscriptions with new quantity
+      // await this.callDodoChangePlan(lockedSub.dodoSubscriptionId, {
+      //   product_id: lockedSub.dodoSubscriptionId, // Keep same product
+      //   quantity: newQuantity,
+      //   proration_billing_mode: 'prorated_immediately',
+      // })
 
       // 6. Update seat count
       const oldSeats = lockedSub.totalSeats
@@ -459,16 +459,16 @@ export class GroupSubscriptionService {
   async cancelGroupSubscription(groupSubId: number): Promise<GroupSubscription> {
     const groupSub = await GroupSubscription.findOrFail(groupSubId)
 
-    // Call Dodo to cancel at next billing date
-    await this.callDodoUpdateSubscription(groupSub.dodoSubscriptionId, {
-      cancel_at_next_billing_date: true,
-    })
+    // 1. TODO:  Call Dodo to cancel at next billing date
+    // await this.callDodoUpdateSubscription(groupSub.dodoSubscriptionId, {
+    //   cancel_at_next_billing_date: true,
+    // })
 
     groupSub.status = 'cancelled'
     await groupSub.save()
 
     // NOTE When subscription expires (via webhook), all members will:
-    // 1. Get 7-day grace periods via handleSubscriptionExpired()
+    // TODOS: 1. Get 7-day grace periods via handleSubscriptionExpired()
     // 2. Receive email notifications
     // 3. Be downgraded to 'free' if they don't subscribe individually within 7 days
 

@@ -335,7 +335,7 @@ export class WebhookService {
       resourceId: data.subscription_id,
     })
 
-    //1. Check if there is similar existing processed webhook
+    // 1. Check if there is similar existing processed webhook
     const existingEvent = await WebhookEvent.query().where('event_id', eventId).first()
     if (existingEvent) {
       logger.info('Webhook already processed, skipping', {

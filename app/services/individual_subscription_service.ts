@@ -154,12 +154,9 @@ export class IndividualSubscriptionService {
     if (subscription.planType === newPlanType) {
       throw new Error(`Already subscribed to ${newPlanType} plan`)
     }
-    if (subscription.planType === newPlanType) {
-      throw new Error(`Already subscribed to ${newPlanType} plan`)
-    }
 
     return db.transaction(async (trx) => {
-      // 2. if newPlan not same as current plan call dodo api to change subscription and prorate immediately
+      // TODO 2. if newPlan not same as current plan call dodo api to change subscription and prorate immediately
       // 3. if successful, get current plan, then assign new plan to the subscription.planType, and save to db. No need to calculate and set expiry, dodo will set it based on
       const oldPlanType = subscription.planType
       subscription.useTransaction(trx)
