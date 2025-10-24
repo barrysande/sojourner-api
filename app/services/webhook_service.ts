@@ -6,6 +6,8 @@ import WebhookEvent from '#models/webhook_event'
 import { IndividualSubscriptionService } from './individual_subscription_service.js'
 import { GroupSubscriptionService } from './group_subscription_service.js'
 import crypto from 'node:crypto'
+import IndividualSubscription from '#models/individual_subscription'
+import GroupSubscription from '#models/group_subscription'
 
 export type DodoWebhookEvent =
   | 'payment.succeeded'
@@ -46,8 +48,7 @@ export class WebhookService {
   ): Promise<void> {
     // check which subscription has succeeded
     // 1.  try individual first
-    const individualSub = await db
-      .from('individual_subscriptions')
+    const individualSub = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .first()
 
@@ -57,14 +58,13 @@ export class WebhookService {
       logger.info('Individual subscription payment success processed', {
         eventId,
         dodoSubscriptionId,
-        userId: individualSub.user_id,
+        userId: individualSub.userId,
       })
       return
     }
 
     // 2. try group
-    const groupSub = await db
-      .from('group_subscriptions')
+    const groupSub = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .first()
 
@@ -74,7 +74,7 @@ export class WebhookService {
       logger.info('Group subscription payment success processed', {
         eventId,
         dodoSubscriptionId,
-        ownerId: groupSub.owner_user_id,
+        ownerId: groupSub.ownerUserId,
       })
       return
     }
@@ -96,8 +96,7 @@ export class WebhookService {
   ): Promise<void> {
     // check which subscription has succeeded
     // 1. try individual subscription first
-    const individualSub = await db
-      .from('individual_subscriptions')
+    const individualSub = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .first()
 
@@ -106,7 +105,7 @@ export class WebhookService {
       logger.info('Individual subscription payment failure processed', {
         eventId,
         dodoSubscriptionId,
-        userId: individualSub.user_id,
+        userId: individualSub.userId,
       })
       return
     }
@@ -158,8 +157,7 @@ export class WebhookService {
   ): Promise<void> {
     // check which subscription has succeeded
     // 1. try individual subscription first
-    const individualSub = await db
-      .from('individual_subscriptions')
+    const individualSub = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .first()
     if (individualSub) {
@@ -170,7 +168,7 @@ export class WebhookService {
       logger.info('Individual subscription cancelled', {
         eventId,
         dodoSubscriptionId,
-        userId: individualSub.user_id,
+        userId: individualSub.userId,
       })
       return
     }
@@ -212,8 +210,7 @@ export class WebhookService {
   ): Promise<void> {
     // check which subscription has succeeded
     // Try individual subscription first
-    const individualSub = await db
-      .from('individual_subscriptions')
+    const individualSub = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .first()
 
@@ -225,7 +222,7 @@ export class WebhookService {
       logger.info('Individual subscription expired', {
         eventId,
         dodoSubscriptionId,
-        userId: individualSub.user_id,
+        userId: individualSub.userId,
       })
       return
     }
@@ -333,6 +330,7 @@ export class WebhookService {
       eventId,
       eventType,
       resourceId: data.subscription_id,
+      createdAt,
     })
 
     // 1. Check if there is similar existing processed webhook
@@ -376,6 +374,7 @@ export class WebhookService {
     // Typically HMAC-SHA256 of payload with webhook secret
 
     // For now, placeholder implementation
+    // user standard webhook library for js
 
     const expectedSignature = crypto.createHmac('sha256', secret).update(payload).digest('hex')
 
