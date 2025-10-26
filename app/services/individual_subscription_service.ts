@@ -7,6 +7,7 @@ import TierService from './tier_service.js'
 import { GracePeriodService } from './grace_period_service.js'
 import db from '@adonisjs/lucid/services/db'
 import TierAuditLog from '#models/tier_audit_log'
+import { DodoPaymentService } from './dodo_payment_service.js'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
@@ -29,7 +30,8 @@ interface CustomerData {
 export class IndividualSubscriptionService {
   constructor(
     protected tierService: TierService,
-    protected gracePeriodService: GracePeriodService
+    protected gracePeriodService: GracePeriodService,
+    protected dodoPaymentService: DodoPaymentService
   ) {}
 
   private calculateExpiresAt(planType: PlanType): DateTime {
@@ -157,6 +159,12 @@ export class IndividualSubscriptionService {
 
     return db.transaction(async (trx) => {
       // TODO 2. if newPlan not same as current plan call dodo api to change subscription and prorate immediately
+
+      await this.dodoPaymentService.changeSubscriptionPlan({
+        subscriptionId: subscription.dodoSubscriptionId,
+        newProductId: newProductId,
+        quantity:
+      })
       // 3. if successful, get current plan, then assign new plan to the subscription.planType, and save to db. No need to calculate and set expiry, dodo will set it based on
       const oldPlanType = subscription.planType
       subscription.useTransaction(trx)

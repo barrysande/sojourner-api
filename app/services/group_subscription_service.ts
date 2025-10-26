@@ -7,6 +7,7 @@ import GroupSubscriptionMember from '#models/group_subscription_member'
 import User from '#models/user'
 import TierService from './tier_service.js'
 import { GracePeriodService } from './grace_period_service.js'
+import { DodoPaymentService } from './dodo_payment_service.js'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
@@ -29,7 +30,8 @@ interface CustomerData {
 export class GroupSubscriptionService {
   constructor(
     protected tierService: TierService,
-    protected gracePeriodService: GracePeriodService
+    protected gracePeriodService: GracePeriodService,
+    protected dodoPaymentService: DodoPaymentService
   ) {}
 
   /**
@@ -88,8 +90,6 @@ export class GroupSubscriptionService {
     billingAddress: BillingAddress,
     customer: CustomerData
   ): Promise<{ subscription: GroupSubscription; paymentUrl?: string }> {
-    const owner = await User.findOrFail(ownerId)
-
     // 1. check if the owner can create a group subscription(no active individual)
     const canCreate = await this.tierService.canCreateGroupSubscription(ownerId)
     if (!canCreate.canCreate) {
@@ -97,18 +97,18 @@ export class GroupSubscriptionService {
     }
 
     // 2. check total seats
-    if (totalSeats < 2 || totalSeats > 50) {
-      throw new Error('Total seats must be between 2 and 50')
+    if (totalSeats < 1 || totalSeats > 50) {
+      throw new Error('Total seats must be between 1 and 50')
     }
 
-    // 3. Check if owner already owns an active group subscription
-    const existingOwned = await GroupSubscription.query()
-      .where('owner_user_id', ownerId)
-      .where('status', 'active')
-      .first()
-    if (existingOwned) {
-      throw new Error('You already own an active group subscription')
-    }
+    // 3.TODO: Enforce check in controller because there is a partial unique index for this. Check if owner already owns an active group subscription - use database error codes.
+    // const existingOwned = await GroupSubscription.query()
+    //   .where('owner_user_id', ownerId)
+    //   .where('status', 'active')
+    //   .first()
+    // if (existingOwned) {
+    //   throw new Error('You already own an active group subscription')
+    // }
 
     return await db.transaction(async (trx) => {
       // 4. generate a unique invite code
@@ -134,7 +134,8 @@ export class GroupSubscriptionService {
         )
       }
 
-      // 5. Call Dodo Payment's create_subscriptions api endpoint
+      // 5. TODO: Call Dodo Payment's create_subscriptions api endpoint
+      await this.dodoPaymentService.createSubscription({productId, customerId:})
 
       // 6. create group_subscription record
       const subscription = await GroupSubscription.create(
@@ -246,12 +247,12 @@ export class GroupSubscriptionService {
         if (existingMembership.status === 'active') {
           throw new Error('You are already a member of this group')
         }
-        // If status is 'removed', we can rejoin by updating status
-        existingMembership.status = 'active'
-        existingMembership.joinedAt = DateTime.now()
-        await existingMembership.save()
 
-        // TODO: - RESET GRACE PERIOD FOR THIS CASE
+        // If status is 'removed', can rejoin by updating status
+        await existingMembership.merge({ status: 'active', joinedAt: DateTime.now() }).save()
+
+        // Then reset/ clear grace period
+        await this.gracePeriodService.clearGracePeriod(userId)
       } else {
         // 6. Create new membership
         await GroupSubscriptionMember.create(
@@ -310,8 +311,8 @@ export class GroupSubscriptionService {
       membership.status = 'removed'
       await membership.save()
 
-      // TODO Phase 5: Start 7-day grace period
-      // await gracePeriodService.startGracePeriod(userId, 'group_removal', 'group_paid')
+      // Start 7-day grace period
+      await this.gracePeriodService.startGracePeriod(userId, 'group_removal', 'group_paid')
       logger.info('TODO Phase 5: Start 7-day grace period for removed member', {
         userId,
         groupSubId,
@@ -356,12 +357,14 @@ export class GroupSubscriptionService {
     }
 
     return await db.transaction(async (trx) => {
-      // 3. TODO: Call Dodo endpoint change_plan_subscriptions with new quantity
-      // await this.callDodoChangePlan(groupSub.dodoSubscriptionId, {
-      //   product_id: groupSub.dodoSubscriptionId, // Keep same product
-      //   quantity: newQuantity,
-      //   proration_billing_mode: 'prorated_immediately',
-      // })
+      // 3. Call Dodo endpoint change_plan_subscriptions with new quantity
+
+      await this.dodoPaymentService.changeSubscriptionPlan({
+        subscriptionId: groupSub.dodoSubscriptionId,
+        newProductId: groupSub.dodoSubscriptionId,
+        quantity: 1,
+        prorationBillingMode: 'prorated_immediately',
+      })
 
       // 4. Update seat count
       const oldSeats = groupSub.totalSeats
@@ -424,12 +427,14 @@ export class GroupSubscriptionService {
         )
       }
 
-      // 5. TODO: Call Dodo change_plan_subscriptions with new quantity
-      // await this.callDodoChangePlan(lockedSub.dodoSubscriptionId, {
-      //   product_id: lockedSub.dodoSubscriptionId, // Keep same product
-      //   quantity: newQuantity,
-      //   proration_billing_mode: 'prorated_immediately',
-      // })
+      // 5. Call Dodo API change plan subscriptions with new quantity
+
+      await this.dodoPaymentService.changeSubscriptionPlan({
+        subscriptionId: lockedSub.dodoSubscriptionId,
+        newProductId: lockedSub.dodoSubscriptionId,
+        quantity: newQuantity,
+        prorationBillingMode: 'prorated_immediately',
+      })
 
       // 6. Update seat count
       const oldSeats = lockedSub.totalSeats
@@ -459,16 +464,14 @@ export class GroupSubscriptionService {
   async cancelGroupSubscription(groupSubId: number): Promise<GroupSubscription> {
     const groupSub = await GroupSubscription.findOrFail(groupSubId)
 
-    // 1. TODO:  Call Dodo to cancel at next billing date
-    // await this.callDodoUpdateSubscription(groupSub.dodoSubscriptionId, {
-    //   cancel_at_next_billing_date: true,
-    // })
+    // 1.  Call Dodo to cancel at next billing date
+    await this.dodoPaymentService.cancelSubscription(groupSub.dodoSubscriptionId, true)
 
     groupSub.status = 'cancelled'
     await groupSub.save()
 
     // NOTE When subscription expires (via webhook), all members will:
-    // TODOS: 1. Get 7-day grace periods via handleSubscriptionExpired()
+    // 1. Get 7-day grace periods via handleSubscriptionExpired()
     // 2. Receive email notifications
     // 3. Be downgraded to 'free' if they don't subscribe individually within 7 days
 

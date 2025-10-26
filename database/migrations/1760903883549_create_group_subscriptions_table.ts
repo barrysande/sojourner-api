@@ -23,7 +23,11 @@ export default class extends BaseSchema {
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').notNullable()
 
-      table.check("status IN ('active', 'cancelled', 'expired')", [], 'chk_group_status')
+      table.check(
+        "status IN ('pending', 'active', 'on_hold',  'cancelled',  'failed','expired')",
+        [],
+        'chk_group_status'
+      )
       table.check('total_seats >= 10 AND total_seats <= 50', [], 'chk_group_seats_range')
 
       table.index('owner_user_id', 'idx_group_subs_owner')

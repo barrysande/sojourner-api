@@ -22,7 +22,11 @@ export default class extends BaseSchema {
 
       table.check("plan_type IN ('monthly', 'quarterly', 'annual')", [], 'chk_individual_plan_type')
 
-      table.check("status IN ('active', 'cancelled', 'expired') ", [], 'chk_individual_status')
+      table.check(
+        "status IN ('pending', 'active', 'on_hold',  'cancelled',  'failed','expired') ",
+        [],
+        'chk_individual_status'
+      )
 
       table.index('user_id', 'idx_individual_subs_user')
       table.index('dodo_subscription_id', 'idx_individual_subs_dodo')

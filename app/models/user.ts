@@ -16,6 +16,7 @@ import GroupSubscriptionMember from './group_subscription_member.js'
 import GracePeriod from './grace_period.js'
 import TierAuditLog from './tier_audit_log.js'
 import { DbRememberMeTokensProvider } from '@adonisjs/auth/session'
+import CustomerBillingAddress from './customer_billing_address.js'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -84,4 +85,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
 
   @hasMany(() => TierAuditLog)
   declare tierAuditLogs: HasMany<typeof TierAuditLog>
+
+  @hasMany(() => CustomerBillingAddress)
+  declare customerBillingAdress: HasMany<typeof CustomerBillingAddress>
 }

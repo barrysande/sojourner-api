@@ -27,7 +27,7 @@ export default class GroupSubscription extends BaseModel {
   declare inviteCodeExpiresAt: DateTime
 
   @column()
-  declare status: 'active' | 'cancelled' | 'expired'
+  declare status: 'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
 
   @column.dateTime()
   declare expiresAt: DateTime

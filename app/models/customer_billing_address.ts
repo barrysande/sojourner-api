@@ -1,26 +1,26 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column } from '@adonisjs/lucid/orm'
-import User from './user.js'
+import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import User from './user.js'
 
-export default class IndividualSubscription extends BaseModel {
+export default class CustomerBillingAddress extends BaseModel {
   @column({ isPrimary: true })
   declare id: number
 
   @column()
-  declare userId: number
+  declare city: string
 
   @column()
-  declare dodoSubscriptionId: string
+  declare country: string
 
   @column()
-  declare planType: 'monthly' | 'quarterly' | 'annual'
+  declare state: string
 
   @column()
-  declare status: 'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
+  declare street: string
 
-  @column.dateTime()
-  declare expiresAt: DateTime
+  @column()
+  declare zipcode: string
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
