@@ -63,6 +63,7 @@
     "dodopayments": "^2.4.0",
     "jose": "^6.1.0",
     "luxon": "^3.7.1",
+    "nanoid": "^5.1.6",
     "pg": "^8.16.3",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1"

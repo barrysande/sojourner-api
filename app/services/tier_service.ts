@@ -8,6 +8,7 @@ import TierAuditLog from '#models/tier_audit_log'
 import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import GroupSubscriptionMember from '#models/group_subscription_member'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
 
@@ -229,8 +230,8 @@ export default class TierService {
     userId: number,
     reason: string,
     triggeredBy: 'webhook' | 'manual' | 'cron' | 'join' | 'leave',
-    metadata?: Record<string, any>,
-    trx?: any
+    trx: TransactionClientContract,
+    metadata?: Record<string, any>
   ): Promise<void> {
     const user = await User.findOrFail(userId)
     const oldTier = user.tier
@@ -250,13 +251,7 @@ export default class TierService {
       return
     }
 
-    if (trx) {
-      user.useTransaction(trx)
-    }
-
-    user.tier = newTier
-    user.tierUpdatedAt = DateTime.now()
-    await user.save()
+    await user.useTransaction(trx).merge({ tier: newTier, tierUpdatedAt: DateTime.now() }).save()
 
     await TierAuditLog.create(
       {

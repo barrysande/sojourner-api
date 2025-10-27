@@ -203,7 +203,7 @@ export class IndividualSubscriptionService {
           })
           .save()
 
-        await this.gracePeriodService.clearGracePeriod(subscription.userId)
+        await this.gracePeriodService.clearGracePeriod(subscription.userId, trx)
 
         logger.info('Individual subscription payment success processed', {
           subscriptionId: subscription.id,
@@ -271,7 +271,8 @@ export class IndividualSubscriptionService {
         await this.gracePeriodService.startGracePeriod(
           subscription.userId,
           'payment_failure',
-          'individual_paid'
+          'individual_paid',
+          trx
         )
       })
 
@@ -335,11 +336,12 @@ export class IndividualSubscriptionService {
         await this.gracePeriodService.startGracePeriod(
           subscription.userId,
           'payment_failure',
-          'individual_paid'
+          'individual_paid',
+          trx
         )
       })
     } catch (error) {
-      if (error === '23505') {
+      if (error.code === '23505') {
         logger.error('Failed to process subscription expiration webhook', {
           error: error.message,
           eventId,

@@ -9,6 +9,7 @@ import Photo from '#models/photo'
 import ShareGroupMember from '#models/share_group_member'
 import TierService from '#services/tier_service'
 import CloudinaryService from '#services/cloudinary_service'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 type GracePeriodType = 'payment_failure' | 'group_removal'
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
@@ -37,10 +38,14 @@ export class GracePeriodService {
    * @param trx - Database transaction
    * @returns Number of photos deleted
    */
-  private async deleteNonPrimaryPhotos(userId: number, trx: any): Promise<number> {
+  private async deleteNonPrimaryPhotos(
+    userId: number,
+    trx: TransactionClientContract
+  ): Promise<number> {
     // 1. Get all user's gems with photos
     const gems = await HiddenGem.query({ client: trx })
       .where('user_id', userId)
+      .forUpdate()
       .preload('photos', (query) => {
         query.where('is_primary', false)
       })
@@ -97,7 +102,7 @@ export class GracePeriodService {
    * @returns Number of gems locked
    */
 
-  private async lockExcessGems(userId: number, trx: any): Promise<number> {
+  private async lockExcessGems(userId: number, trx: TransactionClientContract): Promise<number> {
     const freeTier = this.tierService.getTierLimits('free')
     const freeTierLimit = freeTier.maxGemsTotal
 
@@ -105,6 +110,7 @@ export class GracePeriodService {
     const allGems = await HiddenGem.query({ client: trx })
       .where('user_id', userId)
       .orderBy('created_at', 'asc')
+      .forUpdate()
 
     if (allGems.length <= freeTierLimit) {
       logger.info('User has no gems to lock', {
@@ -122,7 +128,7 @@ export class GracePeriodService {
     // 3. Mark gems as locked
     for (const gem of gemsToLock) {
       gem.locked = true
-      await gem.save()
+      await gem.useTransaction(trx).merge({ locked: true }).save()
     }
 
     logger.info('Excess gems locked', {
@@ -143,14 +149,17 @@ export class GracePeriodService {
    * @param trx - Database transaction
    * @returns Number of groups removed from
    */
-  private async removeFromAllShareGroups(userId: number, trx: any): Promise<number> {
+  private async removeFromAllShareGroups(
+    userId: number,
+    trx: TransactionClientContract
+  ): Promise<number> {
     const activeMemberships = await ShareGroupMember.query({ client: trx })
       .where('user_id', userId)
       .where('status', 'active')
+      .forUpdate()
 
     for (const membership of activeMemberships) {
-      membership.status = 'left'
-      await membership.save()
+      await membership.useTransaction(trx).merge({ status: 'left' }).save()
     }
 
     logger.info('User removed from share groups', {
@@ -172,9 +181,10 @@ export class GracePeriodService {
   async startGracePeriod(
     userId: number,
     type: GracePeriodType,
-    originalTier: UserTier
+    originalTier: UserTier,
+    trx: TransactionClientContract
   ): Promise<GracePeriod> {
-    return await db.transaction(async (trx) => {
+    return await db.transaction(async () => {
       // 1. check for existing active grace period
       const existingGrace = await GracePeriod.query({ client: trx })
         .where('user_id', userId)
@@ -213,13 +223,12 @@ export class GracePeriodService {
         userId,
         `Grace period started: ${type}`,
         'manual',
+        trx,
         {
-          gracePeriodId: gracePeriod.id,
           type,
           expiresAt: expiresAt.toISO(),
           originalTier,
-        },
-        trx
+        }
       )
 
       logger.info('Grace period started', {
@@ -240,38 +249,36 @@ export class GracePeriodService {
    *
    * @param userId - User whose grace period to clear
    */
-  async clearGracePeriod(userId: number): Promise<void> {
-    await db.transaction(async (trx) => {
-      // 1. check if user has an unresolved grace period
-      const gracePeriod = await GracePeriod.query({ client: trx })
-        .where('user_id', userId)
-        .where('resolved', false)
-        .forUpdate()
-        .first()
-      if (!gracePeriod) {
-        logger.info('No active grace period to clear', { userId })
-        return
-      }
+  async clearGracePeriod(userId: number, trx: TransactionClientContract): Promise<void> {
+    // 1. check if user has an unresolved grace period
+    const gracePeriod = await GracePeriod.query({ client: trx })
+      .where('user_id', userId)
+      .where('resolved', false)
+      .forUpdate()
+      .first()
+    if (!gracePeriod) {
+      logger.info('No active grace period to clear', { userId })
+      return
+    }
 
-      gracePeriod.useTransaction(trx).merge({ resolved: true }).save()
+    gracePeriod.useTransaction(trx).merge({ resolved: true }).save()
 
-      // 2. update user's tier to reflect their actual subscription status
-      await this.tierService.updateUserTier(
-        userId,
-        'Grace period cleared - subscription restored',
-        'manual',
-        {
-          gracePeriodId: gracePeriod.id,
-          clearedType: gracePeriod.type,
-        },
-        trx
-      )
-
-      logger.info('Grace period cleared', {
-        userId,
+    // 2. update user's tier to reflect their actual subscription status
+    await this.tierService.updateUserTier(
+      userId,
+      'Grace period cleared - subscription restored',
+      'manual',
+      trx,
+      {
         gracePeriodId: gracePeriod.id,
-        type: gracePeriod.type,
-      })
+        clearedType: gracePeriod.type,
+      }
+    )
+
+    logger.info('Grace period cleared', {
+      userId,
+      gracePeriodId: gracePeriod.id,
+      type: gracePeriod.type,
     })
   }
 
@@ -295,57 +302,55 @@ export class GracePeriodService {
    *
    * @param userId - User to degrade
    */
-  async degradeUserToFree(userId: number): Promise<void> {
-    await db.transaction(async (trx) => {
-      const user = await User.query({ client: trx }).where('id', userId).firstOrFail()
+  async degradeUserToFree(userId: number, trx: TransactionClientContract): Promise<void> {
+    const user = await User.query({ client: trx }).where('id', userId).forUpdate().firstOrFail()
 
-      logger.info('Starting user degradation to free tier', {
-        userId,
-        currentTier: user.tier,
-      })
+    logger.info('Starting user degradation to free tier', {
+      userId,
+      currentTier: user.tier,
+    })
 
-      // 1. Delete non-primary photos (keep first photo per gem)
-      const deletedPhotos = await this.deleteNonPrimaryPhotos(userId, trx)
+    // 1. Delete non-primary photos (keep first photo per gem)
+    const deletedPhotos = await this.deleteNonPrimaryPhotos(userId, trx)
 
-      // 2. Lock gems over free tier limit (keep first 3)
-      const lockedGems = await this.lockExcessGems(userId, trx)
+    // 2. Lock gems over free tier limit (keep first 3)
+    const lockedGems = await this.lockExcessGems(userId, trx)
 
-      // 3. Remove user from share group(s)
-      const removeFromAllShareGroups = await this.removeFromAllShareGroups(userId, trx)
+    // 3. Remove user from share group(s)
+    const removeFromAllShareGroups = await this.removeFromAllShareGroups(userId, trx)
 
-      // 4. Resolve grace period
-      const gracePeriod = await GracePeriod.query({ client: trx })
-        .where('user_id', userId)
-        .where('resolved', false)
-        .forUpdate()
-        .first()
+    // 4. Resolve grace period
+    const gracePeriod = await GracePeriod.query({ client: trx })
+      .where('user_id', userId)
+      .where('resolved', false)
+      .forUpdate()
+      .first()
 
-      if (gracePeriod) {
-        gracePeriod.resolved = true
-        await gracePeriod.save()
-      }
+    if (gracePeriod) {
+      gracePeriod.resolved = true
+      await gracePeriod.save()
+    }
 
-      // 5. Update user tier to free
-      await this.tierService.updateUserTier(
-        userId,
-        'Grace period expired - degraded to free tier',
-        'cron',
-        {
-          gracePeriodId: gracePeriod?.id,
-          gracePeriodType: gracePeriod?.type,
-          deletedPhotos,
-          lockedGems,
-          removeFromAllShareGroups,
-        },
-        trx
-      )
-
-      logger.info('User degradation completed', {
-        userId,
+    // 5. Update user tier to free
+    await this.tierService.updateUserTier(
+      userId,
+      'Grace period expired - degraded to free tier',
+      'cron',
+      trx,
+      {
+        gracePeriodId: gracePeriod?.id,
+        gracePeriodType: gracePeriod?.type,
         deletedPhotos,
         lockedGems,
         removeFromAllShareGroups,
-      })
+      }
+    )
+
+    logger.info('User degradation completed', {
+      userId,
+      deletedPhotos,
+      lockedGems,
+      removeFromAllShareGroups,
     })
   }
 
@@ -355,10 +360,11 @@ export class GracePeriodService {
    *
    * @returns Number of users degraded
    */
-  async checkExpiredGracePeriods(): Promise<number> {
-    const expiredGracePeriods = await GracePeriod.query()
+  async checkExpiredGracePeriods(trx: TransactionClientContract): Promise<number> {
+    const expiredGracePeriods = await GracePeriod.query({ client: trx })
       .where('resolved', false)
       .where('expires_at', '<=', DateTime.now().toSQL())
+      .forUpdate()
       .preload('user')
 
     logger.info('Checking expired grace periods', {
@@ -369,7 +375,7 @@ export class GracePeriodService {
 
     for (const gracePeriod of expiredGracePeriods) {
       try {
-        await this.degradeUserToFree(gracePeriod.userId)
+        await this.degradeUserToFree(gracePeriod.userId, trx)
         degradedCount++
       } catch (error) {
         logger.error('Failed to degrade user after grace period expiry', {

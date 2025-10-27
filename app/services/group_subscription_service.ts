@@ -4,27 +4,15 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import GroupSubscription from '#models/group_subscription'
 import GroupSubscriptionMember from '#models/group_subscription_member'
+import { customAlphabet } from 'nanoid'
 import User from '#models/user'
 import TierService from './tier_service.js'
 import { GracePeriodService } from './grace_period_service.js'
-import { DodoPaymentService } from './dodo_payment_service.js'
+import { type CreateGroupSubscriptionParams, DodoPaymentService } from './dodo_payment_service.js'
+import type { SubscriptionCreateResponse } from 'dodopayments/resources/subscriptions.mjs'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
-
-interface BillingAddress {
-  street: string
-  city: string
-  state: string
-  zipcode: string
-  country: string
-}
-
-interface CustomerData {
-  email: string
-  name: string
-  phone_number?: string
-}
 
 @inject()
 export class GroupSubscriptionService {
@@ -38,31 +26,16 @@ export class GroupSubscriptionService {
    * Generate 8-character alphanumeric invite code
    * Format: Uppercase letters and numbers only (e.g., XK94PL72)
    */
-  private generateInviteCode(): string {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    let code = ''
-    for (let i = 0; i < 8; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length))
-    }
-    return code
+  private async generateInviteCode(): Promise<string> {
+    // if there start to be code collisions just bump chars to 21
+    const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 12)
+    const code = nanoid()
+    return code.match(/.{1,4}/g)?.join('-') || code
   }
 
   /**
    * Calculate expiry date based on plan type
    */
-  private calculateExpiresAt(planType: PlanType): DateTime {
-    const now = DateTime.now()
-    switch (planType) {
-      case 'monthly':
-        return now.plus({ months: 1 })
-      case 'quarterly':
-        return now.plus({ months: 3 })
-      case 'annual':
-        return now.plus({ years: 1 })
-      default:
-        throw new Error(`Invalid plan type: ${planType}`)
-    }
-  }
 
   /**
    * Calculate invite code expiry (30 days from now)
@@ -83,109 +56,47 @@ export class GroupSubscriptionService {
    * @param customer - Owner's customer information
    */
   async createGroupSubscription(
-    ownerId: number,
+    ownerUserId: number,
     planType: PlanType,
-    totalSeats: number,
-    productId: string,
-    billingAddress: BillingAddress,
-    customer: CustomerData
-  ): Promise<{ subscription: GroupSubscription; paymentUrl?: string }> {
-    // 1. check if the owner can create a group subscription(no active individual)
-    const canCreate = await this.tierService.canCreateGroupSubscription(ownerId)
-    if (!canCreate.canCreate) {
-      throw new Error(canCreate.reason)
-    }
-
-    // 2. check total seats
-    if (totalSeats < 1 || totalSeats > 50) {
-      throw new Error('Total seats must be between 1 and 50')
-    }
-
-    // 3.TODO: Enforce check in controller because there is a partial unique index for this. Check if owner already owns an active group subscription - use database error codes.
-    // const existingOwned = await GroupSubscription.query()
-    //   .where('owner_user_id', ownerId)
-    //   .where('status', 'active')
-    //   .first()
-    // if (existingOwned) {
-    //   throw new Error('You already own an active group subscription')
-    // }
-
+    params: CreateGroupSubscriptionParams
+  ): Promise<{ subscription: GroupSubscription; paymentLink: string | null | undefined }> {
     return await db.transaction(async (trx) => {
-      // 4. generate a unique invite code
-      let inviteCode: string
-      let collisions = 0
-      const MAX_RETRIES = 10
+      // 1. call dodo api create sub endpoint
+      logger.info('Creating group subscription with Dodo', {
+        ownerUserId,
+        totalSeats: params.addons[0].quantity,
+        productId: params.productId,
+      })
+      const dodoResponse = await this.dodoPaymentService.createGroupSubscription(params)
 
-      while (collisions < MAX_RETRIES) {
-        inviteCode = this.generateInviteCode()
+      const inviteCode = await this.generateInviteCode()
+      const inviteCodeExpiresAt = this.calculateInviteCodeExpiry()
 
-        const existing = await GroupSubscription.query({ client: trx })
-          .where('invite_code', inviteCode)
-          .first()
-
-        if (!existing) {
-          break
-        }
-        collisions++
-      }
-      if (collisions === MAX_RETRIES) {
-        throw new Error(
-          `Failed to generate unique invite code after ${MAX_RETRIES} attempts. Please try again.`
-        )
-      }
-
-      // 5. TODO: Call Dodo Payment's create_subscriptions api endpoint
-      await this.dodoPaymentService.createSubscription({productId, customerId:})
-
-      // 6. create group_subscription record
+      // 2. create subscription group
       const subscription = await GroupSubscription.create(
         {
-          ownerUserId: ownerId,
-          // dodoSubscriptionId: dodoResponse.subscription_id,
-          totalSeats,
-          inviteCode: inviteCode!,
-          inviteCodeExpiresAt: this.calculateInviteCodeExpiry(),
-          status: 'active',
-          expiresAt: this.calculateExpiresAt(planType),
+          ownerUserId,
+          dodoSubscriptionId: dodoResponse.subscription_id,
+          totalSeats: params.addons[0].quantity,
+          inviteCode,
+          inviteCodeExpiresAt,
+          status: 'pending',
+          planType,
         },
         { client: trx }
       )
 
-      // 7. Create owner membership (owner is always the first member)
+      // 3. make owner a member of created group
       await GroupSubscriptionMember.create(
         {
           groupSubscriptionId: subscription.id,
-          userId: ownerId,
+          userId: ownerUserId,
           joinedAt: DateTime.now(),
           status: 'active',
         },
         { client: trx }
       )
-
-      // 8. Update owner's tier
-      await this.tierService.updateUserTier(
-        ownerId,
-        `Created group ${planType} subscription with ${totalSeats} seats`,
-        'manual',
-        {
-          subscriptionId: subscription.id,
-          // dodoSubscriptionId: dodoResponse.subscription_id,
-          totalSeats,
-        },
-        trx
-      )
-      logger.info('Group subscription created', {
-        ownerId,
-        subscriptionId: subscription.id,
-        // dodoSubscriptionId: dodoResponse.subscription_id,
-        planType,
-        totalSeats,
-      })
-
-      return {
-        subscription,
-        // paymentUrl: dodoResponse.payment_link,
-      }
+      return { subscription, paymentLink: dodoResponse.payment_link }
     })
   }
 
@@ -266,16 +177,10 @@ export class GroupSubscriptionService {
         )
       }
       // 7. Update user's tier
-      await this.tierService.updateUserTier(
-        userId,
-        'Joined group subscription',
-        'join',
-        {
-          groupSubscriptionId: lockedSub.id,
-          dodoSubscriptionId: lockedSub.dodoSubscriptionId,
-        },
-        trx
-      )
+      await this.tierService.updateUserTier(userId, 'Joined group subscription', 'join', trx, {
+        groupSubscriptionId: lockedSub.id,
+        dodoSubscriptionId: lockedSub.dodoSubscriptionId,
+      })
 
       logger.info('User joined group subscription', {
         userId,
@@ -312,7 +217,7 @@ export class GroupSubscriptionService {
       await membership.save()
 
       // Start 7-day grace period
-      await this.gracePeriodService.startGracePeriod(userId, 'group_removal', 'group_paid')
+      await this.gracePeriodService.startGracePeriod(userId, 'group_removal', 'group_paid', trx)
       logger.info('TODO Phase 5: Start 7-day grace period for removed member', {
         userId,
         groupSubId,
@@ -322,8 +227,8 @@ export class GroupSubscriptionService {
         userId,
         'Removed from group subscription',
         'manual',
-        { groupSubId },
-        trx
+        trx,
+        { groupSubId }
       )
 
       logger.info('Member removed from group subscription', {
