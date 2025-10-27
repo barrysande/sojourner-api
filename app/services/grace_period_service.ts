@@ -166,8 +166,8 @@ export class GracePeriodService {
    * Only one active grace period allowed per user
    *
    * @param userId - User entering grace period
-   * @param type - payment_failure or group_removal
-   * @param originalTier - Tier user had before grace period
+   * @param type - 'payment_failure' or 'group_removal'
+   * @param originalTier - Tier user had before grace period 'free', or 'individual_paid', or 'group_paid'
    */
   async startGracePeriod(
     userId: number,
@@ -179,6 +179,7 @@ export class GracePeriodService {
       const existingGrace = await GracePeriod.query({ client: trx })
         .where('user_id', userId)
         .where('resolved', false)
+        .forUpdate()
         .first()
 
       if (existingGrace) {
@@ -245,15 +246,14 @@ export class GracePeriodService {
       const gracePeriod = await GracePeriod.query({ client: trx })
         .where('user_id', userId)
         .where('resolved', false)
+        .forUpdate()
         .first()
       if (!gracePeriod) {
         logger.info('No active grace period to clear', { userId })
         return
       }
 
-      gracePeriod.useTransaction(trx)
-      gracePeriod.resolved = true
-      await gracePeriod.save()
+      gracePeriod.useTransaction(trx).merge({ resolved: true }).save()
 
       // 2. update user's tier to reflect their actual subscription status
       await this.tierService.updateUserTier(
@@ -317,6 +317,7 @@ export class GracePeriodService {
       const gracePeriod = await GracePeriod.query({ client: trx })
         .where('user_id', userId)
         .where('resolved', false)
+        .forUpdate()
         .first()
 
       if (gracePeriod) {

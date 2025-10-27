@@ -2,14 +2,13 @@ import DodoPayments from 'dodopayments'
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
 import type {
-  SubscriptionCreateParams,
   SubscriptionCreateResponse,
   AddonCartResponseItem,
   TimeInterval,
   AttachAddon,
 } from 'dodopayments/resources/subscriptions.mjs'
 import type { BillingAddress, CustomerLimitedDetails } from 'dodopayments/resources/payments.mjs'
-import type { Currency } from 'dodopayments/resources/misc.mjs'
+import type { CountryCode, Currency } from 'dodopayments/resources/misc.mjs'
 
 export interface MeterRaw {
   currency: Currency
@@ -28,6 +27,49 @@ export type SubscriptionStatus =
   | 'cancelled'
   | 'failed'
   | 'expired'
+
+export interface CreateIndividualSubscriptionParams {
+  productId: string
+  quantity: number
+  customer: {
+    email: string
+    name?: string
+    phoneNumber?: string
+  }
+  billing: {
+    street: string
+    city: string
+    state: string
+    zipcode: string
+    country: CountryCode
+  }
+  metadata?: Record<string, any>
+  returnUrl?: string
+  paymentLink?: boolean
+  trialPeriodDays?: number
+}
+
+export interface CreateGroupSubscriptionParams {
+  productId: string
+  quantity: number
+  customer: {
+    email: string
+    name?: string
+    phoneNumber?: string
+  }
+  billing: {
+    street: string
+    city: string
+    state: string
+    zipcode: string
+    country: CountryCode
+  }
+  metadata?: Record<string, any>
+  addons: AttachAddon[]
+  returnUrl?: string
+  paymentLink?: boolean
+  trialPeriodDays?: number
+}
 
 export interface SubscriptionsDetailsRetrieveResponse {
   addons: AddonCartResponseItem[]
@@ -59,6 +101,13 @@ export interface SubscriptionsDetailsRetrieveResponse {
   trial_period_days: number | null
 }
 
+export interface ChangeSubscriptionPlan {
+  newProductId: string
+  quantity: number
+  prorationBillingMode: 'prorated_immediately'
+  addons?: AttachAddon[]
+}
+
 export class DodoPaymentService {
   private client: DodoPayments
 
@@ -73,20 +122,18 @@ export class DodoPaymentService {
 
   /**
    * Create a new Individual Subscription
-   * @param params - typed using types from Dodo Payments Nodejs SDK.
+   * @param params - typed using interface CreateIndividualSubscriptionParams.
    * @param customerEmail - From the user passed to the customer object in the params object.
    * @param customerName - From the user passed to the customer object in the params object.
    * @return Payment link and subscription details
    */
   async createIndividualSubscription(
-    params: SubscriptionCreateParams,
-    customerEmail: string,
-    customerName: string
+    params: CreateIndividualSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
     const response = await this.client.subscriptions.create({
-      product_id: params.product_id,
+      product_id: params.productId,
       quantity: params.quantity,
-      customer: { email: customerEmail, name: customerName },
+      customer: { email: params.customer.email, name: params.customer.name },
       billing: {
         city: params.billing.city,
         country: params.billing.country,
@@ -95,6 +142,8 @@ export class DodoPaymentService {
         zipcode: params.billing.zipcode,
       },
       metadata: params.metadata || {},
+      // TODO: Add more url params like success and subscription plan and tier
+      return_url: env.get('FRONTEND_URL'),
     })
 
     logger.info('Dodo subscription created successfully', {
@@ -121,22 +170,18 @@ export class DodoPaymentService {
 
   /**
    * Create a new Group Subscription
-   * @param params - typed using types from Dodo Payments Nodejs SDK.
+   * @param params - typed using interface CreateIndividualSubscriptionParams.
    * @param customerEmail - From the user passed to the customer object in the params object.
    * @param customerName - From the user passed to the customer object in the params object.
    * @returns Payment link and subscription details
    */
   async createGroupSubscription(
-    params: SubscriptionCreateParams,
-    customerEmail: string,
-    addonId: string,
-    seatCount: number,
-    customerName: string
+    params: CreateGroupSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
     const response = await this.client.subscriptions.create({
-      product_id: params.product_id,
+      product_id: params.productId,
       quantity: params.quantity,
-      customer: { email: customerEmail, name: customerName },
+      customer: { email: params.customer.email, name: params.customer.name },
       billing: {
         city: params.billing.city,
         country: params.billing.country,
@@ -145,7 +190,7 @@ export class DodoPaymentService {
         zipcode: params.billing.zipcode,
       },
       metadata: params.metadata || {},
-      addons: [{ addon_id: addonId, quantity: seatCount }],
+      addons: [{ addon_id: params.addons[0].addon_id, quantity: params.addons[0].quantity }],
     })
 
     logger.info('Dodo subscription created successfully', {
@@ -199,6 +244,33 @@ export class DodoPaymentService {
       billing: subscription.billing,
       metadata: subscription.metadata,
     }
+  }
+
+  /**
+   * Change from current plan to one of monthly, or quarterly, or annual plans for an Individual/Group Subscription
+   * @param params - is an object with interface ChangeSubscriptionPlan has the following properties :-
+   * @property newProduct,
+   * @property quantity which is always 1 since you can only have one active subscription, different from addons.quantity.
+   * @property prorationBillingMode can either be 'prorated_immediately' | 'full_immediately' | 'difference_immediately' as from dodo payments, and @property addons of type AttachAddon[] from dodo payments types.
+   * Each object of addons takes shape of {addon_id: string, quantity:number}
+   * @property quantity in addons is the seat count.
+   * @return Returns a success message string on success or error for an error(done at controller level)
+   */
+  async changeSubscriptionPlan(
+    dodoSubscriptionId: string,
+    params: ChangeSubscriptionPlan
+  ): Promise<string> {
+    await this.client.subscriptions.changePlan(dodoSubscriptionId, {
+      product_id: params.newProductId,
+      quantity: params.quantity,
+      proration_billing_mode: params.prorationBillingMode,
+    })
+
+    logger.info('Subscription plan changed', {
+      subscriptionId: dodoSubscriptionId,
+      newProductId: params.newProductId,
+    })
+    return 'Subscription plan changed'
   }
 
   /**
@@ -276,37 +348,5 @@ export class DodoPaymentService {
       billing: subscription.billing,
       metadata: subscription.metadata,
     }
-  }
-
-  /**
-   * Change from current plan to one of monthly, or quarterly, or annual plans for an Individual Subscription
-   * @param params - is an object with the following properties :-
-   * @property newProduct,
-   * @property quantity which is always 1 since you can only have one active subscription,
-   * @property prorationBillingMode can either be 'prorated_immediately' | 'full_immediately' | 'difference_immediately' as from dodo payments, and @property of type AttachAddon[] from dodo payments types.
-   *
-   * @return a success message string on success or error for an error(done at controller level)
-   */
-
-  async changeIndividualSubscriptionPlan(
-    dodoSubscriptionId: string,
-    params: {
-      newProductId: string
-      quantity: number
-      prorationBillingMode: 'prorated_immediately'
-      addons?: AttachAddon[]
-    }
-  ) {
-    await this.client.subscriptions.changePlan(dodoSubscriptionId, {
-      product_id: params.newProductId,
-      quantity: params.quantity,
-      proration_billing_mode: params.prorationBillingMode,
-    })
-
-    logger.info('Subscription plan changed', {
-      subscriptionId: dodoSubscriptionId,
-      newProductId: params.newProductId,
-    })
-    return 'Subscription plan changed'
   }
 }

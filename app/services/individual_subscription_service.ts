@@ -2,29 +2,20 @@ import { inject } from '@adonisjs/core'
 import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import IndividualSubscription from '#models/individual_subscription'
-import User from '#models/user'
+
 import TierService from './tier_service.js'
 import { GracePeriodService } from './grace_period_service.js'
 import db from '@adonisjs/lucid/services/db'
-import TierAuditLog from '#models/tier_audit_log'
 import { DodoPaymentService } from './dodo_payment_service.js'
+import type {
+  CreateIndividualSubscriptionParams,
+  SubscriptionsDetailsRetrieveResponse,
+} from './dodo_payment_service.js'
+import { ChangeSubscriptionPlan } from './dodo_payment_service.js'
+import WebhookEvent from '#models/webhook_event'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
-type SubscriptionStatus = 'active' | 'cancelled' | 'expired'
-
-interface BillingAddress {
-  street: string
-  city: string
-  state: string
-  zipcode: string
-  country: string
-}
-
-interface CustomerData {
-  email: string
-  name: string
-  phone_number?: string
-}
+// type SubscriptionStatus =  'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
 
 @inject()
 export class IndividualSubscriptionService {
@@ -34,109 +25,44 @@ export class IndividualSubscriptionService {
     protected dodoPaymentService: DodoPaymentService
   ) {}
 
-  private calculateExpiresAt(planType: PlanType): DateTime {
-    const now = DateTime.now()
-    switch (planType) {
-      case 'monthly':
-        return now.plus({ months: 1 })
-      case 'quarterly':
-        return now.plus({ months: 3 })
-      case 'annual':
-        return now.plus({ years: 1 })
-      default:
-        throw new Error(`Invalid plan type: ${planType}`)
-    }
-  }
-
   /**
-   * Create individual subscription via Dodo Payments
+   * Create individual subscription via dodo_payments_service
    * @param userId - User subscribing
-   * @param planType - monthly/quarterly/annual
-   * @param productId - Dodo product ID (from dashboard)
+   * @param planType - 'monthly' | 'quarterly' | 'annual'
+   * @param productId - Dodo product ID
    * @param billingAddress - Customer billing address
    * @param customer - Customer information for Dodo
+   * @param quantity - quantity of the subscription which is always 1
    */
   async createIndividualSubscription(
     userId: number,
     planType: PlanType,
-    productId: number,
-    billingAddress: BillingAddress,
-    customer: CustomerData
-  ): Promise<{ subscription: IndividualSubscription; paymentUrl?: string }> {
-    const user = await User.findOrFail(userId)
-
-    // 1. check if user can subscribe
-    const canSubscribe = await this.tierService.canSubscribeIndividual(userId)
-    if (!canSubscribe.canSubscribe) {
-      throw new Error(canSubscribe.reason)
-    }
-
-    // 2. check if user has an active individual subscription
-    const existingActive = await IndividualSubscription.query()
-      .where('user_id', userId)
-      .where('status', 'active')
-      .first()
-    if (existingActive) {
-      throw new Error('User already has an active individual subscription')
-    }
-
+    params: CreateIndividualSubscriptionParams
+  ): Promise<{ subscription: IndividualSubscription; paymentLink: string | null | undefined }> {
     return await db.transaction(async (trx) => {
-      // 3. call dodo payments api
+      // 1. Call Dodo Payments API
+      const dodoResponse = await this.dodoPaymentService.createIndividualSubscription(params)
 
-      // 4. Store subscription record
-
+      // 2. Store subscription record
       const subscription = await IndividualSubscription.create(
         {
           userId,
+          dodoSubscriptionId: dodoResponse.subscription_id,
           planType,
-          status: 'active',
-          expiresAt: this.calculateExpiresAt(planType),
+          status: 'pending',
+          expiresAt: dodoResponse.expires_on
+            ? DateTime.fromISO(dodoResponse.expires_on)
+            : undefined,
         },
         { client: trx }
       )
 
-      // 5. Update the user's tier
-      await this.tierService.updateUserTier(
-        userId,
-        `Individual ${planType} subscription created`,
-        'manual',
-        {
-          subscriptionId: subscription.id,
-          // dodoSubscriptionId: dodoResponse.subscription_id,
-        }
-      )
+      // 3. Return the subscription and payment link
       return {
         subscription,
-        // paymentUrl: dodoResponse.payment_link,
+        paymentLink: dodoResponse.payment_link,
       }
     })
-  }
-
-  /**
-   * Cancel individual subscription (cancel_at_next_billing_date)
-   * User keeps access until expiry
-   */
-  async cancelIndividualSubscription(userId: number): Promise<IndividualSubscription> {
-    // 1. check if user has an active subscription
-    const subscription = await IndividualSubscription.query()
-      .where('user_id', userId)
-      .where('status', 'active')
-      .firstOrFail()
-
-    // 2. call dodo api to cancel the sub at next billing date.
-
-    // 3. if dodo api response confirms cancellation, then save
-    subscription.status = 'cancelled'
-    await subscription.save()
-
-    logger.info('Individual subscription cancelled', {
-      userId,
-      subscriptionId: subscription.id,
-      dodoSubscriptionId: subscription.dodoSubscriptionId,
-      expiresAt: subscription.expiresAt.toISO(),
-    })
-
-    return subscription
   }
 
   /**
@@ -146,71 +72,81 @@ export class IndividualSubscriptionService {
   async changeSubscriptionPlan(
     userId: number,
     newPlanType: PlanType,
-    newProductId: string
-  ): Promise<IndividualSubscription> {
-    // 1. check user's subscription status
-    const subscription = await IndividualSubscription.query()
-      .where('user_id', userId)
-      .where('status', 'active')
-      .firstOrFail()
-    if (subscription.planType === newPlanType) {
-      throw new Error(`Already subscribed to ${newPlanType} plan`)
-    }
-
+    params: ChangeSubscriptionPlan
+  ): Promise<string> {
+    // 1. check if user has an active subscription.
     return db.transaction(async (trx) => {
-      // TODO 2. if newPlan not same as current plan call dodo api to change subscription and prorate immediately
+      const subscription = await IndividualSubscription.query({ client: trx })
+        .where('user_id', userId)
+        .where('status', 'active')
+        .forUpdate()
+        .firstOrFail()
 
-      await this.dodoPaymentService.changeSubscriptionPlan({
-        subscriptionId: subscription.dodoSubscriptionId,
-        newProductId: newProductId,
-        quantity:
-      })
-      // 3. if successful, get current plan, then assign new plan to the subscription.planType, and save to db. No need to calculate and set expiry, dodo will set it based on
+      // 2. Validate that user isn't trying to change same plan
+      if (subscription.planType === newPlanType) {
+        throw new Error(`Already subscribed to ${newPlanType} plan`)
+      }
       const oldPlanType = subscription.planType
-      subscription.useTransaction(trx)
-      subscription.planType = newPlanType
-      subscription.expiresAt = this.calculateExpiresAt(newPlanType)
-      await subscription.save()
 
-      // 4. log tier change
-      await TierAuditLog.create(
-        {
-          userId,
-          oldTier: 'individual_paid',
-          newTier: 'individual_paid',
-          reason: `Plan changed from ${oldPlanType} to ${newPlanType}`,
-          triggeredBy: 'manual',
-          metadata: {
-            oldPlanType,
-            newPlanType,
-            dodoSubscriptionId: subscription.dodoSubscriptionId,
-            // proratedCharge: dodoResponse.prorated_amount,
-          },
-        },
-        { client: trx }
+      // 3. call dodo api to change subscription and prorate immediately - endpoint returns a success string, must fetch the new sub
+      const dodoResponse = await this.dodoPaymentService.changeSubscriptionPlan(
+        subscription.dodoSubscriptionId,
+        params
       )
+      // 4. Retrieve updated plan from dodo
+      const updatedDodoDetails = await this.dodoPaymentService.retrieveSubscription(
+        subscription.dodoSubscriptionId
+      )
+
+      // 5. update records
+      await subscription
+        .useTransaction(trx)
+        .merge({
+          planType: newPlanType,
+          expiresAt: updatedDodoDetails.expires_at
+            ? DateTime.fromISO(updatedDodoDetails.expires_at)
+            : undefined,
+        })
+        .save()
 
       logger.info('Individual subscription plan changed', {
         userId,
         subscriptionId: subscription.id,
         oldPlanType,
         newPlanType,
+        newExpiresAt: subscription.expiresAt.toISO(),
       })
 
-      return subscription
+      return dodoResponse
     })
   }
 
   /**
-   * Get active individual subscription for user
+   * Cancel individual subscription (cancel_at_next_billing_date)
+   * User keeps access until expiry
    */
-  async getActiveIndividualSubscription(userId: number): Promise<IndividualSubscription | null> {
-    return await IndividualSubscription.query()
-      .where('user_id', userId)
-      .where('status', 'active')
-      .where('expires_at', '>', DateTime.now().toSQL())
-      .orderBy('created_at', 'desc')
-      .first()
+  async cancelIndividualSubscription(
+    userId: number
+  ): Promise<Partial<SubscriptionsDetailsRetrieveResponse>> {
+    return await db.transaction(async (trx) => {
+      // 1. check if user has an active subscription.
+
+      const subscription = await IndividualSubscription.query({ client: trx })
+        .where('user_id', userId)
+        .where('status', 'active')
+        .forUpdate()
+        .firstOrFail()
+
+      // 2. call dodo api to cancel the sub at next billing date.
+      const dodoResponse = await this.dodoPaymentService.cancelSubscription(
+        subscription.dodoSubscriptionId,
+        true
+      )
+
+      await subscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
+
+      return dodoResponse
+    })
   }
 
   /**
@@ -221,39 +157,72 @@ export class IndividualSubscriptionService {
    * @param eventId - Webhook event ID for logging/auditing
    */
   async handlePaymentSuccess(dodoSubscriptionId: string, eventId: string): Promise<void> {
-    // 1. get sub
-    const subscription = await IndividualSubscription.query()
-      .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('user')
-      .firstOrFail()
+    try {
+      await db.transaction(async (trx) => {
+        // 1. Check idempotency - have to so that dodo does not retry the webhook delivery
+        const existingEvent = await WebhookEvent.query({ client: trx })
+          .where('event_id', eventId)
+          .forUpdate()
+          .first()
 
-    // 2. extend expiry date on the sub
-    subscription.expiresAt = this.calculateExpiresAt(subscription.planType)
-    subscription.status = 'active'
-    await subscription.save()
+        if (existingEvent) {
+          logger.info('Webhook already processed, skipping', { eventId, dodoSubscriptionId })
+          return // Return successfully to prevent Dodo from retrying
+        }
 
-    // 3. clear active grace period
-    await this.gracePeriodService.clearGracePeriod(subscription.userId)
+        await WebhookEvent.create(
+          {
+            eventId,
+            eventType: 'payment.succeeded',
+            resourceId: dodoSubscriptionId,
+            processedAt: DateTime.now(),
+          },
+          { client: trx }
+        )
 
-    // 4. Update tier (in case user was in grace period)
-    await this.tierService.updateUserTier(
-      subscription.userId,
-      'Payment successful - subscription renewed',
-      'webhook',
-      {
-        dodoSubscriptionId,
-        eventId,
-        expiresAt: subscription.expiresAt.toISO(),
+        const subscription = await IndividualSubscription.query({ client: trx })
+          .where('dodo_subscription_id', dodoSubscriptionId)
+          .forUpdate()
+          .firstOrFail()
+
+        logger.info('Processing payment success for individual subscription', {
+          subscriptionId: subscription.id,
+          userId: subscription.userId,
+          currentStatus: subscription.status,
+        })
+
+        const dodoDetails = await this.dodoPaymentService.retrieveSubscription(dodoSubscriptionId)
+
+        await subscription
+          .useTransaction(trx)
+          .merge({
+            status: 'active',
+            expiresAt: dodoDetails.expires_at
+              ? DateTime.fromISO(dodoDetails.expires_at)
+              : undefined,
+          })
+          .save()
+
+        await this.gracePeriodService.clearGracePeriod(subscription.userId)
+
+        logger.info('Individual subscription payment success processed', {
+          subscriptionId: subscription.id,
+          userId: subscription.userId,
+          newExpiresAt: subscription.expiresAt.toISO(),
+        })
+      })
+    } catch (error) {
+      if (error.code === '23505') {
+        logger.info('Duplicate webhook event detected, already processed', {
+          eventId,
+          dodoSubscriptionId,
+        })
+        return // Return successfully to prevent Dodo from retrying
       }
-    )
 
-    logger.info('Individual subscription payment successful', {
-      userId: subscription.userId,
-      subscriptionId: subscription.id,
-      dodoSubscriptionId,
-      eventId,
-      newExpiresAt: subscription.expiresAt.toISO(),
-    })
+      // Re-throw any other errors so Dodo retries
+      throw error
+    }
   }
 
   /**
@@ -264,29 +233,62 @@ export class IndividualSubscriptionService {
    * @param eventId - Webhook event ID for logging/auditing
    */
   async handlePaymentFailure(dodoSubscriptionId: string, eventId: string): Promise<void> {
-    // 1. get sub
-    const subscription = await IndividualSubscription.query()
-      .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('user')
-      .firstOrFail()
+    try {
+      await db.transaction(async (trx) => {
+        // 1. Check idempotency - have to so that dodo does not retry the webhook delivery
+        const existingEvent = await WebhookEvent.query({ client: trx })
+          .where('event_id', eventId)
+          .forUpdate()
+          .first()
 
-    // 2. start grace period
-    await this.gracePeriodService.startGracePeriod(
-      subscription.userId,
-      'payment_failure',
-      'individual_paid'
-    )
+        if (existingEvent) {
+          logger.info('Webhook already processed, skipping', { eventId, dodoSubscriptionId })
+          return
+        }
 
-    logger.warn('Individual subscription payment failed - grace period started', {
-      userId: subscription.userId,
-      subscriptionId: subscription.id,
-      dodoSubscriptionId,
-      eventId,
-      expiresAt: subscription.expiresAt.toISO(),
-    })
+        await WebhookEvent.create(
+          {
+            eventId,
+            eventType: 'payment.failed',
+            resourceId: dodoSubscriptionId,
+            processedAt: DateTime.now(),
+          },
+          { client: trx }
+        )
 
-    // 3. TODO: Send email notification to user about payment failure
-    // await this.emailService.sendPaymentFailureEmail(subscription.user.email)
+        const subscription = await IndividualSubscription.query({ client: trx })
+          .where('dodo_subscription_id', dodoSubscriptionId)
+          .forUpdate()
+          .firstOrFail()
+
+        logger.info('Processing payment failure for individual subscription', {
+          subscriptionId: subscription.id,
+          userId: subscription.userId,
+        })
+
+        await subscription.useTransaction(trx).merge({ status: 'failed' }).save()
+
+        await this.gracePeriodService.startGracePeriod(
+          subscription.userId,
+          'payment_failure',
+          'individual_paid'
+        )
+      })
+
+      // TODO: Send email notification to user about payment failure
+      // await this.emailService.sendPaymentFailureEmail(subscription.user.email)
+    } catch (error) {
+      if (error.code === '23505') {
+        logger.info('Duplicate webhook event detected, already processed', {
+          eventId,
+          dodoSubscriptionId,
+        })
+        return // Return successfully to prevent Dodo from retrying
+      }
+
+      // Re-throw any other errors so Dodo retries
+      throw error
+    }
   }
   /**
    * Handle subscription expired webhook from Dodo
@@ -296,33 +298,55 @@ export class IndividualSubscriptionService {
    * @param eventId - Webhook event ID for logging/auditing
    */
   async handleSubscriptionExpired(dodoSubscriptionId: string, eventId: string): Promise<void> {
-    // 1. get sub
-    const subscription = await IndividualSubscription.query()
-      .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('user')
-      .firstOrFail()
+    try {
+      await db.transaction(async (trx) => {
+        const existingEvent = await WebhookEvent.query({ client: trx })
+          .where('event_id', eventId)
+          .forUpdate()
+          .first()
 
-    // 2. set sub status to expired
-    subscription.status = 'expired'
-    await subscription.save()
+        if (existingEvent) {
+          logger.info('Webhook already processed, skipping', { eventId, dodoSubscriptionId })
+          return
+        }
 
-    // 3. update user tier for
-    await this.tierService.updateUserTier(
-      subscription.userId,
-      'Individual subscription expired',
-      'webhook',
-      {
-        dodoSubscriptionId,
-        eventId,
-        expiredAt: subscription.expiresAt.toISO(),
+        await WebhookEvent.create(
+          {
+            eventId,
+            eventType: 'subscription.expired',
+            resourceId: dodoSubscriptionId,
+            processedAt: DateTime.now(),
+          },
+          { client: trx }
+        )
+
+        const subscription = await IndividualSubscription.query({ client: trx })
+          .where('dodo_subscription_id', dodoSubscriptionId)
+          .forUpdate()
+          .firstOrFail()
+
+        logger.info('Processing subscription expiration for individual subscription', {
+          subscriptionId: subscription.id,
+          userId: subscription.userId,
+        })
+
+        await subscription.useTransaction(trx).merge({ status: 'expired' }).save()
+
+        await this.gracePeriodService.startGracePeriod(
+          subscription.userId,
+          'payment_failure',
+          'individual_paid'
+        )
+      })
+    } catch (error) {
+      if (error === '23505') {
+        logger.error('Failed to process subscription expiration webhook', {
+          error: error.message,
+          eventId,
+          dodoSubscriptionId,
+        })
+        throw error
       }
-    )
-
-    logger.info('Individual subscription expired', {
-      userId: subscription.userId,
-      subscriptionId: subscription.id,
-      dodoSubscriptionId,
-      eventId,
-    })
+    }
   }
 }
