@@ -102,20 +102,18 @@ export class GroupSubscriptionService {
 
   /**
    * User joins group subscription via invite code
-   * Validates code, seat availability, and tier conflicts
+   * Validates if user can join, invite code, seat availability, and tier conflicts
    *
    * @param userId - User joining the group
    * @param inviteCode - 8-character invite code
    */
   async joinGroupSubscription(userId: number, inviteCode: string): Promise<GroupSubscription> {
     return await db.transaction(async (trx) => {
-      // 1. Validate user can join (no active individual subscription)
       const canJoin = await this.tierService.canJoinGroupSubscription(userId, trx)
       if (!canJoin.canJoin) {
         throw new Error(canJoin.reason)
       }
 
-      // 2. Find group subscription by invite code & Check invite code expiry
       const groupSubscription = await GroupSubscription.query()
         .where('invite_code', inviteCode.toUpperCase())
         .where('status', 'active')
@@ -123,7 +121,6 @@ export class GroupSubscriptionService {
         .forUpdate()
         .firstOrFail()
 
-      // 3. Lock subscription row and check seat availability
       const memberCount = await GroupSubscription.query({ client: trx })
         .where('group_subscription_id', groupSubscription.id)
         .where('status', 'active')
@@ -134,7 +131,7 @@ export class GroupSubscriptionService {
         throw new Error('This group is full')
       }
 
-      // 4. create membership - // TODO - handle the duplicate 23505 error code in controller.
+      // TODO - handle the duplicate 23505 error code in controller.
       await GroupSubscriptionMember.create(
         {
           groupSubscriptionId: groupSubscription.id,
@@ -160,48 +157,68 @@ export class GroupSubscriptionService {
 
   /**
    * Remove member from group subscription
+   * Check subscription existance
+   * Verify the remover is owner
+   * prevent owner from removing themselves
    * Starts 7-day grace period
    *
    * @param groupSubId - Group subscription ID
    * @param userId - User to remove
    */
-  async removeMemberFromGroup(groupSubId: number, userId: number): Promise<void> {
+  async removeMemberFromGroup(
+    groupSubscriptionId: number,
+    userIdToRemove: number,
+    removedByUserId: number
+  ): Promise<void> {
     await db.transaction(async (trx) => {
-      const membership = await GroupSubscriptionMember.query({ client: trx })
-        .where('group_subscription_id', groupSubId)
-        .where('user_id', userId)
+      const groupSubscription = await GroupSubscription.query({ client: trx })
+        .where('id', groupSubscriptionId)
         .where('status', 'active')
+        .forUpdate()
         .firstOrFail()
 
-      // prevent owner of group from removing themselves
-      const groupSub = await GroupSubscription.findOrFail(groupSubId)
-      if (groupSub.ownerUserId === userId) {
-        throw new Error('Owner cannot remove themselves. Cancel the subscription instead.')
+      if (groupSubscription.ownerUserId !== removedByUserId) {
+        throw new Error('Only the owner can remove members from the group')
       }
 
-      membership.status = 'removed'
-      await membership.save()
+      if (groupSubscription.ownerUserId === userIdToRemove) {
+        throw new Error('Owner cannot remove themselves. Dissolve the group instead.')
+      }
+
+      const membership = await GroupSubscriptionMember.query({ client: trx })
+        .where('group_subscription_id', groupSubscriptionId)
+        .where('user_id', userIdToRemove)
+        .where('status', 'active')
+        .forUpdate()
+        .firstOrFail()
+      await membership.useTransaction(trx).merge({ status: 'removed' }).save()
 
       // Start 7-day grace period
-      await this.gracePeriodService.startGracePeriod(userId, 'group_removal', 'group_paid', trx)
-      logger.info('TODO Phase 5: Start 7-day grace period for removed member', {
-        userId,
-        groupSubId,
-      })
+      await this.gracePeriodService.startGracePeriod(
+        userIdToRemove,
+        'group_removal',
+        'group_paid',
+        trx
+      )
 
       await this.tierService.updateUserTier(
-        userId,
+        userIdToRemove,
         'Removed from group subscription',
         'manual',
         trx,
-        { groupSubId }
+        {
+          group_subscription_id: groupSubscriptionId,
+          removed_by_user_id: removedByUserId,
+          grace_period_days: 7,
+        }
       )
 
       logger.info('Member removed from group subscription', {
-        userId,
-        groupSubId,
-        membershipId: membership.id,
+        groupSubscriptionId,
+        removedUserId: userIdToRemove,
+        removedBy: removedByUserId,
       })
+      // TODO: error handling in controller
     })
   }
 
