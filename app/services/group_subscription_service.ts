@@ -121,7 +121,7 @@ export class GroupSubscriptionService {
         .forUpdate()
         .firstOrFail()
 
-      const memberCount = await GroupSubscription.query({ client: trx })
+      const memberCount = await GroupSubscriptionMember.query({ client: trx })
         .where('group_subscription_id', groupSubscription.id)
         .where('status', 'active')
         .forUpdate()
