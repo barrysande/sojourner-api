@@ -108,87 +108,53 @@ export class GroupSubscriptionService {
    * @param inviteCode - 8-character invite code
    */
   async joinGroupSubscription(userId: number, inviteCode: string): Promise<GroupSubscription> {
-    const user = await User.findOrFail(userId)
-
-    // 1. Validate user can join (no active individual subscription)
-
-    const canJoin = await this.tierService.canJoinGroupSubscription(userId)
-    if (!canJoin.canJoin) {
-      throw new Error(canJoin.reason)
-    }
-
-    // 2. Find group subscription by invite code
-    const groupSub = await GroupSubscription.query()
-      .where('invite_code', inviteCode.toUpperCase())
-      .where('status', 'active')
-      .where('expires_at', '>', DateTime.now().toSQL())
-      .first()
-    if (!groupSub) {
-      throw new Error('Invalid or expired invite code')
-    }
-
-    // 3. Check invite code expiry
-    if (groupSub.inviteCodeExpiresAt > DateTime.now()) {
-      throw new Error('This invite code has expired. Ask the owner to generate another one.')
-    }
-
     return await db.transaction(async (trx) => {
-      // 4. Lock subscription row and check seat availability
-      const lockedSub = await GroupSubscription.query({ client: trx })
-        .where('id', groupSub.id)
+      // 1. Validate user can join (no active individual subscription)
+      const canJoin = await this.tierService.canJoinGroupSubscription(userId, trx)
+      if (!canJoin.canJoin) {
+        throw new Error(canJoin.reason)
+      }
+
+      // 2. Find group subscription by invite code & Check invite code expiry
+      const groupSubscription = await GroupSubscription.query()
+        .where('invite_code', inviteCode.toUpperCase())
+        .where('status', 'active')
+        .where('invite_code_expires_at', '>', DateTime.now().toSQL())
         .forUpdate()
         .firstOrFail()
 
-      const currentMembers = await GroupSubscriptionMember.query({ client: trx })
-        .where('group_subscription_id', lockedSub.id)
+      // 3. Lock subscription row and check seat availability
+      const memberCount = await GroupSubscription.query({ client: trx })
+        .where('group_subscription_id', groupSubscription.id)
         .where('status', 'active')
+        .forUpdate()
         .count('* as total')
 
-      const activeMemberCount = Number(currentMembers[0].$extras.total)
-      if (activeMemberCount >= lockedSub.totalSeats) {
-        throw new Error('This group subscription is full. No available seats.')
+      if (Number(memberCount[0].$extras.total) >= groupSubscription.totalSeats) {
+        throw new Error('This group is full')
       }
 
-      // 5. Check if user already has membership (active or removed)
-      const existingMembership = await GroupSubscriptionMember.query({ client: trx })
-        .where('group_subscription_id', lockedSub.id)
-        .where('user_id', userId)
-        .first()
-      if (existingMembership) {
-        if (existingMembership.status === 'active') {
-          throw new Error('You are already a member of this group')
-        }
+      // 4. create membership - // TODO - handle the duplicate 23505 error code in controller.
+      await GroupSubscriptionMember.create(
+        {
+          groupSubscriptionId: groupSubscription.id,
+          userId,
+          joinedAt: DateTime.now(),
+          status: 'active',
+        },
+        { client: trx }
+      )
 
-        // If status is 'removed', can rejoin by updating status
-        await existingMembership.merge({ status: 'active', joinedAt: DateTime.now() }).save()
-
-        // Then reset/ clear grace period
-        await this.gracePeriodService.clearGracePeriod(userId)
-      } else {
-        // 6. Create new membership
-        await GroupSubscriptionMember.create(
-          {
-            groupSubscriptionId: lockedSub.id,
-            userId,
-            joinedAt: DateTime.now(),
-            status: 'active',
-          },
-          { client: trx }
-        )
-      }
-      // 7. Update user's tier
       await this.tierService.updateUserTier(userId, 'Joined group subscription', 'join', trx, {
-        groupSubscriptionId: lockedSub.id,
-        dodoSubscriptionId: lockedSub.dodoSubscriptionId,
+        groupSubscriptionId: groupSubscription.id,
       })
 
       logger.info('User joined group subscription', {
         userId,
-        groupSubscriptionId: lockedSub.id,
-        remainingSeats: lockedSub.totalSeats - activeMemberCount - 1,
+        groupSubscriptionId: groupSubscription.id,
       })
 
-      return lockedSub
+      return groupSubscription
     })
   }
 

@@ -285,31 +285,37 @@ export default class TierService {
    * @returns Object with conflict status and details
    */
 
-  async detectTierConflict(userId: number): Promise<{
+  async detectTierConflict(
+    userId: number,
+    trx: TransactionClientContract
+  ): Promise<{
     hasConflict: boolean
     conflictType?: 'has_individual' | 'has_group_membership' | 'has_group_ownership'
     message?: string
     details?: any
   }> {
-    const individualSubscription = await IndividualSubscription.query()
+    const individualSubscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
+      .forUpdate()
       .first()
 
-    const groupSubscriptionMembership = await GroupSubscriptionMember.query()
+    const groupSubscriptionMembership = await GroupSubscriptionMember.query({ client: trx })
       .where('user_id', userId)
       .where('status', 'active')
       .whereHas('groupSubscription', (query) => {
         query.where('status', 'active').where('expires_at', '>', DateTime.now().toSQL())
       })
+      .forUpdate()
       .first()
 
     // check if the user owns a group subscription
-    const ownedGroupSubscription = await GroupSubscription.query()
+    const ownedGroupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
+      .forUpdate()
       .first()
 
     if (individualSubscription) {
@@ -354,11 +360,14 @@ export default class TierService {
   }
 
   // subscription tier validation 1: Check if user can join a group subscription & block if user has active individual subscription
-  async canJoinGroupSubscription(userId: number): Promise<{
+  async canJoinGroupSubscription(
+    userId: number,
+    trx: TransactionClientContract
+  ): Promise<{
     canJoin: boolean
     reason?: string
   }> {
-    const conflict = await this.detectTierConflict(userId)
+    const conflict = await this.detectTierConflict(userId, trx)
 
     if (conflict.hasConflict && conflict.conflictType === 'has_individual') {
       return {
@@ -371,11 +380,14 @@ export default class TierService {
   }
 
   // subscription tier validation 2: Check if user can create a group subscription (as owner) and block if user has active individual subscription
-  async canCreateGroupSubscription(userId: number): Promise<{
+  async canCreateGroupSubscription(
+    userId: number,
+    trx: TransactionClientContract
+  ): Promise<{
     canCreate: boolean
     reason?: string
   }> {
-    const conflict = await this.detectTierConflict(userId)
+    const conflict = await this.detectTierConflict(userId, trx)
 
     if (conflict) {
       return {
@@ -389,11 +401,14 @@ export default class TierService {
   }
 
   // subscription tier validation 2: Check if user can create/subscribe to individual plan and block if user has active group membership or ownership
-  async canSubscribeIndividual(userId: number): Promise<{
+  async canSubscribeIndividual(
+    userId: number,
+    trx: TransactionClientContract
+  ): Promise<{
     canSubscribe: boolean
     reason?: string
   }> {
-    const conflict = await this.detectTierConflict(userId)
+    const conflict = await this.detectTierConflict(userId, trx)
 
     if (
       conflict.hasConflict &&
