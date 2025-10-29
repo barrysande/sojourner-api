@@ -165,10 +165,57 @@ export class InvalidDiscountCodeError extends Exception {
   static status = 422
   static code = 'E_INVALID_DISCOUNT_CODE'
 
-  constructor(code: string) {
-    super(`Discount code '${code}' is invalid or expired`, {
+  constructor() {
+    super(`Discount code is invalid or expired`, {
       status: 422,
       code: 'E_INVALID_DISCOUNT_CODE',
     })
+  }
+}
+
+export class AlreadySubscribedToPlanError extends Exception {
+  static status = 400
+  static code = 'E_ALREADY_SUBSCRIBED_TO_PLAN'
+  constructor() {
+    super(`Already subscribed to plan`, {
+      status: 400,
+      code: 'E_ALREADY_SUBSCRIBED_TO_PLAN',
+    })
+  }
+}
+
+export class UserAlreadyInGroupException extends Exception {
+  static status = 409
+  static code = 'E_USER_ALREADY_IN_GROUP'
+
+  constructor() {
+    super('You are already an active member of this group.')
+  }
+}
+
+export class OwnerRemovalException extends Exception {
+  static status = 400
+  static code = 'E_OWNER_CANNOT_BE_REMOVED'
+
+  constructor() {
+    super('Owner cannot remove themselves. Dissolve the group instead.')
+  }
+}
+
+export class ActionDeniedException extends Exception {
+  static status = 400
+  static code = 'E_ONLY_OWNER_CAN_REMOVE'
+
+  constructor(message: string) {
+    super(message)
+  }
+}
+
+export class DomainException extends Exception {
+  static status = 400
+  static code = 'E_DOMAIN_EXCEPTION'
+
+  constructor(message: string) {
+    super(message)
   }
 }

@@ -7,8 +7,13 @@ import type {
   TimeInterval,
   AttachAddon,
 } from 'dodopayments/resources/subscriptions.mjs'
+
 import type { BillingAddress, CustomerLimitedDetails } from 'dodopayments/resources/payments.mjs'
 import type { CountryCode, Currency } from 'dodopayments/resources/misc.mjs'
+import {
+  SubscriptionGatewayUnavailableError,
+  InvalidSubscriptionDataError,
+} from '#exceptions/payment_errors_exception'
 
 export interface MeterRaw {
   currency: Currency
@@ -101,11 +106,17 @@ export interface SubscriptionsDetailsRetrieveResponse {
   trial_period_days: number | null
 }
 
-export interface ChangeSubscriptionPlan {
+export interface ChangeIndividualSubscriptionPlanParams {
   newProductId: string
   quantity: number
   prorationBillingMode: 'prorated_immediately'
-  addons?: AttachAddon[]
+}
+
+export interface ChangeGroupSubscriptionPlanParams {
+  newProductId: string
+  quantity: number
+  prorationBillingMode: 'prorated_immediately'
+  addons: AttachAddon[]
 }
 
 export class DodoPaymentService {
@@ -120,6 +131,36 @@ export class DodoPaymentService {
     })
   }
 
+  private handleDodoApiError(error: any): never {
+    const status = error.response?.status || error.status
+
+    if (status) {
+      if (status >= 400 && status < 500) {
+        throw new InvalidSubscriptionDataError()
+      }
+
+      if (status >= 500) {
+        throw new SubscriptionGatewayUnavailableError()
+      }
+    }
+
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      throw new SubscriptionGatewayUnavailableError('Payment gateway timeout. Please try again.')
+    }
+
+    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+      throw new SubscriptionGatewayUnavailableError('Could not connect to payment gateway.')
+    }
+
+    // Unknown error
+    logger.error('Unexpected Dodo API error', {
+      message: error?.message,
+      stack: error?.stack,
+      error: error,
+    })
+    throw new SubscriptionGatewayUnavailableError()
+  }
+
   /**
    * Create a new Individual Subscription
    * @param params - typed using interface CreateIndividualSubscriptionParams.
@@ -130,41 +171,45 @@ export class DodoPaymentService {
   async createIndividualSubscription(
     params: CreateIndividualSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
-    const response = await this.client.subscriptions.create({
-      product_id: params.productId,
-      quantity: params.quantity,
-      customer: { email: params.customer.email, name: params.customer.name },
-      billing: {
-        city: params.billing.city,
-        country: params.billing.country,
-        state: params.billing.state,
-        street: params.billing.street,
-        zipcode: params.billing.zipcode,
-      },
-      metadata: params.metadata || {},
-      // TODO: Add more url params like success and subscription plan and tier
-      return_url: env.get('FRONTEND_URL'),
-    })
+    try {
+      const response = await this.client.subscriptions.create({
+        product_id: params.productId,
+        quantity: params.quantity,
+        customer: { email: params.customer.email, name: params.customer.name },
+        billing: {
+          city: params.billing.city,
+          country: params.billing.country,
+          state: params.billing.state,
+          street: params.billing.street,
+          zipcode: params.billing.zipcode,
+        },
+        metadata: params.metadata || {},
+        // TODO: Add more url params like success and subscription plan and tier
+        return_url: env.get('FRONTEND_URL'),
+      })
 
-    logger.info('Dodo subscription created successfully', {
-      subscriptionId: response.subscription_id,
-      paymentId: response.payment_id,
-    })
+      logger.info('Dodo subscription created successfully', {
+        subscriptionId: response.subscription_id,
+        paymentId: response.payment_id,
+      })
 
-    return {
-      client_secret: response.client_secret,
-      customer: {
-        customer_id: response.customer.customer_id,
-        email: response.customer.email,
-        name: response.customer.name,
-      },
-      metadata: response.metadata,
-      payment_id: response.payment_id,
-      payment_link: response.payment_link,
-      recurring_pre_tax_amount: response.recurring_pre_tax_amount,
-      subscription_id: response.subscription_id,
-      addons: response.addons,
-      expires_on: response.expires_on,
+      return {
+        client_secret: response.client_secret,
+        customer: {
+          customer_id: response.customer.customer_id,
+          email: response.customer.email,
+          name: response.customer.name,
+        },
+        metadata: response.metadata,
+        payment_id: response.payment_id,
+        payment_link: response.payment_link,
+        recurring_pre_tax_amount: response.recurring_pre_tax_amount,
+        subscription_id: response.subscription_id,
+        addons: response.addons,
+        expires_on: response.expires_on,
+      }
+    } catch (error) {
+      this.handleDodoApiError(error)
     }
   }
 
@@ -178,40 +223,44 @@ export class DodoPaymentService {
   async createGroupSubscription(
     params: CreateGroupSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
-    const response = await this.client.subscriptions.create({
-      product_id: params.productId,
-      quantity: params.quantity,
-      customer: { email: params.customer.email, name: params.customer.name },
-      billing: {
-        city: params.billing.city,
-        country: params.billing.country,
-        state: params.billing.state,
-        street: params.billing.street,
-        zipcode: params.billing.zipcode,
-      },
-      metadata: params.metadata || {},
-      addons: [{ addon_id: params.addons[0].addon_id, quantity: params.addons[0].quantity }],
-    })
+    try {
+      const response = await this.client.subscriptions.create({
+        product_id: params.productId,
+        quantity: params.quantity,
+        customer: { email: params.customer.email, name: params.customer.name },
+        billing: {
+          city: params.billing.city,
+          country: params.billing.country,
+          state: params.billing.state,
+          street: params.billing.street,
+          zipcode: params.billing.zipcode,
+        },
+        metadata: params.metadata || {},
+        addons: [{ addon_id: params.addons[0].addon_id, quantity: params.addons[0].quantity }],
+      })
 
-    logger.info('Dodo subscription created successfully', {
-      subscriptionId: response.subscription_id,
-      paymentId: response.payment_id,
-    })
+      logger.info('Dodo subscription created successfully', {
+        subscriptionId: response.subscription_id,
+        paymentId: response.payment_id,
+      })
 
-    return {
-      client_secret: response.client_secret,
-      customer: {
-        customer_id: response.customer.customer_id,
-        email: response.customer.email,
-        name: response.customer.name,
-      },
-      metadata: response.metadata,
-      payment_id: response.payment_id,
-      payment_link: response.payment_link,
-      recurring_pre_tax_amount: response.recurring_pre_tax_amount,
-      subscription_id: response.subscription_id,
-      addons: response.addons,
-      expires_on: response.expires_on,
+      return {
+        client_secret: response.client_secret,
+        customer: {
+          customer_id: response.customer.customer_id,
+          email: response.customer.email,
+          name: response.customer.name,
+        },
+        metadata: response.metadata,
+        payment_id: response.payment_id,
+        payment_link: response.payment_link,
+        recurring_pre_tax_amount: response.recurring_pre_tax_amount,
+        subscription_id: response.subscription_id,
+        addons: response.addons,
+        expires_on: response.expires_on,
+      }
+    } catch (error) {
+      this.handleDodoApiError(error)
     }
   }
 
@@ -221,28 +270,32 @@ export class DodoPaymentService {
   async retrieveSubscription(
     dodoSubscriptionId: string
   ): Promise<Partial<SubscriptionsDetailsRetrieveResponse>> {
-    const subscription = await this.client.subscriptions.retrieve(dodoSubscriptionId)
+    try {
+      const subscription = await this.client.subscriptions.retrieve(dodoSubscriptionId)
 
-    return {
-      addons: subscription.addons,
-      subscription_id: subscription.subscription_id,
-      product_id: subscription.product_id,
-      quantity: subscription.quantity,
-      status: subscription.status,
-      currency: subscription.currency,
-      recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
-      next_billing_date: subscription.next_billing_date,
-      previous_billing_date: subscription.previous_billing_date,
-      created_at: subscription.created_at,
-      cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
-      cancelled_at: subscription.cancelled_at,
-      customer: {
-        customer_id: subscription.customer.customer_id,
-        email: subscription.customer.email,
-        name: subscription.customer.name,
-      },
-      billing: subscription.billing,
-      metadata: subscription.metadata,
+      return {
+        addons: subscription.addons,
+        subscription_id: subscription.subscription_id,
+        product_id: subscription.product_id,
+        quantity: subscription.quantity,
+        status: subscription.status,
+        currency: subscription.currency,
+        recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
+        next_billing_date: subscription.next_billing_date,
+        previous_billing_date: subscription.previous_billing_date,
+        created_at: subscription.created_at,
+        cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
+        cancelled_at: subscription.cancelled_at,
+        customer: {
+          customer_id: subscription.customer.customer_id,
+          email: subscription.customer.email,
+          name: subscription.customer.name,
+        },
+        billing: subscription.billing,
+        metadata: subscription.metadata,
+      }
+    } catch (error) {
+      this.handleDodoApiError(error)
     }
   }
 
@@ -256,21 +309,46 @@ export class DodoPaymentService {
    * @property quantity in addons is the seat count.
    * @return Returns a success message string on success or error for an error(done at controller level)
    */
-  async changeSubscriptionPlan(
+  async changeIndividualSubscriptionPlan(
     dodoSubscriptionId: string,
-    params: ChangeSubscriptionPlan
+    params: ChangeIndividualSubscriptionPlanParams
   ): Promise<string> {
-    await this.client.subscriptions.changePlan(dodoSubscriptionId, {
-      product_id: params.newProductId,
-      quantity: params.quantity,
-      proration_billing_mode: params.prorationBillingMode,
-    })
+    try {
+      await this.client.subscriptions.changePlan(dodoSubscriptionId, {
+        product_id: params.newProductId,
+        quantity: params.quantity,
+        proration_billing_mode: params.prorationBillingMode,
+      })
 
-    logger.info('Subscription plan changed', {
-      subscriptionId: dodoSubscriptionId,
-      newProductId: params.newProductId,
-    })
-    return 'Subscription plan changed'
+      logger.info('Subscription plan changed', {
+        subscriptionId: dodoSubscriptionId,
+        newProductId: params.newProductId,
+      })
+      return 'Subscription plan changed'
+    } catch (error) {
+      this.handleDodoApiError(error)
+    }
+  }
+
+  async changeGroupSubscriptionPlan(
+    dodoSubscriptionId: string,
+    params: ChangeGroupSubscriptionPlanParams
+  ): Promise<string> {
+    try {
+      await this.client.subscriptions.changePlan(dodoSubscriptionId, {
+        product_id: params.newProductId,
+        quantity: params.quantity,
+        proration_billing_mode: params.prorationBillingMode,
+      })
+
+      logger.info('Subscription plan changed', {
+        subscriptionId: dodoSubscriptionId,
+        newProductId: params.newProductId,
+      })
+      return 'Subscription plan changed'
+    } catch (error) {
+      this.handleDodoApiError(error)
+    }
   }
 
   /**
@@ -283,31 +361,35 @@ export class DodoPaymentService {
     dodoSubscriptionId: string,
     newBillingParams?: BillingAddress
   ): Promise<Partial<SubscriptionsDetailsRetrieveResponse>> {
-    const subscription = await this.client.subscriptions.update(dodoSubscriptionId, {
-      billing: newBillingParams,
-    })
+    try {
+      const subscription = await this.client.subscriptions.update(dodoSubscriptionId, {
+        billing: newBillingParams,
+      })
 
-    logger.info('Subscription updated', { dodoSubscriptionId, newBillingParams })
+      logger.info('Subscription updated', { dodoSubscriptionId, newBillingParams })
 
-    return {
-      addons: subscription.addons,
-      subscription_id: subscription.subscription_id,
-      product_id: subscription.product_id,
-      quantity: subscription.quantity,
-      status: subscription.status,
-      recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
-      next_billing_date: subscription.next_billing_date,
-      previous_billing_date: subscription.previous_billing_date,
-      created_at: subscription.created_at,
-      cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
-      cancelled_at: subscription.cancelled_at,
-      customer: {
-        customer_id: subscription.customer.customer_id,
-        email: subscription.customer.email,
-        name: subscription.customer.name,
-      },
-      billing: newBillingParams,
-      metadata: subscription.metadata,
+      return {
+        addons: subscription.addons,
+        subscription_id: subscription.subscription_id,
+        product_id: subscription.product_id,
+        quantity: subscription.quantity,
+        status: subscription.status,
+        recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
+        next_billing_date: subscription.next_billing_date,
+        previous_billing_date: subscription.previous_billing_date,
+        created_at: subscription.created_at,
+        cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
+        cancelled_at: subscription.cancelled_at,
+        customer: {
+          customer_id: subscription.customer.customer_id,
+          email: subscription.customer.email,
+          name: subscription.customer.name,
+        },
+        billing: newBillingParams,
+        metadata: subscription.metadata,
+      }
+    } catch (error) {
+      this.handleDodoApiError(error)
     }
   }
 
@@ -322,31 +404,35 @@ export class DodoPaymentService {
     subscriptionId: string,
     cancelAtPeriodEnd: boolean = true
   ): Promise<Partial<SubscriptionsDetailsRetrieveResponse>> {
-    const subscription = await this.client.subscriptions.update(subscriptionId, {
-      cancel_at_next_billing_date: cancelAtPeriodEnd,
-      status: cancelAtPeriodEnd ? 'active' : 'cancelled',
-    })
+    try {
+      const subscription = await this.client.subscriptions.update(subscriptionId, {
+        cancel_at_next_billing_date: cancelAtPeriodEnd,
+        status: cancelAtPeriodEnd ? 'active' : 'cancelled',
+      })
 
-    logger.info('Subscription cancelled', { subscriptionId, cancelAtPeriodEnd })
-    return {
-      addons: subscription.addons,
-      subscription_id: subscription.subscription_id,
-      product_id: subscription.product_id,
-      quantity: subscription.quantity,
-      status: subscription.status,
-      recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
-      next_billing_date: subscription.next_billing_date,
-      previous_billing_date: subscription.previous_billing_date,
-      created_at: subscription.created_at,
-      cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
-      cancelled_at: subscription.cancelled_at,
-      customer: {
-        customer_id: subscription.customer.customer_id,
-        email: subscription.customer.email,
-        name: subscription.customer.name,
-      },
-      billing: subscription.billing,
-      metadata: subscription.metadata,
+      logger.info('Subscription cancelled', { subscriptionId, cancelAtPeriodEnd })
+      return {
+        addons: subscription.addons,
+        subscription_id: subscription.subscription_id,
+        product_id: subscription.product_id,
+        quantity: subscription.quantity,
+        status: subscription.status,
+        recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
+        next_billing_date: subscription.next_billing_date,
+        previous_billing_date: subscription.previous_billing_date,
+        created_at: subscription.created_at,
+        cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
+        cancelled_at: subscription.cancelled_at,
+        customer: {
+          customer_id: subscription.customer.customer_id,
+          email: subscription.customer.email,
+          name: subscription.customer.name,
+        },
+        billing: subscription.billing,
+        metadata: subscription.metadata,
+      }
+    } catch (error) {
+      this.handleDodoApiError(error)
     }
   }
 }
