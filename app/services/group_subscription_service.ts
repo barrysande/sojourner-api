@@ -69,10 +69,11 @@ export class GroupSubscriptionService {
       })
       const dodoResponse = await this.dodoPaymentService.createGroupSubscription(params)
 
+      // 2. Generate invite code
       const inviteCode = await this.generateInviteCode()
       const inviteCodeExpiresAt = this.calculateInviteCodeExpiry()
 
-      // 2. create subscription group
+      // 3. create subscription group
       const subscription = await GroupSubscription.create(
         {
           ownerUserId,
@@ -86,7 +87,7 @@ export class GroupSubscriptionService {
         { client: trx }
       )
 
-      // 3. make owner a member of created group
+      // 4. make owner a member of created group
       await GroupSubscriptionMember.create(
         {
           groupSubscriptionId: subscription.id,
@@ -156,7 +157,7 @@ export class GroupSubscriptionService {
   }
 
   /**
-   * Remove member from group subscription
+   * Removes member from group subscription
    * Check subscription existance
    * Verify the remover is owner
    * prevent owner from removing themselves
@@ -224,14 +225,13 @@ export class GroupSubscriptionService {
 
   /**
    * Expand seats for group subscription (mid-cycle increase)
-   * Prorated charge applied immediately by Dodo
+   * Prorated charge applied immediately by Dodo Payments
    *
    * @param groupSubId - Group subscription ID
    * @param newQuantity - New total seat count
    */
-  async expandSeats(groupSubId: number, newQuantity: number): Promise<GroupSubscription> {
-    const groupSub = await GroupSubscription.findOrFail(groupSubId)
-
+  async expandSeats(groupSubscriptionId: number, newQuantity: number): Promise<GroupSubscription> {
+    const groupSub = await GroupSubscription.findOrFail(groupSubscriptionId)
     // 1. Validate new quantity is greater than current
     if (newQuantity > groupSub.totalSeats) {
       throw new Error(

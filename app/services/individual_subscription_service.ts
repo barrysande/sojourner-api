@@ -159,7 +159,7 @@ export class IndividualSubscriptionService {
   async handlePaymentSuccess(dodoSubscriptionId: string, eventId: string): Promise<void> {
     try {
       await db.transaction(async (trx) => {
-        // 1. Check idempotency - have to so that dodo does not retry the webhook delivery
+        // 1. Manual Idempotency Check. Note that this has to be done manually here because the event_hooks table prevents duplicates based on event id. While dodopayments expects a 2xx status for webhooks. Any other status code is treated as a failure (https://docs.dodopayments.com/developer-resources/webhooks#responding-to-webhooks). Which means that trying to directly create failure web hook record in database and delegating duplicate checks to the database would return a Postgres '23505' error code if dodo sends duplicate webhooks for the same event. Thereby triggering a retries from dodopayments until it exhausts the 8 retries. https://docs.dodopayments.com/developer-resources/webhooks#responding-to-webhooks
         const existingEvent = await WebhookEvent.query({ client: trx })
           .where('event_id', eventId)
           .forUpdate()
@@ -235,7 +235,7 @@ export class IndividualSubscriptionService {
   async handlePaymentFailure(dodoSubscriptionId: string, eventId: string): Promise<void> {
     try {
       await db.transaction(async (trx) => {
-        // 1. Check idempotency - have to so that dodo does not retry the webhook delivery
+        // 1. Manual Idempotency Check. Note that this has to be done manually here because the event_hooks table prevents duplicates based on event id. While dodopayments expects a 2xx status for webhooks. Any other status code is treated as a failure (https://docs.dodopayments.com/developer-resources/webhooks#responding-to-webhooks). Which means that trying to directly create failure web hook record in database and delegating duplicate checks to the database would return a Postgres '23505' error code if dodo sends duplicate webhooks for the same event. Thereby triggering a retries from dodopayments until it exhausts the 8 retries. https://docs.dodopayments.com/developer-resources/webhooks#responding-to-webhooks
         const existingEvent = await WebhookEvent.query({ client: trx })
           .where('event_id', eventId)
           .forUpdate()
@@ -301,6 +301,7 @@ export class IndividualSubscriptionService {
   async handleSubscriptionExpired(dodoSubscriptionId: string, eventId: string): Promise<void> {
     try {
       await db.transaction(async (trx) => {
+        // 1. Manual Idempotency Check. Note that this has to be done manually here because the event_hooks table prevents duplicates based on event id. While dodopayments expects a 2xx status for webhooks. Any other status code is treated as a failure (https://docs.dodopayments.com/developer-resources/webhooks#responding-to-webhooks). Which means that trying to directly create failure web hook record in database and delegating duplicate checks to the database would return a Postgres '23505' error code if dodo sends duplicate webhooks for the same event. Thereby triggering a retries from dodopayments until it exhausts the 8 retries. https://docs.dodopayments.com/developer-resources/webhooks#responding-to-webhooks
         const existingEvent = await WebhookEvent.query({ client: trx })
           .where('event_id', eventId)
           .forUpdate()
