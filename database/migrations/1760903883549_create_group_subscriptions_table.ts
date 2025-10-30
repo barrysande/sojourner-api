@@ -23,12 +23,13 @@ export default class extends BaseSchema {
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').notNullable()
 
+      //the ?? are placeholders in the check instead of hardcoding the names then you pass column names in the array as strings. From Knex.js docs https://knexjs.org/guide/schema-builder.html#check
       table.check(
-        "status IN ('pending', 'active', 'on_hold',  'cancelled',  'failed','expired')",
-        [],
+        "?? IN ('pending', 'active', 'on_hold', 'cancelled', 'failed', 'expired')",
+        ['status'],
         'chk_group_status'
       )
-      table.check('total_seats >= 10 AND total_seats <= 50', [], 'chk_group_seats_range')
+      table.check('?? >= 10 AND ?? <= 50', ['total_seats', 'total_seats'], 'chk_group_seats_range')
 
       table.index('owner_user_id', 'idx_group_subs_owner')
       table.index('dodo_subscription_id', 'idx_group_subs_dodo')
@@ -37,7 +38,9 @@ export default class extends BaseSchema {
 
     this.defer(async (db) => {
       await db.rawQuery(
-        `CREATE UNIQUE INDEX one_active_plan_per_owner ON ${this.tableName} (owner_user_id, status) WHERE status = 'active'`
+        `CREATE UNIQUE INDEX one_active_plan_per_owner 
+         ON ${this.tableName} (owner_user_id) 
+         WHERE status = 'active'`
       )
     })
   }

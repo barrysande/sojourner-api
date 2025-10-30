@@ -21,11 +21,11 @@ export default class extends BaseSchema {
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').notNullable()
 
-      // CHECK constraints
-      table.check("type IN ('payment_failure', 'group_removal')", [], 'chk_grace_type')
+      // the ?? are placeholders in the check instead of hardcoding the names then you pass column names in the array as strings. From Knex.js docs https://knexjs.org/guide/schema-builder.html#check
+      table.check("?? IN ('payment_failure', 'group_removal')", ['type'], 'chk_grace_type')
       table.check(
-        "original_tier IN ('free', 'individual_paid', 'group_paid')",
-        [],
+        "?? IN ('free', 'individual_paid', 'group_paid')",
+        ['original_tier'],
         'chk_grace_original_tier'
       )
 

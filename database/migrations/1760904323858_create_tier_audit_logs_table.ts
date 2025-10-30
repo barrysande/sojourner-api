@@ -20,11 +20,20 @@ export default class extends BaseSchema {
       table.jsonb('metadata').nullable()
       table.timestamp('created_at').notNullable()
 
-      table.check("old_tier IN ('free', 'individual_paid', 'group_paid')", [], 'chk_audit_old_tier')
-      table.check("new_tier IN ('free', 'individual_paid', 'group_paid')", [], 'chk_audit_new_tier')
+      //the ?? are placeholders in the check instead of hardcoding the names then you pass column names in the array as strings. From Knex.js docs https://knexjs.org/guide/schema-builder.html#check
       table.check(
-        "triggered_by IN ('webhook', 'manual', 'cron', 'join', 'leave')",
-        [],
+        "?? IN ('free', 'individual_paid', 'group_paid')",
+        ['old_tier'],
+        'chk_audit_old_tier'
+      )
+      table.check(
+        "?? IN ('free', 'individual_paid', 'group_paid')",
+        ['new_tier'],
+        'chk_audit_new_tier'
+      )
+      table.check(
+        "?? IN ('webhook', 'manual', 'cron', 'join', 'leave')",
+        ['triggered_by'],
         'chk_audit_triggered_by'
       )
 

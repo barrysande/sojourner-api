@@ -20,11 +20,16 @@ export default class extends BaseSchema {
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at')
 
-      table.check("plan_type IN ('monthly', 'quarterly', 'annual')", [], 'chk_individual_plan_type')
+      //the ?? are placeholders in the check instead of hardcoding the names then you pass column names in the array as strings. From Knex.js docs https://knexjs.org/guide/schema-builder.html#check
+      table.check(
+        "?? IN ('monthly', 'quarterly', 'annual')",
+        ['plan_type'],
+        'chk_individual_plan_type'
+      )
 
       table.check(
-        "status IN ('pending', 'active', 'on_hold',  'cancelled',  'failed','expired') ",
-        [],
+        "?? IN ('pending', 'active', 'on_hold', 'cancelled', 'failed', 'expired')",
+        ['status'],
         'chk_individual_status'
       )
 
@@ -33,11 +38,10 @@ export default class extends BaseSchema {
       table.index(['status', 'expires_at'], 'idx_individual_subs_status')
     })
 
-    // Partial unique index. Deferred to ensure that the dependent columns are created first. See docs at https://lucid.adonisjs.com/docs/migrations#performing-other-database-operations
     this.defer(async (db) => {
       await db.rawQuery(
         `CREATE UNIQUE INDEX one_active_plan_per_user 
-         ON ${this.tableName} (user_id, status) 
+         ON ${this.tableName} (user_id) 
          WHERE status = 'active'`
       )
     })
