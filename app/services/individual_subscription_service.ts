@@ -85,12 +85,14 @@ export class IndividualSubscriptionService {
       subscription.dodoSubscriptionId,
       params
     )
-    // 4. Retrieve updated plan from dodo
+    // 4. TO REMOVE:  Retrieve updated plan from dodo
+    // TODO: use webhook event received.
     const updatedDodoDetails = await this.dodoPaymentService.retrieveSubscription(
       subscription.dodoSubscriptionId
     )
 
-    // 5. update records
+    // 5. TO REMOVE: update records
+    // TODO: use webhook event received.
     await subscription
       .merge({
         planType: newPlanType,
@@ -128,6 +130,8 @@ export class IndividualSubscriptionService {
       true
     )
 
+    // TO REMOVE:
+    // TODO: use webhook response
     await subscription.merge({ status: 'cancelled' }).save()
 
     return dodoResponse
@@ -146,7 +150,7 @@ export class IndividualSubscriptionService {
    */
   async handleSubscriptionActive(
     dodoSubscriptionId: string,
-    expiresAt: DateTime,
+    expiresAt: string,
     trx: TransactionClientContract
   ): Promise<void> {
     const subscription = await IndividualSubscription.query({ client: trx })
@@ -155,7 +159,10 @@ export class IndividualSubscriptionService {
       .forUpdate()
       .firstOrFail()
 
-    await subscription.useTransaction(trx).merge({ status: 'active', expiresAt }).save()
+    await subscription
+      .useTransaction(trx)
+      .merge({ status: 'active', expiresAt: DateTime.fromISO(expiresAt) })
+      .save()
 
     await this.gracePeriodService.clearGracePeriod(subscription.userId, trx)
 
@@ -163,7 +170,8 @@ export class IndividualSubscriptionService {
       subscription.userId,
       'Payment successful - subscription created',
       'webhook',
-      trx
+      trx,
+      {}
     )
 
     logger.info('Individual subscription payment successful', {
@@ -189,7 +197,7 @@ export class IndividualSubscriptionService {
    */
   async handleSubscriptionRenewed(
     dodoSubscriptionId: string,
-    newExpiresAt: DateTime,
+    newExpiresAt: string,
     trx: TransactionClientContract
   ): Promise<void> {
     const subscription = await IndividualSubscription.query({ client: trx })
@@ -200,7 +208,7 @@ export class IndividualSubscriptionService {
 
     await subscription
       .useTransaction(trx)
-      .merge({ expiresAt: newExpiresAt, status: 'active' })
+      .merge({ expiresAt: DateTime.fromISO(newExpiresAt), status: 'active' })
       .save()
 
     await this.gracePeriodService.clearGracePeriod(subscription.userId, trx)
@@ -209,10 +217,36 @@ export class IndividualSubscriptionService {
       subscription.userId,
       'Payment successful - subscription renewed',
       'webhook',
-      trx
+      trx,
+      {}
     )
 
     logger.info('Individual subscription renewal successful', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      newExpiresAt: subscription.expiresAt.toISO(),
+    })
+  }
+
+  async handleSubscriptionPlanChanged(
+    dodoSubscriptionId: string,
+    newPlanType: PlanType,
+    newExpiresAt: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const subscription = await IndividualSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .forUpdate()
+      .firstOrFail()
+
+    await subscription
+      .useTransaction(trx)
+      .merge({ status: 'active', planType: newPlanType, expiresAt: DateTime.fromISO(newExpiresAt) })
+      .save()
+
+    logger.info('Individual subscription plan change successful', {
       userId: subscription.userId,
       subscriptionId: subscription.id,
       dodoSubscriptionId,
@@ -245,7 +279,8 @@ export class IndividualSubscriptionService {
       subscription.userId,
       'Subscription cancelled.',
       'webhook',
-      trx
+      trx,
+      {}
     )
 
     logger.warn('Individual subscription cancelled', {
@@ -290,7 +325,8 @@ export class IndividualSubscriptionService {
       subscription.userId,
       'Subscription expired - not renewed.',
       'webhook',
-      trx
+      trx,
+      {}
     )
   }
   /**
@@ -328,6 +364,6 @@ export class IndividualSubscriptionService {
       trx
     )
 
-    await this.tierService.updateUserTier(subscription.userId, 'Payment failed', 'webhook', trx)
+    await this.tierService.updateUserTier(subscription.userId, 'Payment failed', 'webhook', trx, {})
   }
 }

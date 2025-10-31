@@ -35,7 +35,7 @@ export class WebhookService {
   private async handleSubscriptionActive(webhookEvent: WebhookEvent): Promise<void> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
-    const expiresAt = DateTime.fromISO(payload.expires_at as string)
+    const expiresAt = payload.expires_at
 
     if (!subscriptionId || expiresAt) {
       throw new MissingSubscriptionFieldsException()

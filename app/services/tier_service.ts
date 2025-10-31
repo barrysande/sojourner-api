@@ -34,7 +34,7 @@ export default class TierService {
         maxGemsTotal: 500,
         canShare: true,
         maxShareGroups: 10,
-        maxMembersPerGroup: 10,
+        maxMembersPerGroup: 20,
         maxFileSize: 10 * 1024 * 1024, // 10MB
       },
       group_paid: {
@@ -42,7 +42,7 @@ export default class TierService {
         maxGemsTotal: 500,
         canShare: true,
         maxShareGroups: 10,
-        maxMembersPerGroup: 10,
+        maxMembersPerGroup: 20,
         maxFileSize: 10 * 1024 * 1024, // 10MB
       },
     }
@@ -266,7 +266,7 @@ export default class TierService {
           details: tierResult.details,
         },
       },
-      trx ? { client: trx } : {}
+      { client: trx }
     )
 
     logger.info('User tier updated', {

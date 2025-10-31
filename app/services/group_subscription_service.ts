@@ -19,6 +19,7 @@ import {
   OwnerRemovalException,
   ActionDeniedException,
 } from '#exceptions/payment_errors_exception'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 
@@ -477,9 +478,204 @@ export class GroupSubscriptionService {
       .where('expires_at', '>', DateTime.now().toSQL())
       .first()
   }
-}
 
-// TODO: When subscription expires (via webhook):
-// 1. Mark as expired and enforce 7-day grace periods via handleSubscriptionExpired()
-// 2. Create in-app notification
-// 3. downgrade to 'free' if they don't subscribe individually within 7 days
+  async handleSubscriptionActive(
+    dodoSubscriptionId: string,
+    expiresAt: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .forUpdate()
+      .firstOrFail()
+
+    await groupSubscription
+      .useTransaction(trx)
+      .merge({ status: 'active', expiresAt: DateTime.fromISO(expiresAt) })
+      .save()
+
+    const members = await GroupSubscriptionMember.query({ client: trx })
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+
+    await Promise.all(
+      members.map(async (member) => {
+        await this.gracePeriodService.clearGracePeriod(member.userId, trx)
+
+        await this.tierService.updateUserTier(
+          member.userId,
+          'Group subscription activated',
+          'webhook',
+          trx,
+          { group_subscription_id: groupSubscription.id }
+        )
+      })
+    )
+  }
+
+  async handleSubscriptionRenewed(
+    dodoSubscriptionId: string,
+    newExpiresAt: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .forUpdate()
+      .firstOrFail()
+
+    await groupSubscription
+      .useTransaction(trx)
+      .merge({ expiresAt: DateTime.fromISO(newExpiresAt) })
+      .save()
+
+    const members = await GroupSubscriptionMember.query({ client: trx })
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+
+    await Promise.all(
+      members.map((member) =>
+        this.tierService.updateUserTier(
+          member.userId,
+          'Group subscription renewed.',
+          'webhook',
+          trx,
+          {
+            group_subscription_id: groupSubscription.id,
+          }
+        )
+      )
+    )
+  }
+
+  async handleSubscriptionCancelled(
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .forUpdate()
+      .firstOrFail()
+
+    await groupSubscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
+
+    const members = await GroupSubscriptionMember.query({ client: trx })
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+
+    await Promise.all(
+      members.map((member) =>
+        this.tierService.updateUserTier(
+          member.userId,
+          'Group subscription cancelled',
+          'webhook',
+          trx,
+          {
+            group_subscription_id: groupSubscription.id,
+            expires_at: groupSubscription.expiresAt.toISO(),
+          }
+        )
+      )
+    )
+  }
+
+  async handleSubscriptionExpired(
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .forUpdate()
+      .firstOrFail()
+
+    await groupSubscription.useTransaction(trx).merge({ status: 'expired' }).save()
+
+    const members = await GroupSubscriptionMember.query({ client: trx })
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+
+    await Promise.all(
+      members.map(async (member) => {
+        await this.gracePeriodService.startGracePeriod(
+          member.userId,
+          'group_removal',
+          'group_paid',
+          trx
+        )
+
+        await this.tierService.updateUserTier(
+          member.userId,
+          'group_subscription_expired',
+          'webhook',
+          trx,
+          {
+            group_subscription_id: groupSubscription.id,
+            grace_period_days: 7,
+          }
+        )
+      })
+    )
+  }
+
+  async handleSubscriptionFailed(
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .forUpdate()
+      .firstOrFail()
+
+    await groupSubscription.useTransaction(trx).merge({ status: 'on_hold' }).save()
+
+    const members = await GroupSubscriptionMember.query({ client: trx })
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+
+    await Promise.all(
+      members.map(async (member) => {
+        await this.gracePeriodService.startGracePeriod(
+          member.userId,
+          'payment_failure',
+          'group_paid',
+          trx
+        )
+
+        await this.tierService.updateUserTier(
+          member.userId,
+          'group_subscription_expired',
+          'webhook',
+          trx,
+          {
+            group_subscription_id: groupSubscription.id,
+            grace_period_days: 7,
+          }
+        )
+      })
+    )
+  }
+
+  async handleSubscriptionPlanChanged(
+    dodoSubscriptionId: string,
+    newQuantity: number,
+    newPlanType: PlanType,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .forUpdate()
+      .firstOrFail()
+
+    await groupSubscription
+      .useTransaction(trx)
+      .merge({ status: 'active', totalSeats: newQuantity, planType: newPlanType })
+      .save()
+
+    await this.tierService.updateUserTier(
+      groupSubscription.ownerUserId,
+      'Changed subscription plan.',
+      'webhook',
+      trx,
+      { group_subscription_id: groupSubscription.id }
+    )
+  }
+}
