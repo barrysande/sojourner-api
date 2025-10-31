@@ -218,19 +218,6 @@ export class GracePeriodService {
         { client: trx }
       )
 
-      // 3. update the user's tier
-      await this.tierService.updateUserTier(
-        userId,
-        `Grace period started: ${type}`,
-        'manual',
-        trx,
-        {
-          type,
-          expiresAt: expiresAt.toISO(),
-          originalTier,
-        }
-      )
-
       logger.info('Grace period started', {
         userId,
         gracePeriodId: gracePeriod.id,
@@ -263,18 +250,6 @@ export class GracePeriodService {
 
     gracePeriod.useTransaction(trx).merge({ resolved: true }).save()
 
-    // 2. update user's tier to reflect their actual subscription status
-    await this.tierService.updateUserTier(
-      userId,
-      'Grace period cleared - subscription restored',
-      'manual',
-      trx,
-      {
-        gracePeriodId: gracePeriod.id,
-        clearedType: gracePeriod.type,
-      }
-    )
-
     logger.info('Grace period cleared', {
       userId,
       gracePeriodId: gracePeriod.id,
@@ -299,6 +274,7 @@ export class GracePeriodService {
   /**
    * Degrade user to free tier after grace period expires
    * Performs cleanup: delete photos, lock gems, remove from share groups
+   * This method updates the user's tier i.e tierService.updateUserTier() because it is not specifically called elsewhere.
    *
    * @param userId - User to degrade
    */
