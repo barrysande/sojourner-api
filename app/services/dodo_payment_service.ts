@@ -120,12 +120,13 @@ export interface ChangeGroupSubscriptionPlanParams {
 }
 
 export class DodoPaymentService {
-  private client: DodoPayments
+  client: DodoPayments
 
   constructor() {
     this.client = new DodoPayments({
       bearerToken: env.get('DODO_PAYMENTS_API_KEY'),
       environment: 'test_mode',
+      webhookKey: env.get('DODO_PAYMENTS_WEBHOOK_KEY'),
 
       maxRetries: 3,
     })
@@ -152,7 +153,6 @@ export class DodoPaymentService {
       throw new SubscriptionGatewayUnavailableError('Could not connect to payment gateway.')
     }
 
-    // Unknown error
     logger.error('Unexpected Dodo API error', {
       message: error?.message,
       stack: error?.stack,

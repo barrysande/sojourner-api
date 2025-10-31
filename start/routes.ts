@@ -17,6 +17,7 @@ const ShareGroupsController = () => import('#controllers/share_groups_controller
 const SharingController = () => import('#controllers/sharing_controller')
 const NotificationsController = () => import('#controllers/notifications_controller')
 const ChatsController = () => import('#controllers/chats_controller')
+const WebhooksController = () => import('#controllers/webhooks_controller')
 
 // router.get('/', async () => {
 //   return {
@@ -107,3 +108,8 @@ router
   })
   .prefix('/api/chat')
   .use(middleware.auth())
+
+// PAYMENT ROUTES
+
+// WEBHOOK ROUTE
+router.post('/webhooks/dodo', [WebhooksController, 'handle'])

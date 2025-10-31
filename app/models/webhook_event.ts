@@ -1,15 +1,9 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import type { WebhookEventType } from 'dodopayments/resources/webhook-events.mjs'
+import type { SubscriptionWebhookPayload } from '../../types/webhookpayload.js'
 
 export type WebhookEventStatus = 'pending' | 'processing' | 'completed' | 'failed'
-
-export interface DodoWebhookPayload {
-  business_id: string
-  type: WebhookEventType
-  timestamp: string
-  data: Record<string, any>
-}
 
 export default class WebhookEvent extends BaseModel {
   @column({ isPrimary: true })
@@ -19,13 +13,16 @@ export default class WebhookEvent extends BaseModel {
   declare eventId: string
 
   @column()
-  declare eventType: string
+  declare eventType: WebhookEventType
 
   @column()
-  declare resourceId: string //subscription_id extract from payload.data.subscription_id
+  declare businessId: string
 
-  @column()
-  declare payload: DodoWebhookPayload
+  @column({
+    prepare: (value: SubscriptionWebhookPayload) => JSON.stringify(value),
+    consume: (value: string) => JSON.parse(value) as SubscriptionWebhookPayload,
+  })
+  declare payload: SubscriptionWebhookPayload
 
   @column()
   declare status: WebhookEventStatus

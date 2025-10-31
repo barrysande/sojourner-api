@@ -1,4 +1,5 @@
 import { Exception } from '@adonisjs/core/exceptions'
+import { HttpContext } from '@adonisjs/core/http'
 
 export class SubscriptionGatewayUnavailableError extends Exception {
   static status = 503
@@ -217,5 +218,24 @@ export class DomainException extends Exception {
 
   constructor(message: string) {
     super(message)
+  }
+}
+
+export class WebhookVerificationException extends Exception {
+  static status = 400
+  static code = 'WEBHOOK_VERIFICATION_FAILED'
+  constructor(message: string = 'Webhook signature verification failed', options: any) {
+    super(message, options)
+  }
+
+  async handle(error: this, ctx: HttpContext) {
+    ctx.response.status(error.status).send({
+      errors: [
+        {
+          message: error.message,
+          code: WebhookVerificationException.code,
+        },
+      ],
+    })
   }
 }

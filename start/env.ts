@@ -74,5 +74,5 @@ export default await Env.create(new URL('../', import.meta.url), {
   |----------------------------------------------------------
   */
   DODO_PAYMENTS_API_KEY: Env.schema.string(),
-  DODO_PAYMENTS_WEBHOOK_SECRET: Env.schema.string(),
+  DODO_PAYMENTS_WEBHOOK_KEY: Env.schema.string(),
 })

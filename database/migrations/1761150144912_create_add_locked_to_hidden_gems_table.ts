@@ -7,9 +7,6 @@ export default class extends BaseSchema {
     this.schema.alterTable(this.tableName, (table) => {
       table.boolean('locked').defaultTo(false).notNullable()
       table.index('locked', 'idx_locked')
-
-      table.timestamp('created_at')
-      table.timestamp('updated_at')
     })
   }
 

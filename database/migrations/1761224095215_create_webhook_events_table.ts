@@ -6,9 +6,9 @@ export default class extends BaseSchema {
   async up() {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id')
-      table.string('event_id', 255).notNullable().unique() // This ensures no duplicates
+      table.string('event_id', 255).notNullable().unique()
       table.string('event_type', 100).notNullable()
-      table.string('resource_id', 255).notNullable()
+      table.string('business_id', 255).notNullable()
       table.jsonb('payload').notNullable()
       table.string('status', 50).notNullable()
       table.integer('attempts').notNullable().defaultTo(0)
@@ -24,7 +24,7 @@ export default class extends BaseSchema {
         'chk_status_type'
       )
 
-      table.index(['event_type', 'resource_id'], 'idx_webhook_events_resource')
+      table.index(['event_type'], 'idx_webhook_events')
       table.index(['status', 'created_at'], 'idx_webhook_status_created')
     })
   }
