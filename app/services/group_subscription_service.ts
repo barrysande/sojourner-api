@@ -7,9 +7,13 @@ import GroupSubscriptionMember from '#models/group_subscription_member'
 import { customAlphabet } from 'nanoid'
 import TierService from './tier_service.js'
 import { GracePeriodService } from './grace_period_service.js'
-import { type CreateGroupSubscriptionParams, DodoPaymentService } from './dodo_payment_service.js'
+import { DodoPaymentService } from './dodo_payment_service.js'
+import type {
+  CreateGroupSubscriptionParams,
+  ChangeGroupSubscriptionPlanParams,
+} from '../../types/webhook.js'
 import type { SubscriptionCreateResponse } from 'dodopayments/resources/subscriptions.mjs'
-import type { ChangeGroupSubscriptionPlanParams } from './dodo_payment_service.js'
+
 import {
   UserAlreadyInGroupException,
   OwnerRemovalException,

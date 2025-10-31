@@ -239,3 +239,9 @@ export class WebhookVerificationException extends Exception {
     })
   }
 }
+
+export default class MissingSubscriptionFieldsException extends Exception {
+  constructor(message = 'Missing required fields: subscription_id or expires_at') {
+    super(message, { status: 400 })
+  }
+}

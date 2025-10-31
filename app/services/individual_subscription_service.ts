@@ -7,10 +7,13 @@ import { GracePeriodService } from './grace_period_service.js'
 import { DodoPaymentService } from './dodo_payment_service.js'
 import type {
   CreateIndividualSubscriptionParams,
-  SubscriptionsDetailsRetrieveResponse,
   ChangeIndividualSubscriptionPlanParams,
-} from './dodo_payment_service.js'
-import type { SubscriptionCreateResponse } from 'dodopayments/resources/subscriptions.mjs'
+} from '../../types/webhook.js'
+import type {
+  SubscriptionCreateResponse,
+  Subscription,
+} from 'dodopayments/resources/subscriptions.mjs'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 // type SubscriptionStatus =  'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
@@ -44,7 +47,6 @@ export class IndividualSubscriptionService {
       dodoSubscriptionId: dodoResponse.subscription_id,
       planType,
       status: 'pending',
-      expiresAt: dodoResponse.expires_on ? DateTime.fromISO(dodoResponse.expires_on) : undefined,
     })
 
     return {
@@ -113,9 +115,7 @@ export class IndividualSubscriptionService {
    * Cancel individual subscription (cancel_at_next_billing_date)
    * User keeps access until expiry
    */
-  async cancelIndividualSubscription(
-    userId: number
-  ): Promise<Partial<SubscriptionsDetailsRetrieveResponse>> {
+  async cancelIndividualSubscription(userId: number): Promise<Partial<Subscription>> {
     // 1. check if user has an active subscription.
     const subscription = await IndividualSubscription.query()
       .where('user_id', userId)
@@ -131,5 +131,203 @@ export class IndividualSubscriptionService {
     await subscription.merge({ status: 'cancelled' }).save()
 
     return dodoResponse
+  }
+
+  /**
+   * Handle payment subscription.active webhook from Dodo
+   *
+   * Update tier
+   *
+   * @param dodoSubscriptionId string
+   *
+   * @param expiresAt DateTime The webhook service passes it to this function in the DateTime format
+   *
+   * @param trx TransactionClientContract
+   */
+  async handleSubscriptionActive(
+    dodoSubscriptionId: string,
+    expiresAt: DateTime,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const subscription = await IndividualSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .forUpdate()
+      .firstOrFail()
+
+    await subscription.useTransaction(trx).merge({ status: 'active', expiresAt }).save()
+
+    await this.gracePeriodService.clearGracePeriod(subscription.userId, trx)
+
+    await this.tierService.updateUserTier(
+      subscription.userId,
+      'Payment successful - subscription created',
+      'webhook',
+      trx
+    )
+
+    logger.info('Individual subscription payment successful', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      newExpiresAt: subscription.expiresAt.toISO(),
+    })
+  }
+
+  /**
+   * Handle payment subscription.renewed webhook from Dodo
+   *
+   * Clear any grace period
+   *
+   * Update tier
+   *
+   * @param dodoSubscriptionId string
+   *
+   * @param newExpiresAt DateTime . The webhook service passes it to this function in the DateTime format.
+   *
+   * @param trx TransactionClientContract
+   */
+  async handleSubscriptionRenewed(
+    dodoSubscriptionId: string,
+    newExpiresAt: DateTime,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const subscription = await IndividualSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .forUpdate()
+      .firstOrFail()
+
+    await subscription
+      .useTransaction(trx)
+      .merge({ expiresAt: newExpiresAt, status: 'active' })
+      .save()
+
+    await this.gracePeriodService.clearGracePeriod(subscription.userId, trx)
+
+    await this.tierService.updateUserTier(
+      subscription.userId,
+      'Payment successful - subscription renewed',
+      'webhook',
+      trx
+    )
+
+    logger.info('Individual subscription renewal successful', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      newExpiresAt: subscription.expiresAt.toISO(),
+    })
+  }
+
+  /**
+   * Handle payment subscription.cancelled webhook from Dodo
+   *
+   * Update tier
+   *
+   * @param dodoSubscriptionId string
+   *
+   * @param trx TransactionClientContract
+   */
+  async handleSubscriptionCancelled(
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const subscription = await IndividualSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .forUpdate()
+      .firstOrFail()
+
+    await subscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
+
+    await this.tierService.updateUserTier(
+      subscription.userId,
+      'Subscription cancelled.',
+      'webhook',
+      trx
+    )
+
+    logger.warn('Individual subscription cancelled', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      newExpiresAt: subscription.expiresAt.toISO(),
+    })
+  }
+
+  /**
+   * Handle payment subscription.expired webhook from Dodo
+   *
+   * Starts 3-day grace period
+   *
+   * Update tier
+   *
+   * @param dodoSubscriptionId string
+   *
+   * @param trx TransactionClientContract
+   */
+  async handleSubscriptionExpired(
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const subscription = await IndividualSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .forUpdate()
+      .firstOrFail()
+
+    await subscription.useTransaction(trx).merge({ status: 'expired' }).save()
+
+    await this.gracePeriodService.startGracePeriod(
+      subscription.userId,
+      'payment_failure',
+      'individual_paid',
+      trx
+    )
+
+    await this.tierService.updateUserTier(
+      subscription.userId,
+      'Subscription expired - not renewed.',
+      'webhook',
+      trx
+    )
+  }
+  /**
+   * Handle the subscription.on_hold and subscription.failed webhook events from Dodo
+   *
+   * Starts 3-day grace period
+   *
+   * Update tier
+   *
+   * @param dodoSubscriptionId string
+   *
+   * @param trx TransactionClientContract
+   */
+  async handlePaymentFailed(
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<void> {
+    const subscription = await IndividualSubscription.query({ client: trx })
+      .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('user')
+      .forUpdate()
+      .firstOrFail()
+
+    logger.warn('Individual subscription payment failed', {
+      userId: subscription.userId,
+      subscriptionId: subscription.id,
+      dodoSubscriptionId,
+      expiresAt: subscription.expiresAt.toISO(),
+    })
+
+    await this.gracePeriodService.startGracePeriod(
+      subscription.userId,
+      'payment_failure',
+      'individual_paid',
+      trx
+    )
+
+    await this.tierService.updateUserTier(subscription.userId, 'Payment failed', 'webhook', trx)
   }
 }

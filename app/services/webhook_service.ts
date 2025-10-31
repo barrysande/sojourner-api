@@ -7,6 +7,7 @@ import { IndividualSubscriptionService } from './individual_subscription_service
 import { GroupSubscriptionService } from './group_subscription_service.js'
 import IndividualSubscription from '#models/individual_subscription'
 import GroupSubscription from '#models/group_subscription'
+import MissingSubscriptionFieldsException from '#exceptions/payment_errors_exception'
 import type { WebhookEventType } from 'dodopayments/resources/index.mjs'
 import type { SubscriptionWebhookPayload } from '../../types/webhook.js'
 
@@ -17,12 +18,35 @@ export class WebhookService {
     protected groupSubscriptionService: GroupSubscriptionService
   ) {}
 
+  private async identifySubscriptionType(
+    dodoSubscriptionId: string
+  ): Promise<{ isIndividual: boolean; isGroup: boolean }> {
+    const [isIndividual, isGroup] = await Promise.all([
+      IndividualSubscription.query().where('dodo_subscription_id', dodoSubscriptionId).first(),
+      GroupSubscription.query().where('dodo_subscription_id', dodoSubscriptionId).first(),
+    ])
+
+    return {
+      isIndividual: !!isIndividual,
+      isGroup: !!isGroup,
+    }
+  }
+
   private async handleSubscriptionActive(webhookEvent: WebhookEvent): Promise<void> {
     const payload = webhookEvent.payload
-    const subscription = payload.subscription_id
-    const expiresAt = payload.expires_at
+    const subscriptionId = payload.subscription_id
+    const expiresAt = DateTime.fromISO(payload.expires_at as string)
 
+    if (!subscriptionId || expiresAt) {
+      throw new MissingSubscriptionFieldsException()
+    }
 
+    const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
+
+    await db.transaction(async (trx) => {
+      if (isIndividual) {
+      }
+    })
   }
 
   /**
