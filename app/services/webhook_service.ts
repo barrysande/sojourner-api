@@ -5,30 +5,10 @@ import { DateTime } from 'luxon'
 import WebhookEvent from '#models/webhook_event'
 import { IndividualSubscriptionService } from './individual_subscription_service.js'
 import { GroupSubscriptionService } from './group_subscription_service.js'
-import crypto from 'node:crypto'
 import IndividualSubscription from '#models/individual_subscription'
 import GroupSubscription from '#models/group_subscription'
-
-export type DodoWebhookEvent =
-  | 'payment.succeeded'
-  | 'payment.failed'
-  | 'subscription.active'
-  | 'subscription.renewed'
-  | 'subscription.cancelled'
-  | 'subscription.expired'
-  | 'subscription.plan_changed'
-
-export interface DodoWebhookPayload {
-  eventId: string
-  eventType: DodoWebhookEvent
-  createdAt: string
-  data: {
-    subscription_id: string
-    customer_id?: string
-    status?: string
-    [key: string]: any
-  }
-}
+import type { WebhookEventType } from 'dodopayments/resources/index.mjs'
+import type { SubscriptionWebhookPayload } from '../../types/webhook.js'
 
 @inject()
 export class WebhookService {
@@ -36,4 +16,29 @@ export class WebhookService {
     protected individualSubscriptionService: IndividualSubscriptionService,
     protected groupSubscriptionService: GroupSubscriptionService
   ) {}
+
+  private async handleSubscriptionActive(webhookEvent: WebhookEvent): Promise<void> {
+    const payload = webhookEvent.payload
+    const subscription = payload.subscription_id
+    const expiresAt = payload.expires_at
+
+
+  }
+
+  /**
+   * Process a webhook event
+   * Routes to appropriate handler based on event type
+   */
+
+  async processWebhookEvent(webhookEvent: WebhookEvent): Promise<void> {
+    logger.info('Processing webhook event', {
+      eventId: webhookEvent.eventId,
+      eventType: webhookEvent.eventType,
+    })
+
+    try {
+      switch (webhookEvent.eventType) {
+      }
+    } catch (error) {}
+  }
 }

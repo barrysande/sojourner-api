@@ -7,16 +7,6 @@ import { Currency, CountryCode } from 'dodopayments/resources/misc.mjs'
 import type { AttachAddon } from 'dodopayments/resources/subscriptions.mjs'
 import type { BillingAddress, CustomerLimitedDetails } from 'dodopayments/resources/payments.mjs'
 
-export interface WebhookEventData {
-  created_at: string
-  payload_type: 'Subscription' | 'Refund' | 'Dispute' | 'LicenseKey'
-  [key: string]: any
-}
-
-export interface SubscriptionWebhookPayload extends WebhookEventData, Subscription {
-  payload_type: 'Subscription'
-}
-
 export interface MeterRaw {
   currency: Currency
   description: string | null
@@ -119,4 +109,16 @@ export interface ChangeGroupSubscriptionPlanParams {
   quantity: number
   prorationBillingMode: 'prorated_immediately'
   addons: AttachAddon[]
+}
+
+export type WebhookEventStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+export interface WebhookEventData {
+  created_at: string
+  payload_type: 'Subscription' | 'Refund' | 'Dispute' | 'LicenseKey'
+  [key: string]: any
+}
+
+export interface SubscriptionWebhookPayload extends WebhookEventData, Subscription {
+  payload_type: 'Subscription'
 }

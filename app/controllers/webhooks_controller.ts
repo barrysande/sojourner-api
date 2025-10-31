@@ -10,7 +10,6 @@ import type { SubscriptionWebhookPayload } from '../../types/webhook.js'
 export default class WebhooksController {
   constructor(protected dodoPaymentService: DodoPaymentService) {}
   async handle({ request, response }: HttpContext) {
-    console.log(request.body())
     try {
       const rawBody = request.raw() as string
       const webhookHeaders = {
@@ -19,7 +18,6 @@ export default class WebhooksController {
         'webhook-timestamp': request.header('webhook-timestamp') || '',
       }
 
-      console.log(webhookHeaders)
       let verifiedEvent
       try {
         verifiedEvent = this.dodoPaymentService.client.webhooks.unwrap(rawBody, {
