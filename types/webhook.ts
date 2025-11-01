@@ -122,3 +122,7 @@ export interface WebhookEventData {
 export interface SubscriptionWebhookPayload extends WebhookEventData, Subscription {
   payload_type: 'Subscription'
 }
+
+export type PlanType = 'monthly' | 'quarterly' | 'annual'
+
+export type PaymentFrequencyInterval = 'Day' | 'Week' | 'Month' | 'Year'

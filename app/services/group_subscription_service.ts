@@ -216,7 +216,6 @@ export class GroupSubscriptionService {
         .firstOrFail()
       await membership.useTransaction(trx).merge({ status: 'removed' }).save()
 
-      // Start 7-day grace period
       await this.gracePeriodService.startGracePeriod(
         userIdToRemove,
         'group_removal',

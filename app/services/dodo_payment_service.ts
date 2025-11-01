@@ -196,7 +196,7 @@ export class DodoPaymentService {
   }
 
   /**
-   * Change from current plan to one of monthly, or quarterly, or annual plans for an Individual/Group Subscription
+   * Change from current plan to one of monthly, or quarterly, or annual plans for an Individual Subscription
    * @param params - is an object with interface ChangeSubscriptionPlan has the following properties :-
    * @property newProduct,
    * @property quantity which is always 1 since you can only have one active subscription, different from addons.quantity.
@@ -226,6 +226,16 @@ export class DodoPaymentService {
     }
   }
 
+  /**
+   * Change from current plan to one of monthly, or quarterly, or annual plans for an Group Subscription
+   * @param params - is an object with interface ChangeSubscriptionPlan has the following properties :-
+   * @property newProduct,
+   * @property quantity which is always 1 since you can only have one active subscription, different from addons.quantity.
+   * @property prorationBillingMode can either be 'prorated_immediately' | 'full_immediately' | 'difference_immediately' as from dodo payments, and @property addons of type AttachAddon[] from dodo payments types.
+   * Each object of addons takes shape of {addon_id: string, quantity:number}
+   * @property quantity in addons is the seat count.
+   * @return Returns a success message string on success or error for an error(done at controller level)
+   */
   async changeGroupSubscriptionPlan(
     dodoSubscriptionId: string,
     params: ChangeGroupSubscriptionPlanParams

@@ -1,7 +1,6 @@
 import { inject } from '@adonisjs/core'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
-import db from '@adonisjs/lucid/services/db'
 import GracePeriod from '#models/grace_period'
 import User from '#models/user'
 import HiddenGem from '#models/hidden_gem'
@@ -184,50 +183,48 @@ export class GracePeriodService {
     originalTier: UserTier,
     trx: TransactionClientContract
   ): Promise<GracePeriod> {
-    return await db.transaction(async () => {
-      // 1. check for existing active grace period
-      const existingGrace = await GracePeriod.query({ client: trx })
-        .where('user_id', userId)
-        .where('resolved', false)
-        .forUpdate()
-        .first()
+    // 1. check for existing active grace period
+    const existingGrace = await GracePeriod.query({ client: trx })
+      .where('user_id', userId)
+      .where('resolved', false)
+      .forUpdate()
+      .first()
 
-      if (existingGrace) {
-        logger.warn('User already has active grace period', {
-          userId,
-          existingType: existingGrace.type,
-          requestedType: type,
-        })
-        throw new Error('User already has an active grace period')
-      }
-
-      // 2. Create grace period record if there is none
-      const duration = this.calculateGracePeriodDuration(type)
-      const startedAt = DateTime.now()
-      const expiresAt = startedAt.plus(duration)
-
-      const gracePeriod = await GracePeriod.create(
-        {
-          userId,
-          type,
-          originalTier,
-          startedAt,
-          expiresAt,
-          resolved: false,
-        },
-        { client: trx }
-      )
-
-      logger.info('Grace period started', {
+    if (existingGrace) {
+      logger.warn('User already has active grace period', {
         userId,
-        gracePeriodId: gracePeriod.id,
+        existingType: existingGrace.type,
+        requestedType: type,
+      })
+      throw new Error('User already has an active grace period')
+    }
+
+    // 2. Create grace period record if there is none
+    const duration = this.calculateGracePeriodDuration(type)
+    const startedAt = DateTime.now()
+    const expiresAt = startedAt.plus(duration)
+
+    const gracePeriod = await GracePeriod.create(
+      {
+        userId,
         type,
         originalTier,
-        expiresAt: expiresAt.toISO(),
-      })
+        startedAt,
+        expiresAt,
+        resolved: false,
+      },
+      { client: trx }
+    )
 
-      return gracePeriod
+    logger.info('Grace period started', {
+      userId,
+      gracePeriodId: gracePeriod.id,
+      type,
+      originalTier,
+      expiresAt: expiresAt.toISO(),
     })
+
+    return gracePeriod
   }
 
   /**

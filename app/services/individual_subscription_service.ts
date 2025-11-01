@@ -61,6 +61,7 @@ export class IndividualSubscriptionService {
 
   /**
    * Change subscription plan (e.g., monthly -> annual)
+   *
    * Uses Dodo change_plan_subscriptions with proration
    */
   async changeIndividualSubscriptionPlan(
@@ -85,22 +86,6 @@ export class IndividualSubscriptionService {
       subscription.dodoSubscriptionId,
       params
     )
-    // 4. TO REMOVE:  Retrieve updated plan from dodo
-    // TODO: use webhook event received.
-    const updatedDodoDetails = await this.dodoPaymentService.retrieveSubscription(
-      subscription.dodoSubscriptionId
-    )
-
-    // 5. TO REMOVE: update records
-    // TODO: use webhook event received.
-    await subscription
-      .merge({
-        planType: newPlanType,
-        expiresAt: updatedDodoDetails.expires_at
-          ? DateTime.fromISO(updatedDodoDetails.expires_at)
-          : undefined,
-      })
-      .save()
 
     logger.info('Individual subscription plan changed', {
       userId,
@@ -115,6 +100,7 @@ export class IndividualSubscriptionService {
 
   /**
    * Cancel individual subscription (cancel_at_next_billing_date)
+   *
    * User keeps access until expiry
    */
   async cancelIndividualSubscription(userId: number): Promise<Partial<Subscription>> {
@@ -130,17 +116,15 @@ export class IndividualSubscriptionService {
       true
     )
 
-    // TO REMOVE:
-    // TODO: use webhook response
-    await subscription.merge({ status: 'cancelled' }).save()
-
     return dodoResponse
   }
 
   /**
-   * Handle payment subscription.active webhook from Dodo
+   * Handles payment subscription.active webhook from Dodo
    *
-   * Update tier
+   * Changes subscription status to active
+   *
+   * Updates tier
    *
    * @param dodoSubscriptionId string
    *
@@ -183,11 +167,13 @@ export class IndividualSubscriptionService {
   }
 
   /**
-   * Handle payment subscription.renewed webhook from Dodo
+   * Handles payment subscription.renewed webhook from Dodo
    *
-   * Clear any grace period
+   * Changes subscription status to active if not active
    *
-   * Update tier
+   * Clears any grace period
+   *
+   * Updates tier
    *
    * @param dodoSubscriptionId string
    *
@@ -229,6 +215,17 @@ export class IndividualSubscriptionService {
     })
   }
 
+  /**
+   * Handles subscription individual subscription.plan_changed webhook from Dodo
+   *
+   * Changes subscription status to cancelled
+
+   * Updates tier
+   *
+   * @param dodoSubscriptionId string
+   *
+   * @param trx TransactionClientContract
+   */
   async handleSubscriptionPlanChanged(
     dodoSubscriptionId: string,
     newPlanType: PlanType,
@@ -255,8 +252,10 @@ export class IndividualSubscriptionService {
   }
 
   /**
-   * Handle payment subscription.cancelled webhook from Dodo
+   * Handle subscription individual subscription.cancelled webhook from Dodo
    *
+   * Changes subscription status to cancelled
+
    * Update tier
    *
    * @param dodoSubscriptionId string
@@ -292,11 +291,13 @@ export class IndividualSubscriptionService {
   }
 
   /**
-   * Handle payment subscription.expired webhook from Dodo
+   * Handles individual subscription.expired webhook from Dodo
+   *
+   * Changes subscription status to expired
    *
    * Starts 3-day grace period
    *
-   * Update tier
+   * Updates tier
    *
    * @param dodoSubscriptionId string
    *
@@ -330,17 +331,19 @@ export class IndividualSubscriptionService {
     )
   }
   /**
-   * Handle the subscription.on_hold and subscription.failed webhook events from Dodo
+   * Handles the individual subscription.on_hold and subscription.failed webhook events from Dodo
+   *
+   * Changes subscription status to failed
    *
    * Starts 3-day grace period
    *
-   * Update tier
+   * Updates tier
    *
    * @param dodoSubscriptionId string
    *
    * @param trx TransactionClientContract
    */
-  async handlePaymentFailed(
+  async handleSubscriptionFailed(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
   ): Promise<void> {
@@ -349,6 +352,8 @@ export class IndividualSubscriptionService {
       .preload('user')
       .forUpdate()
       .firstOrFail()
+
+    await subscription.useTransaction(trx).merge({ status: 'failed' }).save()
 
     logger.warn('Individual subscription payment failed', {
       userId: subscription.userId,
