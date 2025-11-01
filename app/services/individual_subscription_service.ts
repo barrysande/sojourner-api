@@ -128,7 +128,7 @@ export class IndividualSubscriptionService {
    *
    * @param dodoSubscriptionId string
    *
-   * @param expiresAt DateTime The webhook service passes it to this function in the DateTime format
+   * @param expiresAt string The webhook processor service passes it to this function in the ISO string format.
    *
    * @param trx TransactionClientContract
    */
@@ -177,7 +177,7 @@ export class IndividualSubscriptionService {
    *
    * @param dodoSubscriptionId string
    *
-   * @param newExpiresAt DateTime . The webhook service passes it to this function in the DateTime format.
+   * @param newExpiresAt string The webhook processor service passes it to this function in the ISO string format.
    *
    * @param trx TransactionClientContract
    */
@@ -223,8 +223,13 @@ export class IndividualSubscriptionService {
    * Updates tier
    *
    * @param dodoSubscriptionId string
+   * 
+   * @param newPlanType of type PLanType. String union.
+   * 
+   * @param newExpiresAt string The webhook processor service passes it to this function in the ISO string format.
    *
    * @param trx TransactionClientContract
+   * 
    */
   async handleSubscriptionPlanChanged(
     dodoSubscriptionId: string,
