@@ -1,12 +1,3 @@
-/*
-|--------------------------------------------------------------------------
-| Routes file
-|--------------------------------------------------------------------------
-|
-| The routes file is used for defining the HTTP routes.
-|
-*/
-
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
 import { registerThrottle, passwordResetThrottle, loginThrottle } from './limiter.js'
@@ -18,14 +9,15 @@ const SharingController = () => import('#controllers/sharing_controller')
 const NotificationsController = () => import('#controllers/notifications_controller')
 const ChatsController = () => import('#controllers/chats_controller')
 const WebhooksController = () => import('#controllers/webhooks_controller')
+const IndividualSubscriptionsController = () =>
+  import('#controllers/individual_subscriptions_controller')
+// const GroupSubscriptionsController = () => import('#controllers/group_subscriptions_controller')
 
-// router.get('/', async () => {
-//   return {
-//     hello: 'world',
-//   }
-// })
-
-// AUTH ROUTES
+/*
+  |----------------------------------------------------------
+  | Auth Routes
+  |----------------------------------------------------------
+  */
 router
   .group(() => {
     router.post('/register', [AuthController, 'register']).use(registerThrottle)
@@ -38,7 +30,11 @@ router
   })
   .prefix('/auth')
 
-// HIDDEN GEMS ROUTES
+/*
+  |----------------------------------------------------------
+  | Hidden Gems Routes
+  |----------------------------------------------------------
+  */
 router
   .group(() => {
     router.get('/hidden-gems', [HiddenGemsController, 'index'])
@@ -49,7 +45,11 @@ router
     router.post('/hidden-gems/:id/photos', [HiddenGemsController, 'addPhotos'])
     router.delete('/hidden-gems/:id/photos/:photoId', [HiddenGemsController, 'deletePhoto'])
 
-    // Expenses
+    /*
+  |----------------------------------------------------------
+  | Expenses Routes
+  |----------------------------------------------------------
+  */
     router.get('/hidden-gems/:gemId/expenses', [ExpensesController, 'index'])
     router.get('/hidden-gems/:gemId/expenses/:expensesId', [ExpensesController, 'show'])
     router.post('/hidden-gems/:gemId/expenses', [ExpensesController, 'store'])
@@ -57,9 +57,13 @@ router
     router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
   })
   .prefix('api')
-  .use([middleware.requestTimeout({ timeout: 10000 }), middleware.auth()])
+  .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
 
-// SHARE GROUPS ROUTES
+/*
+  |----------------------------------------------------------
+  | Share Groups Routes
+  |----------------------------------------------------------
+  */
 router
   .group(() => {
     router.get('/share-groups', [ShareGroupsController, 'index'])
@@ -73,7 +77,11 @@ router
   .prefix('/api')
   .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
 
-// SHARING ROUTES
+/*
+  |----------------------------------------------------------
+  | Sharing Routes
+  |----------------------------------------------------------
+  */
 router
   .group(() => {
     router.post('/share-groups/:id/gems', [SharingController, 'store'])
@@ -84,7 +92,11 @@ router
   .prefix('/api')
   .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
 
-// NOTIFICATIONS ROUTES
+/*
+  |----------------------------------------------------------
+  | Notifications Routes
+  |----------------------------------------------------------
+  */
 router
   .group(() => {
     router.get('/notifications', [NotificationsController, 'index'])
@@ -97,7 +109,11 @@ router
   .prefix('/api')
   .use(middleware.auth())
 
-// CHAT ROUTES
+/*
+  |----------------------------------------------------------
+  | Chat Routes
+  |----------------------------------------------------------
+  */
 router
   .group(() => {
     router.get('/rooms', [ChatsController, 'getUserRooms'])
@@ -109,7 +125,23 @@ router
   .prefix('/api/chat')
   .use(middleware.auth())
 
-// PAYMENT ROUTES
-
-// WEBHOOK ROUTE
+/*
+  |----------------------------------------------------------
+  | Subscription Routes
+  |----------------------------------------------------------
+  */
+router
+  .group(() => {
+    router.post('/individual', [IndividualSubscriptionsController, 'create'])
+    router.patch('/individual/plan', [IndividualSubscriptionsController, 'changePlan'])
+    router.patch('/individual', [IndividualSubscriptionsController, 'cancel'])
+    router.get('/individual', [IndividualSubscriptionsController, 'show'])
+  })
+  .prefix('api/subscirptions')
+  .use(middleware.auth())
+/*
+  |----------------------------------------------------------
+  | Webhook Routes
+  |----------------------------------------------------------
+  */
 router.post('/webhooks/dodo', [WebhooksController, 'handle'])

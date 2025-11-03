@@ -19,7 +19,7 @@ type PlanType = 'monthly' | 'quarterly' | 'annual'
 // type SubscriptionStatus =  'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
 
 @inject()
-export class IndividualSubscriptionService {
+export default class IndividualSubscriptionService {
   constructor(
     protected tierService: TierService,
     protected gracePeriodService: GracePeriodService,
@@ -117,6 +117,14 @@ export class IndividualSubscriptionService {
     )
 
     return dodoResponse
+  }
+
+  async getIndividualSubscriptionDetails(userId: number): Promise<IndividualSubscription | null> {
+    return await IndividualSubscription.query()
+      .where('user_id', userId)
+      .where('status', 'active')
+      .where('expires_at', '>', DateTime.now().toSQL())
+      .first()
   }
 
   /**

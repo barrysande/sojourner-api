@@ -85,7 +85,7 @@ export interface SubscriptionsDetailsRetrieveResponse {
   on_demand: boolean
   payment_frequency_count: number
   payment_frequency_interval: TimeInterval
-  previous_billing_date: string | null
+  previous_billing_date: string
   product_id: string
   quantity: number
   recurring_pre_tax_amount: number
@@ -95,7 +95,7 @@ export interface SubscriptionsDetailsRetrieveResponse {
   subscription_period_interval: TimeInterval
   tax_id: string | null
   tax_inclusive: boolean
-  trial_period_days: number | null
+  trial_period_days: number
 }
 
 export interface ChangeIndividualSubscriptionPlanParams {
