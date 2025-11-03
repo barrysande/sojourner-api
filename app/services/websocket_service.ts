@@ -16,7 +16,7 @@ export function setupWebsocketsHandlers(io: Server) {
 
   io.on('connection', (socket: ExtendedSocket) => {
     const user = socket.context.auth.getUserOrFail()
-    console.log(`User ${user.fullName} (ID: ${user.id}) connected`)
+    logger.info(`User ${user.fullName} (ID: ${user.id}) connected`)
 
     if (!userConnections.has(user.id)) {
       userConnections.set(user.id, new Set())
@@ -24,15 +24,16 @@ export function setupWebsocketsHandlers(io: Server) {
 
     userConnections.get(user.id)!.add(socket.id)
 
-    socket.on('join_room', async (data: { shareGroupId: number }) => {
+    socket.on('join_room', async (data: { shareGroupId: number }, callback?) => {
       try {
-        // 1.check access permission and emit error if not permitted 2. find or create chat room. 3. load chat history 4. emit system message to said join group
         const chatService = await app.container.make(ChatService)
 
-        const hasAccess = chatService.validateChatAccess(user.id, data.shareGroupId)
+        const hasAccess = await chatService.validateChatAccess(user.id, data.shareGroupId)
 
         if (!hasAccess) {
           socket.emit('error', { message: 'Access denied to this chat room' })
+          if (callback) callback({ success: false, error: 'Access denied' })
+          return
         }
 
         const chatRoom = await chatService.createOrFindChatRoom(data.shareGroupId)
@@ -55,17 +56,22 @@ export function setupWebsocketsHandlers(io: Server) {
             fullName: user.fullName,
           },
         })
+
+        // Acknowledge success
+        if (callback) callback({ success: true, roomId: chatRoom.id })
       } catch (error) {
         logger.error('Join room error:', error)
         socket.emit('error', { message: 'Failed to join chat room' })
+        if (callback) callback({ success: false, error: 'Failed to join chat room' })
       }
     })
 
-    socket.on('send_message', async (data: { roomId: number; message: string }) => {
+    socket.on('send_message', async (data: { roomId: number; message: string }, callback?) => {
       try {
-        // 1. check if message is empty 2. save chat message contents 3. load user's chat message that has been sent 4. send message to group 5. clear typing indicator
         if (!data.message?.trim()) {
           socket.emit('error', { message: 'Message cannot be empty' })
+          if (callback) callback({ success: false, error: 'Message cannot be empty' })
+          return
         }
 
         const chatService = await app.container.make(ChatService)
@@ -74,25 +80,42 @@ export function setupWebsocketsHandlers(io: Server) {
         await chatMessage.load('user')
 
         const roomName = `room_${data.roomId}`
-        socket.to(roomName).emit('new_message', chatMessage.toJSON())
+
+        io.to(roomName).emit('new_message', chatMessage.toJSON())
 
         const typingKey = `${data.roomId}_${user.id}`
         if (typingTimeouts.has(typingKey)) {
           clearTimeout(typingTimeouts.get(typingKey)!)
           typingTimeouts.delete(typingKey)
         }
+
+        // Remove user from typing users and notify others
+        const typing = typingUsers.get(data.roomId)
+        if (typing && typing.has(user.id)) {
+          typing.delete(user.id)
+          io.to(roomName).emit('typing_users', {
+            users: Array.from(typing),
+          })
+
+          if (typing.size === 0) {
+            typingUsers.delete(data.roomId)
+          }
+        }
+
+        // Acknowledge success
+        if (callback) callback({ success: true, messageId: chatMessage.id })
       } catch (error) {
         logger.error('Send message error:', error)
         socket.emit('error', { message: 'Failed to send message' })
+        if (callback) callback({ success: false, error: 'Failed to send message' })
       }
     })
 
     socket.on('typing_start', async (data: { roomId: number }) => {
-      // 1. A user start typing, check for typingTimeouts and clear any existing for that room - clear old ones so no races 2. set an autoclear every 5 seconds - auto clear for users who abruptly close chat without emitting a typing_stop event 3. add user to typingUsers 4. emit typing to the chat 5.
       const typingKey = `${data.roomId}_${user.id}`
 
       if (typingTimeouts.has(typingKey)) {
-        clearTimeout(typingTimeouts.get(typingKey))
+        clearTimeout(typingTimeouts.get(typingKey)!)
       }
 
       const timeout = setTimeout(() => {
@@ -102,6 +125,10 @@ export function setupWebsocketsHandlers(io: Server) {
           io.to(`room_${data.roomId}`).emit('typing_users', {
             users: Array.from(typing),
           })
+
+          if (typing.size === 0) {
+            typingUsers.delete(data.roomId)
+          }
         }
 
         typingTimeouts.delete(typingKey)
@@ -130,7 +157,6 @@ export function setupWebsocketsHandlers(io: Server) {
       }
 
       const typing = typingUsers.get(data.roomId)
-
       if (!typing) return
 
       typing.delete(user.id)
@@ -156,18 +182,19 @@ export function setupWebsocketsHandlers(io: Server) {
         }
       }
 
-      for (const [roomId, typing] of typingUsers.entries()) {
+      typingUsers.forEach((typing, roomId) => {
         if (typing.has(user.id)) {
           typing.delete(user.id)
 
           const typingKey = `${roomId}_${user.id}`
-          if (typingTimeouts.has(typingKey)) {
-            clearTimeout(typingTimeouts.get(typingKey)!)
+          const timeout = typingTimeouts.get(typingKey)
+          if (timeout) {
+            clearTimeout(timeout)
             typingTimeouts.delete(typingKey)
           }
 
           const roomName = `room_${roomId}`
-          socket.to(roomName).emit('typing_users', {
+          io.to(roomName).emit('typing_users', {
             users: Array.from(typing),
           })
 
@@ -175,12 +202,11 @@ export function setupWebsocketsHandlers(io: Server) {
             typingUsers.delete(roomId)
           }
         }
-      }
+      })
     })
   })
 }
 
-// method to allow group creator to kickout a user from the chat
 export async function disconnectUserFromGroup(io: Server, userId: number, shareGroupId: number) {
   const chatService = await app.container.make(ChatService)
   const chatRoom = await chatService.getChatRoomByGroupId(shareGroupId)
@@ -212,11 +238,16 @@ export async function disconnectUserFromGroup(io: Server, userId: number, shareG
 
     const typingKey = `${chatRoom.id}_${userId}`
     if (typingTimeouts.has(typingKey)) {
+      clearTimeout(typingTimeouts.get(typingKey)!)
       typingTimeouts.delete(typingKey)
     }
 
     io.to(roomName).emit('typing_users', {
       users: Array.from(typing),
     })
+
+    if (typing.size === 0) {
+      typingUsers.delete(chatRoom.id)
+    }
   }
 }

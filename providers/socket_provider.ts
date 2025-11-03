@@ -5,7 +5,7 @@ import logger from '@adonisjs/core/services/logger'
 export default class SocketProvider {
   constructor(protected app: ApplicationService) {}
 
-  async start() {
+  async ready() {
     await socket.boot()
 
     const { setupWebsocketsHandlers } = await import('#services/websocket_service')
@@ -13,10 +13,11 @@ export default class SocketProvider {
     logger.info('Socket.io server started')
   }
 
-  // async shutdown() {
-  //   if (socket.io) {
-  //     socket.io.close()
-  //     logger.info('Socket.io server stopped')
-  //   }
-  // }
+  async shutdown() {
+    if (socket.io) {
+      socket.io.close(() => {
+        logger.info('Socket.io server stopped')
+      })
+    }
+  }
 }

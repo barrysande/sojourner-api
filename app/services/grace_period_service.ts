@@ -329,7 +329,8 @@ export class GracePeriodService {
 
   /**
    * Check for expired grace periods and trigger degradation
-   * This is called by a cron job (hourly)
+   *
+   * TODO: Create a cron job (hourly) to trigger this method
    *
    * @returns Number of users degraded
    */
