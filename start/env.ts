@@ -75,4 +75,14 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   DODO_PAYMENTS_API_KEY: Env.schema.string(),
   DODO_PAYMENTS_WEBHOOK_KEY: Env.schema.string(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring the webhooks worker
+  |----------------------------------------------------------
+  */
+  WEBHOOK_WORKER_ENABLED: Env.schema.boolean.optional(),
+  WEBHOOK_WORKER_INTERVAL: Env.schema.number.optional(),
+  WEBHOOK_WORKER_BATCH_SIZE: Env.schema.number.optional(),
+  WEBHOOK_MAX_ATTEMPTS: Env.schema.number.optional(),
 })

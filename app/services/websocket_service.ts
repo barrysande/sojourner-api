@@ -207,6 +207,13 @@ export function setupWebsocketsHandlers(io: Server) {
   })
 }
 
+/**
+ * Used to kick out a user from chat group.
+ * @param io Server
+ * @param userId
+ * @param shareGroupId
+ * @returns
+ */
 export async function disconnectUserFromGroup(io: Server, userId: number, shareGroupId: number) {
   const chatService = await app.container.make(ChatService)
   const chatRoom = await chatService.getChatRoomByGroupId(shareGroupId)
