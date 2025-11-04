@@ -17,7 +17,7 @@ import type {
   ChangeIndividualSubscriptionPlanParams,
 } from '../../types/webhook.js'
 
-export class DodoPaymentService {
+export default class DodoPaymentService {
   client: DodoPayments
 
   constructor() {

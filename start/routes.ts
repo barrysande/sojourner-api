@@ -11,7 +11,7 @@ const ChatsController = () => import('#controllers/chats_controller')
 const WebhooksController = () => import('#controllers/webhooks_controller')
 const IndividualSubscriptionsController = () =>
   import('#controllers/individual_subscriptions_controller')
-// const GroupSubscriptionsController = () => import('#controllers/group_subscriptions_controller')
+const GroupSubscriptionsController = () => import('#controllers/group_subscriptions_controller')
 
 /*
   |----------------------------------------------------------
@@ -136,6 +136,19 @@ router
     router.patch('/individual/plan', [IndividualSubscriptionsController, 'changePlan'])
     router.patch('/individual', [IndividualSubscriptionsController, 'cancel'])
     router.get('/individual', [IndividualSubscriptionsController, 'show'])
+
+    router.post('/group', [GroupSubscriptionsController, 'create'])
+    router.post('/group/seats/expand', [GroupSubscriptionsController, 'expandSeats'])
+    router.post('/group/seats/reduce', [GroupSubscriptionsController, 'reduceSeats'])
+    router.delete('/group/members/:userId', [GroupSubscriptionsController, 'removeMember'])
+    router.patch('/group/cancel', [GroupSubscriptionsController, 'cancel'])
+    router.post('/group/invite-code/regenerate', [
+      GroupSubscriptionsController,
+      'regenerateInviteCode',
+    ])
+    router.get('/group/members', [GroupSubscriptionsController, 'listMembers'])
+    router.post('/group/join', [GroupSubscriptionsController, 'join'])
+    router.get('/group', [GroupSubscriptionsController, 'show'])
   })
   .prefix('api/subscirptions')
   .use(middleware.auth())

@@ -1,5 +1,7 @@
 import app from '@adonisjs/core/services/app'
 import { HttpContext, ExceptionHandler } from '@adonisjs/core/http'
+import ConflictException from './conflict_exception.js'
+import NotFoundException from './not_found_exception.js'
 
 export default class HttpExceptionHandler extends ExceptionHandler {
   /**
@@ -13,6 +15,15 @@ export default class HttpExceptionHandler extends ExceptionHandler {
    * response to the client
    */
   async handle(error: unknown, ctx: HttpContext) {
+    if (error instanceof ConflictException) {
+      return ctx.response.conflict({
+        message: error.message,
+      })
+    }
+
+    if (error instanceof NotFoundException) {
+      return ctx.response.notFound({ message: error.message })
+    }
     return super.handle(error, ctx)
   }
 

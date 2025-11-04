@@ -3,8 +3,8 @@ import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import IndividualSubscription from '#models/individual_subscription'
 import TierService from './tier_service.js'
-import { GracePeriodService } from './grace_period_service.js'
-import { DodoPaymentService } from './dodo_payment_service.js'
+import GracePeriodService from './grace_period_service.js'
+import DodoPaymentService from './dodo_payment_service.js'
 import type {
   CreateIndividualSubscriptionParams,
   ChangeIndividualSubscriptionPlanParams,
@@ -51,6 +51,8 @@ export default class IndividualSubscriptionService {
 
     return {
       addons: dodoResponse.addons,
+      client_secret: dodoResponse.client_secret,
+      payment_link: dodoResponse.payment_link,
       customer: dodoResponse.customer,
       metadata: dodoResponse.metadata,
       payment_id: dodoResponse.payment_id,

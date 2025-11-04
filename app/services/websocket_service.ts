@@ -1,6 +1,6 @@
 import type { Server } from 'socket.io'
 import type { ExtendedSocket } from '../../types/socket.js'
-import { ChatService } from './chat_service.js'
+import ChatService from './chat_service.js'
 import app from '@adonisjs/core/services/app'
 import SocketHttpContextMiddleware from '#middleware/socket/socket_http_context_middleware'
 import SocketAuthMiddleware from '#middleware/socket/socket_auth_middleware'

@@ -6,13 +6,14 @@ import GroupSubscription from '#models/group_subscription'
 import GroupSubscriptionMember from '#models/group_subscription_member'
 import { customAlphabet } from 'nanoid'
 import TierService from './tier_service.js'
-import { GracePeriodService } from './grace_period_service.js'
-import { DodoPaymentService } from './dodo_payment_service.js'
+import GracePeriodService from './grace_period_service.js'
+import DodoPaymentService from './dodo_payment_service.js'
 import type {
   CreateGroupSubscriptionParams,
   ChangeGroupSubscriptionPlanParams,
 } from '../../types/webhook.js'
 import type { SubscriptionCreateResponse } from 'dodopayments/resources/subscriptions.mjs'
+import ConflictException from '#exceptions/conflict_exception'
 
 import {
   UserAlreadyInGroupException,
@@ -69,20 +70,27 @@ export class GroupSubscriptionService {
     planType: PlanType,
     params: CreateGroupSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
-    // 1. call dodo api create sub endpoint
+    const conflictCheck = await this.tierService.detectTierConflict(ownerUserId)
+
+    if (conflictCheck.hasConflict) {
+      throw new ConflictException(conflictCheck.message!, {
+        conflictType: conflictCheck.conflictType,
+        details: conflictCheck.details,
+      })
+    }
+
     logger.info('Creating group subscription with Dodo', {
       ownerUserId,
       totalSeats: params.addons[0].quantity,
       productId: params.productId,
     })
+
     const dodoResponse = await this.dodoPaymentService.createGroupSubscription(params)
 
     return await db.transaction(async (trx) => {
-      // 2. Generate invite code
       const inviteCode = await this.generateInviteCode()
       const inviteCodeExpiresAt = this.calculateInviteCodeExpiry()
 
-      // 3. create subscription group
       const subscription = await GroupSubscription.create(
         {
           ownerUserId,
@@ -96,7 +104,6 @@ export class GroupSubscriptionService {
         { client: trx }
       )
 
-      // 4. make owner a member of created group
       await GroupSubscriptionMember.create(
         {
           groupSubscriptionId: subscription.id,
@@ -108,11 +115,15 @@ export class GroupSubscriptionService {
       )
       return {
         addons: dodoResponse.addons,
+        client_secret: dodoResponse.client_secret,
         customer: dodoResponse.customer,
         metadata: dodoResponse.metadata,
         payment_id: dodoResponse.payment_id,
         recurring_pre_tax_amount: dodoResponse.recurring_pre_tax_amount,
         subscription_id: dodoResponse.subscription_id,
+        payment_link: dodoResponse.payment_link,
+        discount_id: dodoResponse.discount_id,
+        expires_on: dodoResponse.expires_on,
       }
     })
   }
@@ -128,7 +139,7 @@ export class GroupSubscriptionService {
     return await db.transaction(async (trx) => {
       const canJoin = await this.tierService.canJoinGroupSubscription(userId, trx)
       if (!canJoin.canJoin) {
-        throw new Error(canJoin.reason)
+        throw new ConflictException(canJoin.reason!)
       }
 
       const groupSubscription = await GroupSubscription.query()
@@ -255,44 +266,35 @@ export class GroupSubscriptionService {
     requestingUserId: number,
     params: ChangeGroupSubscriptionPlanParams
   ): Promise<string> {
-    try {
-      const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
+    const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
 
-      if (groupSubscription.ownerUserId !== requestingUserId) {
-        throw new ActionDeniedException('You must be a group owner to add seats.')
-      }
-
-      if (params.addons[0].quantity <= groupSubscription.totalSeats) {
-        throw new ActionDeniedException('New seat count must be greater than current seats')
-      }
-
-      if (params.addons[0].quantity > 20) {
-        throw new ActionDeniedException('Maximum seats is 20.')
-      }
-
-      await this.dodoPaymentService.changeGroupSubscriptionPlan(
-        groupSubscription.dodoSubscriptionId,
-        params
-      )
-
-      // TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
-
-      logger.info('Group subscription seats expanded', {
-        groupSubscriptionId,
-        oldSeats: groupSubscription.totalSeats,
-        newSeats: params.addons[0].quantity,
-        requestedBy: requestingUserId,
-      })
-
-      return 'Subscription plan changed'
-    } catch (error) {
-      logger.error('Failed to expand seats', {
-        error: error.message,
-        groupSubscriptionId,
-        newTotalSeats: params.addons[0].quantity,
-      })
-      throw error
+    if (groupSubscription.ownerUserId !== requestingUserId) {
+      throw new ActionDeniedException('You must be a group owner to add seats.')
     }
+
+    if (params.addons[0].quantity <= groupSubscription.totalSeats) {
+      throw new ActionDeniedException('New seat count must be greater than current seats')
+    }
+
+    if (params.addons[0].quantity > 20) {
+      throw new ActionDeniedException('Maximum seats is 20.')
+    }
+
+    const result = await this.dodoPaymentService.changeGroupSubscriptionPlan(
+      groupSubscription.dodoSubscriptionId,
+      params
+    )
+
+    // TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
+
+    logger.info('Group subscription seats expanded', {
+      groupSubscriptionId,
+      oldSeats: groupSubscription.totalSeats,
+      newSeats: params.addons[0].quantity,
+      requestedBy: requestingUserId,
+    })
+
+    return result
   }
 
   /**
@@ -303,56 +305,55 @@ export class GroupSubscriptionService {
    * @param newQuantity - New total seat count
    */
   async reduceSeats(
-    dodoSubscriptionId: string,
     groupSubscriptionId: number,
     requestingUserId: number,
     params: ChangeGroupSubscriptionPlanParams
   ): Promise<string> {
-    await db.transaction(async (trx) => {
-      const groupSubscription = await GroupSubscription.query({ client: trx })
-        .where('id', groupSubscriptionId)
-        .forUpdate()
-        .firstOrFail()
+    const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
 
-      if (groupSubscription.ownerUserId !== requestingUserId) {
-        throw new ActionDeniedException('You must be a group owner to add seats.')
-      }
+    if (groupSubscription.ownerUserId !== requestingUserId) {
+      throw new ActionDeniedException('You must be a group owner to add seats.')
+    }
 
-      if (params.addons[0].quantity >= groupSubscription.totalSeats) {
-        throw new ActionDeniedException(
-          `New seat count (${params.addons[0].quantity}) must be less than current seats (${groupSubscription.totalSeats})`
-        )
-      }
+    if (params.addons[0].quantity >= groupSubscription.totalSeats) {
+      throw new ActionDeniedException(
+        `New seat count (${params.addons[0].quantity}) must be less than current seats (${groupSubscription.totalSeats})`
+      )
+    }
 
-      if (params.addons[0].quantity < 1) {
-        throw new ActionDeniedException('Minimum 1 seat required (for owner)')
-      }
+    if (params.addons[0].quantity < 1) {
+      throw new ActionDeniedException('Minimum 1 seat required (for owner)')
+    }
 
-      const currentMembers = await GroupSubscriptionMember.query({ client: trx })
-        .where('group_subscription_id', groupSubscription.id)
-        .where('status', 'active')
-        .forUpdate()
-        .count('* as total')
+    const currentMembers = await GroupSubscriptionMember.query()
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+      .forUpdate()
+      .count('* as total')
 
-      const activeMemberCount = Number(currentMembers[0].$extras.total)
+    const activeMemberCount = Number(currentMembers[0].$extras.total)
 
-      if (params.addons[0].quantity < activeMemberCount) {
-        throw new Error(
-          `Cannot reduce seats to ${params.addons[0].quantity}. You currently have ${activeMemberCount} active members. Remove members first.`
-        )
-      }
-    })
+    if (params.addons[0].quantity < activeMemberCount) {
+      throw new Error(
+        `Cannot reduce seats to ${params.addons[0].quantity}. You currently have ${activeMemberCount} active members. Remove members first.`
+      )
+    }
 
-    await this.dodoPaymentService.changeGroupSubscriptionPlan(dodoSubscriptionId, params)
+    const dodoResponse = await this.dodoPaymentService.changeGroupSubscriptionPlan(
+      groupSubscription.dodoSubscriptionId,
+      params
+    )
 
     // 6. TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
 
-    logger.info('Group subscription seats reduced', {
+    logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
-      dodoSubscriptionId,
+      oldSeats: groupSubscription.totalSeats,
+      newSeats: params.addons[0].quantity,
+      requestedBy: requestingUserId,
     })
 
-    return 'Subscription plan changed'
+    return dodoResponse
   }
 
   /**
@@ -360,18 +361,16 @@ export class GroupSubscriptionService {
    * All members keep access until expiry
    * Grace periods start when subscription expires
    *
-   * @param groupSubId - Group subscription ID
+   * @param groupSub: GroupSubscription
+   * Pass the whole GroupSubscription instance so that working with the controller is easy.
    */
-  async cancelGroupSubscription(groupSubscriptionId: number): Promise<GroupSubscription> {
-    const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
-
-    // 1.  Call Dodo to cancel at next billing date
+  async cancelGroupSubscription(groupSubscription: GroupSubscription): Promise<GroupSubscription> {
     await this.dodoPaymentService.cancelSubscription(groupSubscription.dodoSubscriptionId, true)
 
     // TODO in worker: Update group subscription membership status on subscription.cancelled.
 
     logger.info('Group subscription cancelled', {
-      groupSubscriptionId,
+      groupSubscriptionId: groupSubscription.id,
       dodoSubscriptionId: groupSubscription.dodoSubscriptionId,
       expiresAt: groupSubscription.expiresAt.toISO(),
       message: 'All members will retain access until expiry date',
@@ -470,12 +469,42 @@ export class GroupSubscriptionService {
    * Returns null if user doesn't own any active group subscription
    * @params userId: number
    */
-  async getOwnedGroupSubscription(userId: number): Promise<GroupSubscription | null> {
+  async getOwnedGroupSubscription(userId: number): Promise<GroupSubscription> {
     return await GroupSubscription.query()
       .where('owner_user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
-      .first()
+      .firstOrFail()
+  }
+
+  async listGroupSubscriptionMembers(ownerUserId: number): Promise<
+    {
+      id: number
+      email: string
+      name: string
+      joined_at: string | null
+      is_owner: boolean
+    }[]
+  > {
+    const groupSubscription = await GroupSubscription.query()
+      .where('owner_user_id', ownerUserId)
+      .where('status', 'active')
+      .preload('members', (query) => {
+        query.where('status', 'active').preload('user', (userQuery) => {
+          userQuery.select('id', 'email', 'full_name')
+        })
+      })
+      .firstOrFail()
+
+    const members = groupSubscription.members.map((member) => ({
+      id: member.user.id,
+      email: member.user.email,
+      name: member.user.fullName,
+      joined_at: member.joinedAt.toISO(),
+      is_owner: member.userId === groupSubscription.ownerUserId ? true : false,
+    }))
+
+    return members
   }
 
   async handleSubscriptionActive(

@@ -14,7 +14,7 @@ import {
 import ShareGroupMember from '#models/share_group_member'
 import logger from '@adonisjs/core/services/logger'
 import ShareGroup from '#models/share_group'
-import { ChatService } from '#services/chat_service'
+import ChatService from '#services/chat_service'
 import { disconnectUserFromGroup } from '#services/websocket_service'
 import socket from '#services/socket'
 

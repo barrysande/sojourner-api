@@ -7,7 +7,7 @@ import TierService from '#services/tier_service'
 import { shareGemsValidator, unshareGemsValidator } from '#validators/sharing'
 import HiddenGem from '#models/hidden_gem'
 import SharedGem from '#models/shared_gem'
-import { ChatService } from '#services/chat_service'
+import ChatService from '#services/chat_service'
 import logger from '@adonisjs/core/services/logger'
 
 @inject()

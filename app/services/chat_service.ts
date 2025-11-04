@@ -7,7 +7,7 @@ import ShareGroup from '#models/share_group'
 import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 
-export class ChatService {
+export default class ChatService {
   private readonly MAX_MESSAGE_LENGTH = 2000
 
   async createChatRoomForGroup(shareGroupId: number): Promise<ChatRoom> {

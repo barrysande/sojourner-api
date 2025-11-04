@@ -14,7 +14,7 @@ type GracePeriodType = 'payment_failure' | 'group_removal'
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
 
 @inject()
-export class GracePeriodService {
+export default class GracePeriodService {
   constructor(
     protected tierService: TierService,
     protected cloudinaryService: CloudinaryService

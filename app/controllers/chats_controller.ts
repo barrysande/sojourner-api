@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
-import { ChatService } from '#services/chat_service'
+import ChatService from '#services/chat_service'
 import ChatMessage from '#models/chat_message'
 import { messageHistoryValidator, deleteMessageValidator } from '#validators/chat'
 

@@ -287,7 +287,7 @@ export default class TierService {
 
   async detectTierConflict(
     userId: number,
-    trx: TransactionClientContract
+    trx?: TransactionClientContract
   ): Promise<{
     hasConflict: boolean
     conflictType?: 'has_individual' | 'has_group_membership' | 'has_group_ownership'
@@ -298,7 +298,6 @@ export default class TierService {
       .where('user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
-      .forUpdate()
       .first()
 
     const groupSubscriptionMembership = await GroupSubscriptionMember.query({ client: trx })
@@ -307,7 +306,6 @@ export default class TierService {
       .whereHas('groupSubscription', (query) => {
         query.where('status', 'active').where('expires_at', '>', DateTime.now().toSQL())
       })
-      .forUpdate()
       .first()
 
     // check if the user owns a group subscription
@@ -315,7 +313,6 @@ export default class TierService {
       .where('owner_user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
-      .forUpdate()
       .first()
 
     if (individualSubscription) {

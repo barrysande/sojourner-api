@@ -1,3 +1,165 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import { inject } from '@adonisjs/core'
+import { GroupSubscriptionService } from '#services/group_subscription_service'
+import { DateTime } from 'luxon'
+import {
+  createGroupSubscriptionValidator,
+  joinGroupValidator,
+  removeMemberValidator,
+  changeSeatsValidator,
+  regenerateInviteCodeValidator,
+} from '#validators/subscription'
 
-export default class GroupSubscriptionsController {}
+@inject()
+export default class GroupSubscriptionsController {
+  constructor(protected groupSubscriptionService: GroupSubscriptionService) {}
+
+  async create({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(createGroupSubscriptionValidator)
+
+    const params = {
+      productId: payload.product_id,
+      quantity: payload.quantity,
+      customer: {
+        email: payload.customer.email,
+        name: payload.customer.name,
+        phoneNumber: payload.customer.phone_number,
+      },
+      billing: {
+        street: payload.billing.street,
+        city: payload.billing.city,
+        state: payload.billing.state,
+        zipcode: payload.billing.zipcode,
+        country: payload.billing.country,
+      },
+      metadata: payload.metadata,
+      addons: payload.addons || [],
+      returnUrl: payload.return_url,
+      paymentLink: payload.payment_link,
+      trialPeriodDays: payload.trial_period_days,
+    }
+
+    const result = await this.groupSubscriptionService.createGroupSubscription(
+      user.id,
+      payload.plan_type,
+      params
+    )
+
+    return response.created(result)
+  }
+
+  async expandSeats({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(changeSeatsValidator)
+
+    const params = {
+      newProductId: payload.new_product_id,
+      quantity: payload.quantity,
+      prorationBillingMode: payload.proration_billing_mode,
+      addons: payload.addons || [],
+    }
+
+    const result = await this.groupSubscriptionService.expandSeats(
+      payload.group_subscription_id,
+      user.id,
+      params
+    )
+
+    return response.ok(result)
+  }
+
+  async reduceSeats({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(changeSeatsValidator)
+
+    const params = {
+      newProductId: payload.new_product_id,
+      quantity: payload.quantity,
+      prorationBillingMode: payload.proration_billing_mode,
+      addons: payload.addons || [],
+    }
+
+    const result = await this.groupSubscriptionService.reduceSeats(
+      payload.group_subscription_id,
+      user.id,
+      params
+    )
+
+    return response.ok(result)
+  }
+
+  async removeMember({ auth, request, response }: HttpContext) {
+    const user = await auth.getUserOrFail()
+
+    const payload = await request.validateUsing(removeMemberValidator)
+
+    await this.groupSubscriptionService.removeMemberFromSubscriptionGroup(
+      payload.group_subscription_id,
+      payload.user_id_to_remove,
+      user.id
+    )
+
+    return response.ok({ message: 'Member removed successfully' })
+  }
+
+  async cancel({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const ownedGroupSubscription = await this.groupSubscriptionService.getOwnedGroupSubscription(
+      user.id
+    )
+
+    const result =
+      await this.groupSubscriptionService.cancelGroupSubscription(ownedGroupSubscription)
+
+    return response.ok(result)
+  }
+
+  async regenerateInviteCode({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(regenerateInviteCodeValidator)
+
+    const newInviteCode = await this.groupSubscriptionService.regenerateInviteCode(
+      payload.group_subscription_id,
+      user.id
+    )
+
+    return response.ok({
+      invite_code: newInviteCode,
+      expires_at: DateTime.now().plus({ days: 30 }).toISO(),
+    })
+  }
+
+  async listMembers({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const members = await this.groupSubscriptionService.listGroupSubscriptionMembers(user.id)
+    return response.ok({ members })
+  }
+
+  async join({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(joinGroupValidator)
+
+    const result = await this.groupSubscriptionService.joinGroupSubscription(
+      user.id,
+      payload.invite_code
+    )
+
+    return response.ok(result)
+  }
+
+  async show({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const result = await this.groupSubscriptionService.getActiveGroupMembership(user.id)
+
+    return response.ok(result)
+  }
+}

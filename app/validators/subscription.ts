@@ -330,12 +330,14 @@ export const joinGroupValidator = vine.compile(
 
 export const removeMemberValidator = vine.compile(
   vine.object({
-    user_id: vine.number().positive(),
+    user_id_to_remove: vine.number().positive(),
+    group_subscription_id: vine.number().positive(),
   })
 )
 
 export const changeSeatsValidator = vine.compile(
   vine.object({
+    group_subscription_id: vine.number().positive(),
     new_product_id: vine.string().trim(),
     quantity: vine.number().min(1).max(100),
     proration_billing_mode: vine.literal('prorated_immediately'),
@@ -347,5 +349,11 @@ export const changeSeatsValidator = vine.compile(
         })
       )
       .optional(),
+  })
+)
+
+export const regenerateInviteCodeValidator = vine.compile(
+  vine.object({
+    group_subscription_id: vine.number().positive(),
   })
 )
