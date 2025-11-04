@@ -4,7 +4,7 @@ export default class ConflictException extends Exception {
   static status = 409
   static code = 'E_CONFLICT'
 
-  constructor(message: string, options?: {}) {
+  constructor(message: string, options?: any) {
     super(message, { status: 409, code: 'E_CONFLICT' })
   }
 }

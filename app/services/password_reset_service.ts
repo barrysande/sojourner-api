@@ -9,7 +9,7 @@ import mail from '@adonisjs/mail/services/main'
 import PasswordResetMail from '#mails/password_reset_mail'
 
 export default class PasswordResetService {
-  private readonly TOKEN_EXPIRY_HOURS = 1
+  private readonly TOKEN_EXPIRY_MINUTES = 20
 
   private async deleteExistingToken(email: string): Promise<void> {
     await PasswordResetToken.query().where('email', email).delete()
@@ -24,7 +24,7 @@ export default class PasswordResetService {
     await PasswordResetToken.create({
       email,
       token: hashedToken,
-      expiresAt: DateTime.now().plus({ hours: this.TOKEN_EXPIRY_HOURS }),
+      expiresAt: DateTime.now().plus({ minutes: this.TOKEN_EXPIRY_MINUTES }),
     })
 
     return plainToken
