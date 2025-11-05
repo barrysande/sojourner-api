@@ -6,6 +6,7 @@ import {
   changePasswordValidator,
   forgotPasswordValidator,
   resetPasswordValidator,
+  verifyResetTokenValidator,
 } from '#validators/auth'
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
@@ -206,6 +207,35 @@ export default class AuthController {
 
       return response.internalServerError({
         message: 'Unable to process password reset request',
+      })
+    }
+  }
+
+  async verifyResetPassword({ request, response }: HttpContext) {
+    try {
+      const { email, token } = await request.validateUsing(verifyResetTokenValidator)
+
+      const isValid = await this.passwordResetService.verifyToken(email, token)
+
+      if (!isValid) {
+        return response.badRequest({
+          message: 'Invalid or expired reset token',
+        })
+      }
+      return response.ok({
+        message: 'Token verified successfully',
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Invalid request',
+          errors: error.messages,
+        })
+      }
+
+      logger.error('Token verification error:', error)
+      return response.internalServerError({
+        message: 'Unable to verify reset token',
       })
     }
   }
