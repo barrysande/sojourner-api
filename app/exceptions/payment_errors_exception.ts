@@ -239,3 +239,11 @@ export class WebhookVerificationException extends Exception {
     })
   }
 }
+
+export class MissingSubscriptionFieldsException extends Exception {
+  static status = 400
+  static code = 'MISSING_SUB_FIELDS'
+  constructor(message: string = 'Missing subscription fields', options?: any) {
+    super(message, options)
+  }
+}

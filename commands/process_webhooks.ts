@@ -5,6 +5,8 @@ import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
 import env from '#start/env'
 import app from '@adonisjs/core/services/app'
+import Job, { WebhookJobPayload } from '#models/job'
+import db from '@adonisjs/lucid/services/db'
 
 export default class ProcessWebhooks extends BaseCommand {
   static commandName = 'process:webhooks'
@@ -20,12 +22,11 @@ export default class ProcessWebhooks extends BaseCommand {
 
   async run() {
     const workerSleepInterval = env.get('WEBHOOK_WORKER_INTERVAL', 5000)
-    const batchSize = env.get('WEBHOOK_WORKER_BATCH_SIZE', 10)
+
     const maxAttempts = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
 
     logger.info('Webhook worker started', {
       workerSleepInterval,
-      batchSize,
       maxAttempts,
     })
 
@@ -33,10 +34,23 @@ export default class ProcessWebhooks extends BaseCommand {
 
     while (!this.isShuttingDown) {
       try {
-        // try to recover stuck webhooks then process
+        // try to recover stuck webhooks then process new pending
         await this.recoverStuckWebhooks()
 
-        await this.processBatch(batchSize, maxAttempts)
+        const pendingJob = await Job.query()
+          .where('queue_name', 'webhooks')
+          .where('status', 'pending')
+          .orderBy('priority', 'asc')
+          .orderBy('created_at', 'asc')
+          .limit(1)
+          .forUpdate()
+          .skipLocked()
+
+        if (pendingJob.length === 0) {
+          return
+        }
+
+        await this.processJob(pendingJob[0], maxAttempts)
 
         await this.sleep(workerSleepInterval)
       } catch (error) {
@@ -48,73 +62,76 @@ export default class ProcessWebhooks extends BaseCommand {
         await this.sleep(workerSleepInterval)
       }
     }
+    this.logger.info('Webhook worker stopped gracefully')
   }
 
   /**
-   * Process a single webhook. Extracted logic so that the processBatch method's loop only calls it passes
+   * Process a single job. Extracted logic so that the processBatch method's loop only calls it passes
    * @param webhook
    * @param maxAttempts
    */
-  private async processWebhook(webhook: WebhookEvent, maxAttempts: number): Promise<void> {
+  private async processJob(job: Job, maxAttempts: number): Promise<void> {
     try {
-      await webhook.merge({ status: 'processing' }).save()
+      await job.merge({ status: 'processing' }).save()
 
-      const webhookService = await app.container.make('webhookService')
+      const payload = job.payload as WebhookJobPayload
+      const webhookEvent = await WebhookEvent.findOrFail(payload.eventId)
 
-      await webhookService.processWebhookEvent(webhook)
+      await db.transaction(async (trx) => {
+        const webhookService = await app.container.make('webhookService')
+        await webhookService.processWebhookEvent(webhookEvent)
 
-      await webhook.merge({ status: 'completed', processedAt: DateTime.now() }).save()
+        await webhookEvent
+          .useTransaction(trx)
+          .merge({ status: 'completed', processedAt: DateTime.now() })
+          .save()
 
-      logger.info('Webhook processed successfully', {
-        eventId: webhook.eventId,
-        eventType: webhook.eventType,
-        attempts: webhook.attempts,
+        // TODO: Enqueue the email job for email worker await Job.create({ status: 'pending'})
+
+        await job.useTransaction(trx).merge({ status: 'completed' }).save()
+      })
+
+      logger.info('Webhook job processed successfully', {
+        jobId: job.id,
+        eventId: webhookEvent.eventId,
+        eventType: webhookEvent.eventType,
+        attempts: job.attempts,
       })
     } catch (error) {
-      await webhook
-        .merge({ status: 'failed', attempts: webhook.attempts + 1, lastError: error.message })
+      await job
+        .merge({ status: 'failed', attempts: (job.attempts += 1), lastError: error.message })
         .save()
 
-      logger.error('Webhook processing failed', {
-        eventId: webhook.eventId,
-        eventType: webhook.eventType,
-        attempts: webhook.attempts,
+      try {
+        const payload = job.payload as WebhookJobPayload
+        const webhookEvent = await WebhookEvent.find(payload.eventId)
+        if (webhookEvent) {
+          webhookEvent.status = 'failed'
+          webhookEvent.attempts += 1
+          webhookEvent.lastError = error.message
+          await webhookEvent.save()
+        }
+      } catch (webhookUpdateError) {
+        logger.error('Failed to update webhook_event status', {
+          error: webhookUpdateError.message,
+        })
+      }
+
+      logger.error('Webhook job processing failed', {
+        jobId: job.id,
+        attempts: job.attempts,
         maxAttempts,
         error: error.message,
         stack: error.stack,
       })
 
-      if (webhook.attempts >= maxAttempts) {
-        logger.error('Webhook failed after max attempts - ALERT', {
-          eventId: webhook.eventId,
-          eventType: webhook.eventType,
-          attempts: webhook.attempts,
+      if (job.attempts >= maxAttempts) {
+        logger.error('Webhook job failed after max attempts', {
+          jobId: job.id,
+          attempts: job.attempts,
         })
-
-        // TODO: send alert email or slack message to admin.
+        // TODO: Send alert (email, Slack, etc.)
       }
-    }
-  }
-
-  /**
-   * Process a batch of pending webhooks. Calls the processWebhook method
-   */
-  private async processBatch(batchSize: number, maxAttempts: number): Promise<void> {
-    const pendingWebhooks = await WebhookEvent.query()
-      .where('status', 'pending')
-      .orderBy('created_at', 'asc')
-      .limit(batchSize)
-      .forUpdate()
-      .skipLocked()
-
-    if (pendingWebhooks.length === 0) {
-      return
-    }
-
-    logger.info('Processing webhook batch', { count: pendingWebhooks.length })
-
-    for (const webhook of pendingWebhooks) {
-      await this.processWebhook(webhook, maxAttempts)
     }
   }
 

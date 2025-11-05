@@ -6,7 +6,7 @@ import IndividualSubscriptionService from './individual_subscription_service.js'
 import { GroupSubscriptionService } from './group_subscription_service.js'
 import IndividualSubscription from '#models/individual_subscription'
 import GroupSubscription from '#models/group_subscription'
-import MissingSubscriptionFieldsException from '#exceptions/payment_errors_exception'
+import { MissingSubscriptionFieldsException } from '#exceptions/payment_errors_exception'
 import { resolvePlanType } from '../helpers/utils.js'
 
 @inject()

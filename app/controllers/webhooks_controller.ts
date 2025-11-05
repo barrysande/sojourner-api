@@ -1,6 +1,8 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
 import WebhookEvent from '#models/webhook_event'
+import Job, { WebhookJobPayload } from '#models/job'
 import DodoPaymentService from '#services/dodo_payment_service'
 import { WebhookVerificationException } from '#exceptions/payment_errors_exception'
 import logger from '@adonisjs/core/services/logger'
@@ -36,12 +38,38 @@ export default class WebhooksController {
 
       const eventId = request.header('webhook-id')
 
-      await WebhookEvent.create({
-        eventId,
-        eventType: verifiedEvent.type,
-        businessId: verifiedEvent.business_id,
-        status: 'pending',
-        payload: verifiedEvent.data as SubscriptionWebhookPayload,
+      await db.transaction(async (trx) => {
+        const webhookEvent = await WebhookEvent.create(
+          {
+            eventId,
+            eventType: verifiedEvent.type,
+            businessId: verifiedEvent.business_id,
+            status: 'pending',
+            payload: verifiedEvent.data as SubscriptionWebhookPayload,
+          },
+          { client: trx }
+        )
+
+        const jobPayload: WebhookJobPayload = {
+          eventId: webhookEvent.id,
+        }
+
+        await Job.create(
+          {
+            queueName: 'webhooks',
+            payload: jobPayload,
+            status: 'pending',
+            priority: 1,
+            attempts: 0,
+          },
+          { client: trx }
+        )
+
+        logger.info('Webhook queued for processing', {
+          eventId: webhookEvent.eventId,
+          eventType: webhookEvent.eventType,
+          jobQueueName: 'webhooks',
+        })
       })
 
       response.ok({ received: true })

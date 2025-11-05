@@ -83,6 +83,5 @@ export default await Env.create(new URL('../', import.meta.url), {
   */
   WEBHOOK_WORKER_ENABLED: Env.schema.boolean.optional(),
   WEBHOOK_WORKER_INTERVAL: Env.schema.number.optional(),
-  WEBHOOK_WORKER_BATCH_SIZE: Env.schema.number.optional(),
   WEBHOOK_MAX_ATTEMPTS: Env.schema.number.optional(),
 })
