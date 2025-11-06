@@ -18,13 +18,6 @@ class Websocket {
 
     this.io = new Server(adonisServer.getNodeServer(), socketConfig)
   }
-
-  async shutdown() {
-    if (this.booted && this.io) {
-      await this.io.close()
-      this.booted = false
-    }
-  }
 }
 
 export type SocketMiddleware = Parameters<Websocket['io']['use']>[0]

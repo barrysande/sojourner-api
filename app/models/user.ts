@@ -17,6 +17,7 @@ import GracePeriod from './grace_period.js'
 import TierAuditLog from './tier_audit_log.js'
 import { DbRememberMeTokensProvider } from '@adonisjs/auth/session'
 import CustomerBillingAddress from './customer_billing_address.js'
+import EmailVerificationsToken from './email_verifications_token.js'
 
 const AuthFinder = withAuthFinder(() => hash.use('scrypt'), {
   uids: ['email'],
@@ -52,6 +53,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare updatedAt: DateTime
 
   static rememberMeTokens = DbRememberMeTokensProvider.forModel(User)
+
+  @hasMany(() => EmailVerificationsToken)
+  declare emailVerifications: HasMany<typeof EmailVerificationsToken>
 
   @hasMany(() => HiddenGem)
   declare hiddenGems: HasMany<typeof HiddenGem>
