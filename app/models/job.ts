@@ -11,7 +11,7 @@ export interface WebhookJobPayload {
 
 export interface EmailJobPayload {
   userId: number
-  emailType: string
+  emailType: 'email_verification' | 'password_reset'
   metadata?: Record<string, any>
 }
 
@@ -24,10 +24,7 @@ export default class Job extends BaseModel {
   @column()
   declare queueName: QueueName
 
-  @column({
-    prepare: (value: JobPayload) => JSON.stringify(value),
-    consume: (value: string) => JSON.parse(value) as JobPayload,
-  })
+  @column()
   declare payload: JobPayload
 
   @column()

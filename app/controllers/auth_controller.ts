@@ -13,23 +13,60 @@ import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
 import PasswordResetService from '#services/password_reset_service'
 import { inject } from '@adonisjs/core'
+import EmailVerificationService from '#services/email_verification_service'
+import db from '@adonisjs/lucid/services/db'
+import EmailVerificationToken from '#models/email_verifications_token'
+import { DateTime } from 'luxon'
+import Job from '#models/job'
 
 @inject()
 export default class AuthController {
-  constructor(private passwordResetService: PasswordResetService) {}
+  constructor(
+    protected passwordResetService: PasswordResetService,
+    protected emailVerificationService: EmailVerificationService
+  ) {}
   async register({ request, response }: HttpContext) {
     try {
       const data = await request.validateUsing(registerValidator)
 
-      const user = await User.create(data)
+      const user = await db.transaction(async (trx) => {
+        const newUser = await User.create(data, { client: trx })
+
+        const plainHashed = await this.emailVerificationService.generateVerificationToken(
+          newUser.id,
+          trx
+        )
+
+        await EmailVerificationToken.create(
+          {
+            userId: newUser.id,
+            tokenHash: plainHashed.hashedToken,
+            expiresAt: DateTime.now().plus({ hour: 1 }),
+          },
+          { client: trx }
+        )
+
+        await Job.create(
+          {
+            queueName: 'emails',
+            payload: {
+              userId: newUser.id,
+              emailType: 'email_verification',
+              metadata: { plainToken: plainHashed.plainToken },
+            },
+            status: 'pending',
+            priority: 3,
+            attempts: 0,
+          },
+          { client: trx }
+        )
+
+        return newUser
+      })
 
       return response.created({
         message: 'User created successfully',
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.fullName,
-        },
+        user: user,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
@@ -186,7 +223,6 @@ export default class AuthController {
 
   // CHANGING PASSWORD WHILE LOGGED OUT
   async forgotPassword({ request, response }: HttpContext) {
-    // 1. send password reset token if email provided is associated to a user
     try {
       const { email } = await request.validateUsing(forgotPasswordValidator)
       await this.passwordResetService.sendResetEmail(email)
