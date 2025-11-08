@@ -16,8 +16,6 @@ import PasswordResetService from '#services/password_reset_service'
 import { inject } from '@adonisjs/core'
 import EmailVerificationService from '#services/email_verification_service'
 import db from '@adonisjs/lucid/services/db'
-import EmailVerificationToken from '#models/email_verifications_token'
-import { DateTime } from 'luxon'
 import Job from '#models/job'
 
 @inject()
@@ -37,15 +35,6 @@ export default class AuthController {
         const plainAndHashed = await this.emailVerificationService.generateVerificationToken(
           newUser.id,
           trx
-        )
-
-        await EmailVerificationToken.create(
-          {
-            userId: newUser.id,
-            tokenHash: plainAndHashed.hashedToken,
-            expiresAt: DateTime.now().plus({ hour: 1 }),
-          },
-          { client: trx }
         )
 
         await Job.create(
@@ -78,14 +67,12 @@ export default class AuthController {
         })
       }
 
-      // Database constraint errors (unique email) - Avoids race condition of manually checking the user using User.findBy('email', data.email) then creating a user.
+      // Database constraint errors (unique email)
       if (error.code === '23505') {
         return response.conflict({
           message: 'User with this email already exists',
         })
       }
-
-      logger.error('Registration error:', error)
 
       return response.internalServerError({
         message: 'An error occurred during registration',

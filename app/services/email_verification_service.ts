@@ -2,7 +2,7 @@ import User from '#models/user'
 import stringHelpers from '@adonisjs/core/helpers/string'
 import hash from '@adonisjs/core/services/hash'
 import { DateTime } from 'luxon'
-import EmailVerificationToken from '#models/email_verifications_token'
+import EmailVerificationToken from '#models/email_verification_token'
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
 import NotFoundException from '#exceptions/not_found_exception'
@@ -13,29 +13,30 @@ import InvalidTokenException from '#exceptions/invalid_token_exception'
 import db from '@adonisjs/lucid/services/db'
 
 export default class EmailVerificationService {
-  private readonly TOKEN_EXPIRY_HOUR = 1
-
-  private async deleteExistingToken(userId: number): Promise<void> {
-    await EmailVerificationToken.query().where('user_id', userId).delete()
+  private async deleteExistingToken(userId: number, trx: TransactionClientContract): Promise<void> {
+    await EmailVerificationToken.query({ client: trx }).where('user_id', userId).delete()
   }
 
   async generateVerificationToken(
     userId: number,
     trx: TransactionClientContract
   ): Promise<{ plainToken: string; hashedToken: string }> {
-    await this.deleteExistingToken(userId)
+    await this.deleteExistingToken(userId, trx)
 
     const plainToken = stringHelpers.generateRandom(64)
+
     const hashedToken = await hash.make(plainToken)
 
     await EmailVerificationToken.create(
       {
         userId,
         tokenHash: hashedToken,
-        expiresAt: DateTime.now().plus({ hour: this.TOKEN_EXPIRY_HOUR }),
+        type: 'email_verification',
+        expiresAt: DateTime.now().plus({ hour: 1 }),
       },
       { client: trx }
     )
+    logger.info('Email verification token created successfully')
 
     return { plainToken, hashedToken }
   }
@@ -47,7 +48,7 @@ export default class EmailVerificationService {
       token,
     })
 
-    return `${frontendUrl}/auth/verify-email/${params.toString()}`
+    return `${frontendUrl}/auth/verify-email?${params.toString()}`
   }
 
   async sendVerificationEmail(userId: number, plainToken: string): Promise<void> {

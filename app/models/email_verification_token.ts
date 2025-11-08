@@ -13,6 +13,9 @@ export default class EmailVerificationToken extends BaseModel {
   @column()
   declare tokenHash: string
 
+  @column()
+  declare type: string
+
   @column.dateTime()
   declare expiresAt: DateTime
 
