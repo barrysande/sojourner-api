@@ -6,6 +6,7 @@ import {
   changePasswordValidator,
   forgotPasswordValidator,
   resetPasswordValidator,
+  verifyEmailTokenValidator,
   verifyResetTokenValidator,
 } from '#validators/auth'
 import { errors as authErrors } from '@adonisjs/auth'
@@ -25,6 +26,7 @@ export default class AuthController {
     protected passwordResetService: PasswordResetService,
     protected emailVerificationService: EmailVerificationService
   ) {}
+
   async register({ request, response }: HttpContext) {
     try {
       const data = await request.validateUsing(registerValidator)
@@ -32,7 +34,7 @@ export default class AuthController {
       const user = await db.transaction(async (trx) => {
         const newUser = await User.create(data, { client: trx })
 
-        const plainHashed = await this.emailVerificationService.generateVerificationToken(
+        const plainAndHashed = await this.emailVerificationService.generateVerificationToken(
           newUser.id,
           trx
         )
@@ -40,7 +42,7 @@ export default class AuthController {
         await EmailVerificationToken.create(
           {
             userId: newUser.id,
-            tokenHash: plainHashed.hashedToken,
+            tokenHash: plainAndHashed.hashedToken,
             expiresAt: DateTime.now().plus({ hour: 1 }),
           },
           { client: trx }
@@ -52,7 +54,7 @@ export default class AuthController {
             payload: {
               userId: newUser.id,
               emailType: 'email_verification',
-              metadata: { plainToken: plainHashed.plainToken },
+              metadata: { plainToken: plainAndHashed.plainToken },
             },
             status: 'pending',
             priority: 3,
@@ -91,11 +93,34 @@ export default class AuthController {
     }
   }
 
+  async verifyEmail({ request, response }: HttpContext) {
+    try {
+      const { email, token } = await request.validateUsing(verifyEmailTokenValidator)
+
+      const user = await User.findByOrFail('email', email)
+
+      await this.emailVerificationService.verifyToken(user.id, token)
+
+      return response.ok({ userEmail: email, message: `Email successfully verified` })
+    } catch (error) {
+      if (error.code === 'E_INVALID_TOKEN' || error.code === 'E_NOT_FOUND') {
+        return response.badRequest({ message: 'This verification link is invalid or has expired.' })
+      }
+
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.badRequest({ message: 'User not found.' })
+      }
+
+      return response.internalServerError({
+        message: 'An error occurred during verification.',
+      })
+    }
+  }
+
   async login({ request, response, auth }: HttpContext) {
     try {
       const { email, password, rememberMe } = await request.validateUsing(loginValidator)
 
-      // login user
       const user = await User.verifyCredentials(email, password)
       await auth.use('web').login(user, !!rememberMe)
 
@@ -163,7 +188,6 @@ export default class AuthController {
         },
       })
     } catch (error) {
-      // User not authenticated
       if (error instanceof authErrors.E_UNAUTHORIZED_ACCESS) {
         return response.unauthorized({
           message: 'Authentication required',
@@ -185,7 +209,6 @@ export default class AuthController {
 
       const { currentPassword, newPassword } = await request.validateUsing(changePasswordValidator)
 
-      // 1. Verify current password using AdonisJS auth method 2. Update password
       const isValidPassword = await hash.verify(user.password, currentPassword)
       if (!isValidPassword) {
         return response.badRequest({

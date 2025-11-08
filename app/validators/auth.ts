@@ -43,3 +43,10 @@ export const verifyResetTokenValidator = vine.compile(
     token: vine.string().minLength(32),
   })
 )
+
+export const verifyEmailTokenValidator = vine.compile(
+  vine.object({
+    email: vine.string().email(),
+    token: vine.string().minLength(32),
+  })
+)

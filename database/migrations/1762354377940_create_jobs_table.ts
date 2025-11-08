@@ -23,6 +23,8 @@ export default class extends BaseSchema {
         'chk_job_status'
       )
 
+      // Decided not to type narrow the types in queue_name column using a table.check on the database so that any future emerging job queue names can be added without making a migration. However, type checking is done in the Job model. That is where to add new queue_name column types.
+
       table.index(['queue_name', 'status', 'priority', 'created_at'], 'idx_jobs_worker_query')
       table.index(['queue_name', 'status'], 'idx_jobs_queue_status')
       table.index(['created_at'], 'idx_jobs_created')

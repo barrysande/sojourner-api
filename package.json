@@ -62,7 +62,6 @@
     "adonisjs-scheduler": "^2.6.4",
     "cloudinary": "^2.7.0",
     "dodopayments": "^2.4.0",
-    "jose": "^6.1.0",
     "luxon": "^3.7.1",
     "nanoid": "^5.1.6",
     "pg": "^8.16.3",

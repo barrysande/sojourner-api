@@ -41,9 +41,6 @@ importers:
       dodopayments:
         specifier: ^2.4.0
         version: 2.4.0
-      jose:
-        specifier: ^6.1.0
-        version: 6.1.0
       luxon:
         specifier: ^3.7.1
         version: 3.7.1
@@ -2080,9 +2077,6 @@ packages:
   jest-diff@30.0.5:
     resolution: {integrity: sha512-1UIqE9PoEKaHcIKvq2vbibrCog4Y8G0zmOxgQUVEiTqwR5hJVMCoDsN1vFvI5JvwD37hjueZ1C4l2FyGnfpE0A==}
     engines: {node: ^18.14.0 || ^20.0.0 || ^22.0.0 || >=24.0.0}
-
-  jose@6.1.0:
-    resolution: {integrity: sha512-TTQJyoEoKcC1lscpVDCSsVgYzUDg/0Bt3WE//WiTPK6uOCQC2KZS4MpugbMWt/zyjkopgZoXhZuCi00gLudfUA==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -5496,8 +5490,6 @@ snapshots:
       '@jest/get-type': 30.0.1
       chalk: 4.1.2
       pretty-format: 30.0.5
-
-  jose@6.1.0: {}
 
   joycon@3.1.1: {}
 

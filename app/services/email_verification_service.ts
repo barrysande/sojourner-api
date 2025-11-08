@@ -7,10 +7,10 @@ import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
 import NotFoundException from '#exceptions/not_found_exception'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
-import type { EmailJobPayload } from '#models/job'
-import Job from '#models/job'
 import EmailVerificationMail from '#mails/email_verification_mail'
 import mail from '@adonisjs/mail/services/main'
+import InvalidTokenException from '#exceptions/invalid_token_exception'
+import db from '@adonisjs/lucid/services/db'
 
 export default class EmailVerificationService {
   private readonly TOKEN_EXPIRY_HOUR = 1
@@ -56,7 +56,7 @@ export default class EmailVerificationService {
 
       const emailVerificationUrl = this.buildVerificationUrl(user.email, plainToken)
 
-      await mail.sendLater(new EmailVerificationMail(user, emailVerificationUrl))
+      await mail.sendLater(new EmailVerificationMail(user, emailVerificationUrl)) // should I really use sendLater or just send since I'm using a database-backed queue?
 
       logger.info('Verification email sent', {
         userId: user.id,
@@ -68,13 +68,13 @@ export default class EmailVerificationService {
         error,
       })
       if (error.code === 'E_NOT_FOUND') {
-        throw new NotFoundException(`Register to get verifcation.`)
+        throw new NotFoundException(`User not found.`)
       }
       throw error
     }
   }
 
-  async verifyToken(userId: number, token: string): Promise<boolean> {
+  async verifyToken(userId: number, token: string): Promise<User> {
     const verificationToken = await EmailVerificationToken.query()
       .where('user_id', userId)
       .where('expires_at', '>', DateTime.now().toSQL())
@@ -82,25 +82,38 @@ export default class EmailVerificationService {
       .first()
 
     if (!verificationToken) {
-      return false
+      throw new NotFoundException(`Not found`)
     }
 
     const isValid = await hash.verify(verificationToken.tokenHash, token)
     if (!isValid) {
-      return false
+      throw new InvalidTokenException('Invalid or expired token')
     }
 
-    return isValid
+    const user = await db.transaction(async (trx) => {
+      const userToUpdate = await User.findOrFail(userId, { client: trx })
+
+      const tokenToUpdate = await EmailVerificationToken.query({ client: trx })
+        .where('id', verificationToken.id)
+        .whereNull('used_at')
+        .forUpdate()
+        .first()
+
+      if (!tokenToUpdate) {
+        throw new InvalidTokenException('Token has already been used')
+      }
+
+      await userToUpdate.useTransaction(trx).merge({ emailVerifiedAt: DateTime.now() }).save()
+
+      await tokenToUpdate.useTransaction(trx).merge({ usedAt: DateTime.now() }).save()
+
+      return userToUpdate
+    })
+
+    return user
   }
 
-  async markTokenAsUsed(userId: number): Promise<void> {
-    await EmailVerificationToken.query()
-      .where('user_id', userId)
-      .whereNull('used_at')
-      .update({ usedAt: DateTime.now() })
-  }
-
-  // Clean up used tokens - command method to clean up used tokens. Can be scheduled.
+  //TODO: Schedule Clean up used tokens - command method to clean up used tokens.
   async cleanupExpiredTokens(): Promise<number> {
     const result = await EmailVerificationToken.query()
       .where('expires_at', '<', DateTime.now().toSQL())
@@ -116,14 +129,3 @@ export default class EmailVerificationService {
     return deletedCount
   }
 }
-
-// const job = await Job.query()
-//   .where('status', 'pending')
-//   .orderBy('created_at', 'asc')
-//   .forUpdate()
-//   .skipLocked()
-//   .limit(1)
-//   .first()
-
-// const payload = job?.payload as EmailJobPayload
-// const plainToken = payload.metadata!.plainToken

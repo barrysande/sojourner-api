@@ -22,6 +22,9 @@ export default class EmailVerificationToken extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
+  @column.dateTime()
+  declare usedAt: DateTime
+
   @belongsTo(() => User)
   declare user: BelongsTo<typeof User>
 }
