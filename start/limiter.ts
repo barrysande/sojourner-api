@@ -33,7 +33,7 @@ export const loginThrottle = limiter.define('api', (ctx) => {
 
 export const passwordResetThrottle = limiter.define('password-reset', (ctx) => {
   return limiter
-    .allowRequests(100)
+    .allowRequests(3)
     .every('24 hours')
     .usingKey(`password_reset_${ctx.request.ip()}`)
     .blockFor('2 hours')

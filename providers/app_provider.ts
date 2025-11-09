@@ -27,6 +27,16 @@ export default class AppProvider {
     })
   }
 
+  protected registerEmailVerificationService() {
+    this.app.container.singleton('emailVerificationService', async () => {
+      const { default: EmailVerificationService } = await import(
+        '#services/email_verification_service'
+      )
+
+      return new EmailVerificationService()
+    })
+  }
+
   // protected registerNotificationService() {
   //   this.app.container.singleton('notificationService', async () => {
   //     const { default: NotificationService } = await import('#services/notification_service')
@@ -58,6 +68,7 @@ export default class AppProvider {
     this.registerCloudinaryService()
     this.registerTierService()
     this.registerPasswordResetService()
+    this.registerEmailVerificationService()
     // this.registerNotificationService()
     // this.registerSharingService()
     // this.registerShareGroupService()

@@ -5,7 +5,6 @@ import { DateTime } from 'luxon'
 
 scheduler.command(ProcessJobs).everyFiveSeconds().withoutOverlapping()
 
-// schedule to delete data quarterly
 scheduler
   .call(async () => {
     const threeMonthsAgo = DateTime.now().minus({ months: 3 }).toSQL()

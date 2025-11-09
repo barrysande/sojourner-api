@@ -21,14 +21,14 @@ export default class EmailVerificationMail extends BaseMail {
 
     this.message.html(`
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2>Reset Your Password</h2>
+        <h2>Verify Your Email</h2>
         <p>Hi ${this.user.fullName},</p>
-        <p>You requested to reset your password. Click the button below to proceed:</p>
+        <p> Click the button below to verify your email</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${this.emailVerificationUrl}" 
              style="background-color: #5850ec; color: white; padding: 12px 24px; 
                     text-decoration: none; border-radius: 5px; display: inline-block;">
-            Reset Password
+            Verify Email
           </a>
         </div>
         <p>Or copy and paste this link in your browser:</p>
@@ -45,11 +45,11 @@ export default class EmailVerificationMail extends BaseMail {
     `)
 
     this.message.text(`
-      Reset Your Password
+      Verify your Email
       
       Hi ${this.user.fullName},
       
-      You requested to reset your password. Visit the link below to proceed:
+      Visit the link below to verify your email:
       
       ${this.emailVerificationUrl}
       
