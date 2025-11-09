@@ -1,6 +1,11 @@
 import router from '@adonisjs/core/services/router'
 import { middleware } from './kernel.js'
-import { registerThrottle, passwordResetThrottle, loginThrottle } from './limiter.js'
+import {
+  registerThrottle,
+  passwordResetThrottle,
+  loginThrottle,
+  resendVerifyEmailThrotte,
+} from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
 const ExpensesController = () => import('#controllers/expenses_controller')
@@ -29,6 +34,10 @@ router
     router.get('/verify-reset-token', [AuthController, 'verifyResetPassword'])
     router.post('/reset-password', [AuthController, 'resetPassword']).use(passwordResetThrottle)
     router.post('/verify-email', [AuthController, 'verifyEmail'])
+    router
+      .post('/resend-verification', [AuthController, 'resendEmailVerification'])
+      .use(middleware.auth())
+      .use(resendVerifyEmailThrotte)
   })
   .prefix('/auth')
 

@@ -104,6 +104,25 @@ export default class AuthController {
     }
   }
 
+  async resendEmailVerification({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    if (user && user.emailVerifiedAt) {
+      return response.ok({ message: 'This email is already verified.' })
+    }
+
+    try {
+      await this.emailVerificationService.resendVerificationEmail(user.id)
+
+      return response.ok({ message: 'A new verification link has been sent to your email.' })
+    } catch (error) {
+      if (error.code === 'E_TOO_MANY_REQUESTS') {
+        return response.tooManyRequests({ message: error.message })
+      }
+      return response.internalServerError({ message: 'An error occurred, please try again.' })
+    }
+  }
+
   async login({ request, response, auth }: HttpContext) {
     try {
       const { email, password, rememberMe } = await request.validateUsing(loginValidator)

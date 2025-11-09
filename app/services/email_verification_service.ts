@@ -11,8 +11,12 @@ import EmailVerificationMail from '#mails/email_verification_mail'
 import mail from '@adonisjs/mail/services/main'
 import InvalidTokenException from '#exceptions/invalid_token_exception'
 import db from '@adonisjs/lucid/services/db'
+import { Exception } from '@adonisjs/core/exceptions'
+import Job from '#models/job'
 
 export default class EmailVerificationService {
+  private RESEND_WAIT_SECONDS = 60
+
   private async deleteExistingToken(userId: number, trx: TransactionClientContract): Promise<void> {
     await EmailVerificationToken.query({ client: trx }).where('user_id', userId).delete()
   }
@@ -128,5 +132,42 @@ export default class EmailVerificationService {
     })
 
     return deletedCount
+  }
+
+  async resendVerificationEmail(userId: number): Promise<void> {
+    const existingToken = await EmailVerificationToken.query()
+      .where('user_id', userId)
+      .orderBy('created_at', 'desc')
+      .first()
+
+    if (existingToken) {
+      const secondsSinceLast = Math.abs(existingToken.createdAt.diffNow('seconds').seconds)
+
+      if (secondsSinceLast < this.RESEND_WAIT_SECONDS) {
+        throw new Exception(
+          `Please wait ${this.RESEND_WAIT_SECONDS - Math.floor(secondsSinceLast)} seconds before resending.`,
+          { status: 429, code: 'E_TOO_MANY_REQUESTS' }
+        )
+      }
+    }
+
+    await db.transaction(async (trx) => {
+      const { plainToken } = await this.generateVerificationToken(userId, trx)
+
+      await Job.create(
+        {
+          queueName: 'emails',
+          payload: {
+            userId: userId,
+            emailType: 'email_verification',
+            metadata: { plainToken: plainToken },
+          },
+          status: 'pending',
+          priority: 3,
+          attempts: 0,
+        },
+        { client: trx }
+      )
+    })
   }
 }
