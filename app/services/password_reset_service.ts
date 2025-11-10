@@ -7,27 +7,69 @@ import { DateTime } from 'luxon'
 import env from '#start/env'
 import mail from '@adonisjs/mail/services/main'
 import PasswordResetMail from '#mails/password_reset_mail'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import db from '@adonisjs/lucid/services/db'
+import Job from '#models/job'
+import InvalidTokenException from '#exceptions/invalid_token_exception'
 
 export default class PasswordResetService {
   private readonly TOKEN_EXPIRY_HOUR = 1
 
-  private async deleteExistingToken(email: string): Promise<void> {
-    await PasswordResetToken.query().where('email', email).delete()
+  private async deleteExistingToken(email: string, trx: TransactionClientContract): Promise<void> {
+    await PasswordResetToken.query({ client: trx }).where('email', email).delete()
   }
 
-  private async generateResetToken(email: string): Promise<string> {
-    await this.deleteExistingToken(email)
+  private async generateResetToken(email: string, trx: TransactionClientContract): Promise<string> {
+    await this.deleteExistingToken(email, trx)
 
     const plainToken = stringHelpers.generateRandom(64)
     const hashedToken = await hash.make(plainToken)
 
-    await PasswordResetToken.create({
-      email,
-      token: hashedToken,
-      expiresAt: DateTime.now().plus({ hour: this.TOKEN_EXPIRY_HOUR }),
-    })
+    await PasswordResetToken.create(
+      {
+        email,
+        token: hashedToken,
+        expiresAt: DateTime.now().plus({ hour: this.TOKEN_EXPIRY_HOUR }),
+      },
+      { client: trx }
+    )
 
     return plainToken
+  }
+
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await User.findBy('email', email)
+
+    if (!user) {
+      logger.warn('Password reset request for non-existent email', { email })
+      return
+    }
+
+    try {
+      await db.transaction(async (trx) => {
+        const plainToken = await this.generateResetToken(email, trx)
+
+        await Job.create(
+          {
+            queueName: 'emails',
+            status: 'pending',
+            attempts: 0,
+            priority: 5,
+            payload: {
+              userId: user.id,
+              emailType: 'password_reset',
+              metadata: {
+                plainToken: plainToken,
+              },
+            },
+          },
+          { client: trx }
+        )
+      })
+    } catch (error) {
+      logger.error('Failed to request password reset', { email, error })
+      throw error
+    }
   }
 
   private buildResetUrl(email: string, token: string): string {
@@ -40,87 +82,60 @@ export default class PasswordResetService {
     return `${frontendUrl}/auth/reset-password?${params.toString()}`
   }
 
-  async sendResetEmail(email: string): Promise<boolean> {
-    const user = await User.findBy('email', email)
+  async sendResetEmail(userId: number, plainToken: string): Promise<void> {
+    const user = await User.findOrFail(userId)
 
     if (!user) {
-      logger.info('Password reset request for non-existent email', { email })
-      return true
+      logger.warn('Password reset request for non-existent email', { userId })
+      return
     }
 
-    try {
-      const plainToken = await this.generateResetToken(email)
+    const resetUrl = this.buildResetUrl(user.email, plainToken)
 
-      const resetUrl = this.buildResetUrl(email, plainToken)
+    await mail.send(new PasswordResetMail(user, resetUrl))
 
-      await mail.send(new PasswordResetMail(user, resetUrl))
-
-      logger.info('Password reset email sent', {
-        userId: user.id,
-        email,
-      })
-
-      return true
-    } catch (error) {
-      logger.error('Failed to send password reset email', {
-        email,
-        error: error.message,
-      })
-      throw error
-    }
-  }
-
-  async verifyToken(email: string, token: string): Promise<boolean> {
-    const resetToken = await PasswordResetToken.query()
-      .where('email', email)
-      .where('expires_at', '>', DateTime.now().toSQL())
-      .whereNull('used_at')
-      .first()
-
-    if (!resetToken) {
-      return false
-    }
-
-    const isValid = await hash.verify(resetToken.token, token)
-    if (!isValid) {
-      return false
-    }
-
-    return isValid
+    logger.info(`Password reset email sent to: ${user.email}`)
   }
 
   async resetPassword(email: string, token: string, newPassword: string): Promise<boolean> {
-    const isVerifiedToken = await this.verifyToken(email, token)
+    try {
+      const success = await db.transaction(async (trx) => {
+        const user = await User.query({ client: trx })
+          .where('email', email)
+          .forUpdate()
+          .firstOrFail()
 
-    if (!isVerifiedToken) {
-      logger.warn('Invalid password reset attempt', {
-        email,
+        const resetToken = await PasswordResetToken.query({ client: trx })
+          .where('email', email)
+          .where('expires_at', '>', DateTime.now().toSQL())
+          .whereNull('used_at')
+          .forUpdate()
+          .first()
+
+        if (!resetToken) {
+          throw new InvalidTokenException('Invalid or expired token')
+        }
+
+        const isValid = await hash.verify(resetToken.token, token)
+        if (!isValid) {
+          throw new InvalidTokenException('Invalid or expired token')
+        }
+
+        await user.merge({ password: newPassword }).save()
+
+        await resetToken.merge({ usedAt: DateTime.now() }).save()
+
+        return true
       })
+
+      if (success) {
+        logger.info('Password reset successful', { email })
+      }
+      return success
+    } catch (error) {
+      logger.error('Password reset failed', { email, err: error })
       return false
     }
-
-    const user = await User.findBy('email', email)
-    if (!user) {
-      return false
-    }
-
-    user.password = newPassword
-    await user.save()
-
-    await this.markTokenAsUsed(email)
-    logger.info('Password reset successful', {
-      userId: user.id,
-      email,
-    })
-
-    return true
-  }
-
-  async markTokenAsUsed(email: string): Promise<void> {
-    await PasswordResetToken.query()
-      .where('email', email)
-      .whereNull('used_at')
-      .update({ usedAt: DateTime.now() })
   }
 
   // Clean up used tokens - command method to clean up used tokens. Can be scheduled.

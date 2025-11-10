@@ -57,15 +57,18 @@ export default class ProcessJobs extends BaseCommand {
     const payload = job.payload as EmailJobPayload
 
     try {
-      const emailVerificationService = await this.app.container.make('emailVerificationService')
-
       if (payload.emailType === 'email_verification') {
+        const emailVerificationService = await this.app.container.make('emailVerificationService')
         jobLogger.info('Sending verification email')
 
         await emailVerificationService.sendVerificationEmail(
           payload.userId,
           payload.metadata!.plainToken
         )
+      } else if (payload.emailType === 'password_reset') {
+        const passwordService = await this.app.container.make('passwordResetService')
+        jobLogger.info('Calling PasswordResetService.sendResetEmail')
+        await passwordService.sendResetEmail(payload.userId, payload.metadata!.plainToken)
       }
 
       await job
