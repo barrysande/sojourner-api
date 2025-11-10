@@ -2,6 +2,7 @@ import app from '@adonisjs/core/services/app'
 import { HttpContext, ExceptionHandler } from '@adonisjs/core/http'
 import ConflictException from './conflict_exception.js'
 import NotFoundException from './not_found_exception.js'
+import { errors } from '@adonisjs/limiter'
 
 export default class HttpExceptionHandler extends ExceptionHandler {
   /**
@@ -23,6 +24,12 @@ export default class HttpExceptionHandler extends ExceptionHandler {
 
     if (error instanceof NotFoundException) {
       return ctx.response.notFound({ message: error.message })
+    }
+
+    if (error instanceof errors.E_TOO_MANY_REQUESTS) {
+      return ctx.response.status(429).send({
+        message: 'Too many requests. Please try again later.',
+      })
     }
     return super.handle(error, ctx)
   }

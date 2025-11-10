@@ -22,10 +22,7 @@ export default class TierAuditLog extends BaseModel {
   @column()
   declare triggeredBy: 'webhook' | 'manual' | 'cron' | 'join' | 'leave'
 
-  @column({
-    prepare: (value: any) => (value ? JSON.stringify(value) : null),
-    consume: (value: string) => (value ? JSON.parse(value) : null),
-  })
+  @column()
   declare metadata: Record<string, any> | null
 
   @column.dateTime({ autoCreate: true })

@@ -33,7 +33,7 @@ export const loginThrottle = limiter.define('api', (ctx) => {
 
 export const passwordResetThrottle = limiter.define('password-reset', (ctx) => {
   return limiter
-    .allowRequests(3)
+    .allowRequests(5)
     .every('24 hours')
     .usingKey(`password_reset_${ctx.request.ip()}`)
     .blockFor('2 hours')
@@ -42,13 +42,13 @@ export const passwordResetThrottle = limiter.define('password-reset', (ctx) => {
 export const resendVerifyEmailThrotte = limiter.define('verify-email-limiter', (ctx) => {
   if (ctx.auth.user) {
     return limiter
-      .allowRequests(3)
+      .allowRequests(5)
       .every('24 hours')
       .usingKey(`email_verify_resend_user_${ctx.auth.user.id}`)
   }
 
   return limiter
-    .allowRequests(3)
+    .allowRequests(5)
     .every('24 hours')
     .usingKey(`email_verify_resend_ip_${ctx.request.ip()}`)
 })

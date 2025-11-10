@@ -1,6 +1,7 @@
 import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
 import logger from '@adonisjs/core/services/logger'
+import User from '#models/user'
 import WebhookEvent from '#models/webhook_event'
 import IndividualSubscriptionService from './individual_subscription_service.js'
 import { GroupSubscriptionService } from './group_subscription_service.js'
@@ -10,7 +11,7 @@ import { MissingSubscriptionFieldsException } from '#exceptions/payment_errors_e
 import { resolvePlanType } from '../helpers/utils.js'
 
 @inject()
-export class WebhookService {
+export default class WebhookService {
   constructor(
     protected individualSubscriptionService: IndividualSubscriptionService,
     protected groupSubscriptionService: GroupSubscriptionService
@@ -30,7 +31,7 @@ export class WebhookService {
     }
   }
 
-  private async handleSubscriptionActive(webhookEvent: WebhookEvent): Promise<void> {
+  private async handleSubscriptionActive(webhookEvent: WebhookEvent): Promise<User> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
     const expiresAt = payload.expires_at
@@ -41,22 +42,28 @@ export class WebhookService {
 
     const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
 
-    await db.transaction(async (trx) => {
+    const user = await db.transaction(async (trx) => {
       if (isIndividual) {
-        await this.individualSubscriptionService.handleSubscriptionActive(
+        return await this.individualSubscriptionService.handleSubscriptionActive(
           subscriptionId,
           expiresAt,
           trx
         )
       } else if (isGroup) {
-        await this.groupSubscriptionService.handleSubscriptionActive(subscriptionId, expiresAt, trx)
+        return await this.groupSubscriptionService.handleSubscriptionActive(
+          subscriptionId,
+          expiresAt,
+          trx
+        )
       } else {
         throw new MissingSubscriptionFieldsException(`Susbrciption not found ${subscriptionId}`)
       }
     })
+
+    return user
   }
 
-  private async handleSubscriptionRenewed(webhookEvent: WebhookEvent): Promise<void> {
+  private async handleSubscriptionRenewed(webhookEvent: WebhookEvent): Promise<User> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
     const newExpiresAt = payload.expires_at
@@ -67,15 +74,15 @@ export class WebhookService {
 
     const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
 
-    await db.transaction(async (trx) => {
+    const user = await db.transaction(async (trx) => {
       if (isIndividual) {
-        await this.individualSubscriptionService.handleSubscriptionRenewed(
+        return await this.individualSubscriptionService.handleSubscriptionRenewed(
           subscriptionId,
           newExpiresAt,
           trx
         )
       } else if (isGroup) {
-        await this.groupSubscriptionService.handleSubscriptionRenewed(
+        return await this.groupSubscriptionService.handleSubscriptionRenewed(
           subscriptionId,
           newExpiresAt,
           trx
@@ -84,9 +91,11 @@ export class WebhookService {
         throw new MissingSubscriptionFieldsException(`Susbrciption not found ${subscriptionId}`)
       }
     })
+
+    return user
   }
 
-  private async handleSubscriptionCancelled(webhookEvent: WebhookEvent): Promise<void> {
+  private async handleSubscriptionCancelled(webhookEvent: WebhookEvent): Promise<User> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
 
@@ -96,18 +105,23 @@ export class WebhookService {
 
     const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
 
-    await db.transaction(async (trx) => {
+    const user = await db.transaction(async (trx) => {
       if (isIndividual) {
-        await this.individualSubscriptionService.handleSubscriptionCancelled(subscriptionId, trx)
+        return await this.individualSubscriptionService.handleSubscriptionCancelled(
+          subscriptionId,
+          trx
+        )
       } else if (isGroup) {
-        await this.groupSubscriptionService.handleSubscriptionCancelled(subscriptionId, trx)
+        return await this.groupSubscriptionService.handleSubscriptionCancelled(subscriptionId, trx)
       } else {
         throw new MissingSubscriptionFieldsException(`Susbrciption not found ${subscriptionId}`)
       }
     })
+
+    return user
   }
 
-  private async handleSubscriptionExpired(webhookEvent: WebhookEvent): Promise<void> {
+  private async handleSubscriptionExpired(webhookEvent: WebhookEvent): Promise<User> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
 
@@ -117,18 +131,23 @@ export class WebhookService {
 
     const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
 
-    await db.transaction(async (trx) => {
+    const user = await db.transaction(async (trx) => {
       if (isIndividual) {
-        await this.individualSubscriptionService.handleSubscriptionExpired(subscriptionId, trx)
+        return await this.individualSubscriptionService.handleSubscriptionExpired(
+          subscriptionId,
+          trx
+        )
       } else if (isGroup) {
-        await this.groupSubscriptionService.handleSubscriptionExpired(subscriptionId, trx)
+        return await this.groupSubscriptionService.handleSubscriptionExpired(subscriptionId, trx)
       } else {
         throw new MissingSubscriptionFieldsException(`Susbrciption not found ${subscriptionId}`)
       }
     })
+
+    return user
   }
 
-  private async handleSubscriptionFailed(webhookEvent: WebhookEvent): Promise<void> {
+  private async handleSubscriptionFailed(webhookEvent: WebhookEvent): Promise<User> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
 
@@ -138,18 +157,23 @@ export class WebhookService {
 
     const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
 
-    await db.transaction(async (trx) => {
+    const user = await db.transaction(async (trx) => {
       if (isIndividual) {
-        await this.individualSubscriptionService.handleSubscriptionFailed(subscriptionId, trx)
+        return await this.individualSubscriptionService.handleSubscriptionFailed(
+          subscriptionId,
+          trx
+        )
       } else if (isGroup) {
-        await this.groupSubscriptionService.handleSubscriptionFailed(subscriptionId, trx)
+        return await this.groupSubscriptionService.handleSubscriptionFailed(subscriptionId, trx)
       } else {
         throw new MissingSubscriptionFieldsException(`Subscription not found ${subscriptionId}`)
       }
     })
+
+    return user
   }
 
-  private async handleSubscriptionPlanChanged(webhookEvent: WebhookEvent): Promise<void> {
+  private async handleSubscriptionPlanChanged(webhookEvent: WebhookEvent): Promise<User> {
     const payload = webhookEvent.payload
     const subscriptionId = payload.subscription_id
     const newQuantity = payload.addons[0].quantity
@@ -158,55 +182,72 @@ export class WebhookService {
       throw new MissingSubscriptionFieldsException('Missing required field: subscriptionId')
     }
 
-    await GroupSubscription.query().where('dodo_subscription_id', subscriptionId).firstOrFail()
+    const { isIndividual, isGroup } = await this.identifySubscriptionType(subscriptionId)
+
+    // await GroupSubscription.query().where('dodo_subscription_id', subscriptionId).firstOrFail()
 
     const planType = resolvePlanType(
       payload.payment_frequency_count,
       payload.payment_frequency_interval
     )
-    await db.transaction(async (trx) => {
-      await this.groupSubscriptionService.handleSubscriptionPlanChanged(
-        subscriptionId,
-        newQuantity,
-        planType,
-        trx
-      )
+    const user = await db.transaction(async (trx) => {
+      if (isIndividual) {
+        return await this.individualSubscriptionService.handleSubscriptionPlanChanged(
+          subscriptionId,
+          planType,
+          payload.expires_at!,
+          trx
+        )
+      } else if (isGroup) {
+        return await this.groupSubscriptionService.handleSubscriptionPlanChanged(
+          subscriptionId,
+          newQuantity,
+          planType,
+          trx
+        )
+      } else {
+        throw new MissingSubscriptionFieldsException(`Subscription not found ${subscriptionId}`)
+      }
     })
+
+    return user
   }
 
   /**
    * Process a webhook event
    * Routes to appropriate handler based on event type
    */
-  async processWebhookEvent(webhookEvent: WebhookEvent): Promise<void> {
+  async processWebhookEvent(webhookEvent: WebhookEvent): Promise<User | void> {
     logger.info('Processing webhook event', {
       eventId: webhookEvent.eventId,
       eventType: webhookEvent.eventType,
     })
 
+    let user: User | void
+
     switch (webhookEvent.eventType) {
       case 'subscription.active':
-        await this.handleSubscriptionActive(webhookEvent)
+        user = await this.handleSubscriptionActive(webhookEvent)
         break
 
       case 'subscription.renewed':
-        await this.handleSubscriptionRenewed(webhookEvent)
+        user = await this.handleSubscriptionRenewed(webhookEvent)
         break
 
       case 'subscription.cancelled':
-        await this.handleSubscriptionCancelled(webhookEvent)
+        user = await this.handleSubscriptionCancelled(webhookEvent)
         break
 
       case 'subscription.expired':
-        await this.handleSubscriptionExpired(webhookEvent)
+        user = await this.handleSubscriptionExpired(webhookEvent)
         break
 
       case 'subscription.failed':
-        await this.handleSubscriptionFailed(webhookEvent)
+        user = await this.handleSubscriptionFailed(webhookEvent)
         break
 
       case 'subscription.plan_changed':
-        await this.handleSubscriptionPlanChanged(webhookEvent)
+        user = await this.handleSubscriptionPlanChanged(webhookEvent)
         break
 
       default:
@@ -214,11 +255,14 @@ export class WebhookService {
           eventId: webhookEvent.eventId,
           eventType: webhookEvent.eventType,
         })
+        user = undefined
     }
 
     logger.info('Webhook event processed successfully', {
       eventId: webhookEvent.eventId,
       eventType: webhookEvent.eventType,
     })
+
+    return user
   }
 }

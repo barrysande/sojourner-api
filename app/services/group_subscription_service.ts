@@ -4,6 +4,7 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import GroupSubscription from '#models/group_subscription'
 import GroupSubscriptionMember from '#models/group_subscription_member'
+import User from '#models/user'
 import { customAlphabet } from 'nanoid'
 import TierService from './tier_service.js'
 import GracePeriodService from './grace_period_service.js'
@@ -14,7 +15,6 @@ import type {
 } from '../../types/webhook.js'
 import type { SubscriptionCreateResponse } from 'dodopayments/resources/subscriptions.mjs'
 import ConflictException from '#exceptions/conflict_exception'
-
 import {
   UserAlreadyInGroupException,
   OwnerRemovalException,
@@ -511,11 +511,14 @@ export class GroupSubscriptionService {
     dodoSubscriptionId: string,
     expiresAt: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('owner')
       .forUpdate()
       .firstOrFail()
+
+    const owner = groupSubscription.owner
 
     await groupSubscription
       .useTransaction(trx)
@@ -539,17 +542,22 @@ export class GroupSubscriptionService {
         )
       })
     )
+
+    return owner
   }
 
   async handleSubscriptionRenewed(
     dodoSubscriptionId: string,
     newExpiresAt: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
+      .preload('owner')
       .forUpdate()
       .firstOrFail()
+
+    const owner = groupSubscription.owner
 
     await groupSubscription
       .useTransaction(trx)
@@ -573,16 +581,20 @@ export class GroupSubscriptionService {
         )
       )
     )
+
+    return owner
   }
 
   async handleSubscriptionCancelled(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .forUpdate()
       .firstOrFail()
+
+    const owner = groupSubscription.owner
 
     await groupSubscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
 
@@ -604,16 +616,20 @@ export class GroupSubscriptionService {
         )
       )
     )
+
+    return owner
   }
 
   async handleSubscriptionExpired(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .forUpdate()
       .firstOrFail()
+
+    const owner = groupSubscription.owner
 
     await groupSubscription.useTransaction(trx).merge({ status: 'expired' }).save()
 
@@ -642,16 +658,20 @@ export class GroupSubscriptionService {
         )
       })
     )
+
+    return owner
   }
 
   async handleSubscriptionFailed(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .forUpdate()
       .firstOrFail()
+
+    const owner = groupSubscription.owner
 
     await groupSubscription.useTransaction(trx).merge({ status: 'on_hold' }).save()
 
@@ -680,6 +700,8 @@ export class GroupSubscriptionService {
         )
       })
     )
+
+    return owner
   }
 
   async handleSubscriptionPlanChanged(
@@ -687,11 +709,13 @@ export class GroupSubscriptionService {
     newQuantity: number,
     newPlanType: PlanType,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .forUpdate()
       .firstOrFail()
+
+    const owner = groupSubscription.owner
 
     await groupSubscription
       .useTransaction(trx)
@@ -705,5 +729,7 @@ export class GroupSubscriptionService {
       trx,
       { group_subscription_id: groupSubscription.id }
     )
+
+    return owner
   }
 }

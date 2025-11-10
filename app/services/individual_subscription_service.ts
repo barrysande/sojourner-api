@@ -14,6 +14,7 @@ import type {
   Subscription,
 } from 'dodopayments/resources/subscriptions.mjs'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import User from '#models/user'
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 // type SubscriptionStatus =  'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
@@ -146,13 +147,14 @@ export default class IndividualSubscriptionService {
     dodoSubscriptionId: string,
     expiresAt: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
 
+    const user = subscription.user
     await subscription
       .useTransaction(trx)
       .merge({ status: 'active', expiresAt: DateTime.fromISO(expiresAt) })
@@ -174,6 +176,8 @@ export default class IndividualSubscriptionService {
       dodoSubscriptionId,
       newExpiresAt: subscription.expiresAt.toISO(),
     })
+
+    return user
   }
 
   /**
@@ -195,12 +199,14 @@ export default class IndividualSubscriptionService {
     dodoSubscriptionId: string,
     newExpiresAt: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
+
+    const user = subscription.user
 
     await subscription
       .useTransaction(trx)
@@ -223,6 +229,8 @@ export default class IndividualSubscriptionService {
       dodoSubscriptionId,
       newExpiresAt: subscription.expiresAt.toISO(),
     })
+
+    return user
   }
 
   /**
@@ -246,12 +254,14 @@ export default class IndividualSubscriptionService {
     newPlanType: PlanType,
     newExpiresAt: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
+
+    const user = subscription.user
 
     await subscription
       .useTransaction(trx)
@@ -264,6 +274,8 @@ export default class IndividualSubscriptionService {
       dodoSubscriptionId,
       newExpiresAt: subscription.expiresAt.toISO(),
     })
+
+    return user
   }
 
   /**
@@ -280,12 +292,14 @@ export default class IndividualSubscriptionService {
   async handleSubscriptionCancelled(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
+
+    const user = subscription.user
 
     await subscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
 
@@ -303,6 +317,8 @@ export default class IndividualSubscriptionService {
       dodoSubscriptionId,
       newExpiresAt: subscription.expiresAt.toISO(),
     })
+
+    return user
   }
 
   /**
@@ -321,12 +337,14 @@ export default class IndividualSubscriptionService {
   async handleSubscriptionExpired(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
+
+    const user = subscription.user
 
     await subscription.useTransaction(trx).merge({ status: 'expired' }).save()
 
@@ -344,6 +362,8 @@ export default class IndividualSubscriptionService {
       trx,
       {}
     )
+
+    return user
   }
   /**
    * Handles the individual subscription.on_hold and subscription.failed webhook events from Dodo
@@ -361,12 +381,14 @@ export default class IndividualSubscriptionService {
   async handleSubscriptionFailed(
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<void> {
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
+
+    const user = subscription.user
 
     await subscription.useTransaction(trx).merge({ status: 'failed' }).save()
 
@@ -385,5 +407,7 @@ export default class IndividualSubscriptionService {
     )
 
     await this.tierService.updateUserTier(subscription.userId, 'Payment failed', 'webhook', trx, {})
+
+    return user
   }
 }

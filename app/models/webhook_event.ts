@@ -17,10 +17,7 @@ export default class WebhookEvent extends BaseModel {
   @column()
   declare businessId: string
 
-  @column({
-    prepare: (value: SubscriptionWebhookPayload) => JSON.stringify(value),
-    consume: (value: string) => JSON.parse(value) as SubscriptionWebhookPayload,
-  })
+  @column()
   declare payload: SubscriptionWebhookPayload
 
   @column()

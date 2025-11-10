@@ -79,14 +79,33 @@ export default class ProcessWebhooks extends BaseCommand {
 
       await db.transaction(async (trx) => {
         const webhookService = await app.container.make('webhookService')
-        await webhookService.processWebhookEvent(webhookEvent)
+
+        const user = await webhookService.processWebhookEvent(webhookEvent)
 
         await webhookEvent
           .useTransaction(trx)
           .merge({ status: 'completed', processedAt: DateTime.now() })
           .save()
 
-        // TODO: Enqueue the email job for email worker await Job.create({ status: 'pending'})
+        if (user) {
+          logger.info('Enqueuing payment receipt for user', { userId: user.id })
+
+          await Job.create(
+            {
+              queueName: 'emails',
+              payload: {
+                userId: user.id,
+                emailType: 'email_verification',
+                metadata: {
+                  eventName: webhookEvent.eventType,
+                },
+              },
+              status: 'pending',
+              priority: 10,
+            },
+            { client: trx }
+          )
+        }
 
         await job.useTransaction(trx).merge({ status: 'completed' }).save()
       })
