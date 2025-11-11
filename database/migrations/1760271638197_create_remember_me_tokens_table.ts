@@ -14,9 +14,9 @@ export default class extends BaseSchema {
         .inTable('users')
         .onDelete('CASCADE')
       table.string('hash', 255).notNullable().unique()
-      table.timestamp('created_at')
-      table.timestamp('updated_at')
-      table.timestamp('expires_at')
+      table.timestamp('created_at').notNullable()
+      table.timestamp('updated_at').notNullable()
+      table.timestamp('expires_at').notNullable()
     })
   }
 

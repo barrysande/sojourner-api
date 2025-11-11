@@ -13,12 +13,14 @@ export default class extends BaseSchema {
       table.decimal('latitude', 10, 8).nullable()
       table.decimal('longitude', 10, 8).nullable()
       table.boolean('is_public').defaultTo(false)
+      table.boolean('locked').defaultTo(false).notNullable()
 
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').notNullable()
 
-      table.index('user_id')
-      table.index(['latitude', 'longitude'])
+      table.index('user_id', 'idx_user_id')
+      table.index(['latitude', 'longitude'], 'idx_lat_long')
+      table.index('locked', 'idx_locked')
     })
   }
 

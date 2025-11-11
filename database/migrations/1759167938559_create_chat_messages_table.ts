@@ -16,8 +16,10 @@ export default class extends BaseSchema {
       table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE')
 
       table.text('message').notNullable()
-      table.enum('message_type', ['text', 'system']).defaultTo('text')
+      table.string('message_type', 50).notNullable().defaultTo('text')
       table.json('metadata').nullable()
+
+      table.check("?? IN ('text', 'system')", ['message_type'], 'chk_chat_messages_message_type')
 
       table.index(['chat_room_id', 'created_at'], 'chat_messages_room_time_index')
       table.index(['user_id'], 'chat_messages_use_index')

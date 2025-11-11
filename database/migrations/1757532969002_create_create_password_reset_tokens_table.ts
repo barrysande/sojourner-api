@@ -13,8 +13,8 @@ export default class extends BaseSchema {
       table.timestamp('updated_at')
       table.timestamp('used_at').nullable()
 
-      table.index(['email', 'expires_at'])
-      table.index(['email', 'used_at'])
+      table.index(['email', 'expires_at'], 'idx_email_expires_at')
+      table.index(['email', 'used_at'], 'idx_email_used_at')
     })
   }
 

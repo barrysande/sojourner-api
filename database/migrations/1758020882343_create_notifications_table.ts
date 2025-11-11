@@ -31,7 +31,9 @@ export default class extends BaseSchema {
       table.timestamp('created_at')
       table.timestamp('updated_at')
 
-      table.index(['user_id', 'is_read'])
+      table.index(['user_id'], 'idx_user_id')
+      table.index(['user_id', 'is_read'], 'idx_user_id_is_read')
+      table.index(['user_id', 'sent_at'], 'idx_user_id_sent_at')
     })
   }
 

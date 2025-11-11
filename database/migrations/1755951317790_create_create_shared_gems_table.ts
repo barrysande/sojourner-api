@@ -13,14 +13,39 @@ export default class extends BaseSchema {
         .inTable('hidden_gems')
         .onDelete('CASCADE')
       table.integer('user_id').unsigned().references('id').inTable('users').onDelete('CASCADE')
-      table.enum('permission_level', ['view', 'edit', 'admin']).defaultTo('view')
+      table
+        .integer('share_group_id')
+        .notNullable()
+        .unsigned()
+        .references('id')
+        .inTable('share_groups')
+        .onDelete('CASCADE')
+      table
+        .integer('shared_by')
+        .notNullable()
+        .unsigned()
+        .references('id')
+        .inTable('users')
+        .onDelete('CASCADE')
+
+      table.string('permission_level', 50).notNullable().defaultTo('view')
+      table.timestamp('shared_at').defaultTo(this.now())
+
       table.timestamp('created_at')
       table.timestamp('updated_at')
 
-      // Add indexes and unique constraint
-      table.index('hidden_gem_id')
-      table.index('user_id')
-      table.unique(['hidden_gem_id', 'user_id']) // Prevent duplicate shares
+      table.check(
+        "?? IN ('view', 'edit', 'admin')",
+        ['permission_level'],
+        'chk_shared_gems_permission_level'
+      )
+
+      table.index('hidden_gem_id', 'idx_hidden_gem_id')
+      table.index('user_id', 'idx_user_id')
+      table.index('share_group_id', 'idx_share_group_id')
+
+      table.unique(['hidden_gem_id', 'user_id'])
+      table.unique(['hidden_gem_id', 'share_group_id'])
     })
   }
 

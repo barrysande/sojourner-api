@@ -28,15 +28,27 @@ export default class extends BaseSchema {
         .references('id')
         .inTable('users')
         .onDelete('CASCADE')
-      table.enum('status', ['pending', 'active', 'left']).defaultTo('pending')
-      table.enum('role', ['creator', 'member']).defaultTo('member')
+      table.string('status', 50).notNullable().defaultTo('pending')
+      table.string('role', 50).notNullable().defaultTo('member')
       table.timestamp('invited_at').defaultTo(this.now())
       table.timestamp('joined_at').nullable()
 
       table.timestamp('created_at')
       table.timestamp('updated_at')
 
+      table.check(
+        "?? IN ('pending', 'active', 'left')",
+        ['status'],
+        'chk_share_group_members_status'
+      )
+      table.check("?? IN ('creator', 'member')", ['role'], 'chk_share_group_members_role')
+
       table.unique(['share_group_id', 'user_id'])
+
+      table.index('user_id', 'idx_user_id')
+      table.index('share_group_id', 'id_share_group_id')
+      table.index(['user_id', 'status'], 'idx_user_id_status')
+      table.index(['share_group_id', 'status'], 'idx_share_group_id_status')
     })
   }
 

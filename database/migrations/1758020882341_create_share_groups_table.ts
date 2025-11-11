@@ -10,10 +10,15 @@ export default class extends BaseSchema {
       table.string('invite_code', 8).notNullable().unique()
       table.integer('created_by').unsigned().references('id').inTable('users').onDelete('CASCADE')
       table.integer('max_members').defaultTo(10)
-      table.enum('status', ['active', 'dissolved']).defaultTo('active')
+      table.string('status', 50).notNullable().defaultTo('active')
 
       table.timestamp('created_at')
       table.timestamp('updated_at')
+
+      table.check("?? IN ('active', 'dissolved')", ['status'], 'chk_share_groups_status')
+
+      table.index('invite_code', 'idx_invite_code')
+      table.index('created_by', 'idx_created_by')
     })
   }
 
