@@ -84,4 +84,13 @@ export default await Env.create(new URL('../', import.meta.url), {
   WEBHOOK_WORKER_ENABLED: Env.schema.boolean.optional(),
   WEBHOOK_WORKER_INTERVAL: Env.schema.number.optional(),
   WEBHOOK_MAX_ATTEMPTS: Env.schema.number.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring ally package
+  |----------------------------------------------------------
+  */
+  GOOGLE_CLIENT_ID: Env.schema.string(),
+  GOOGLE_CLIENT_SECRET: Env.schema.string(),
+  GOOGLE_CALLBACK_URL: Env.schema.string(),
 })
