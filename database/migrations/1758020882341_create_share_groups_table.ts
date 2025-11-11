@@ -17,8 +17,8 @@ export default class extends BaseSchema {
 
       table.check("?? IN ('active', 'dissolved')", ['status'], 'chk_share_groups_status')
 
-      table.index('invite_code', 'idx_invite_code')
-      table.index('created_by', 'idx_created_by')
+      table.index('invite_code')
+      table.index('created_by')
     })
   }
 

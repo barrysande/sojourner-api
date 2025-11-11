@@ -20,7 +20,7 @@ export default class extends BaseSchema {
       table.timestamp('created_at')
       table.timestamp('updated_at')
 
-      table.index('user_id', 'idx_user')
+      table.index('user_id')
     })
   }
 

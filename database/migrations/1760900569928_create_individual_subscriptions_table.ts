@@ -33,9 +33,9 @@ export default class extends BaseSchema {
         'chk_individual_status'
       )
 
-      table.index('user_id', 'idx_individual_subs_user')
-      table.index('dodo_subscription_id', 'idx_individual_subs_dodo')
-      table.index(['status', 'expires_at'], 'idx_individual_subs_status')
+      table.index('user_id')
+      table.index('dodo_subscription_id')
+      table.index(['status', 'expires_at'])
     })
 
     this.defer(async (db) => {

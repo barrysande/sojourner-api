@@ -55,7 +55,7 @@ export default class AuthController {
       })
 
       return response.created({
-        message: 'User created successfully',
+        message: 'Account created successfully. Please login',
         user: user,
       })
     } catch (error) {

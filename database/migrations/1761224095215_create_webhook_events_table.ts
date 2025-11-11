@@ -24,8 +24,8 @@ export default class extends BaseSchema {
         'chk_status_type'
       )
 
-      table.index(['event_type'], 'idx_webhook_events')
-      table.index(['status', 'created_at'], 'idx_webhook_status_created')
+      table.index(['event_type'])
+      table.index(['status', 'created_at'])
     })
   }
 

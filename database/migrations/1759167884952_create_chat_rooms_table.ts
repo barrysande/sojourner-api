@@ -19,7 +19,7 @@ export default class extends BaseSchema {
       table.timestamp('created_at')
       table.timestamp('updated_at')
 
-      table.index(['share_group_id'], 'chat_rooms_share_group_index')
+      table.index(['share_group_id'])
     })
   }
 

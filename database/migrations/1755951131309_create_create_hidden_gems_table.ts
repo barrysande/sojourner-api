@@ -18,9 +18,9 @@ export default class extends BaseSchema {
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').notNullable()
 
-      table.index('user_id', 'idx_user_id')
-      table.index(['latitude', 'longitude'], 'idx_lat_long')
-      table.index('locked', 'idx_locked')
+      table.index('user_id')
+      table.index(['latitude', 'longitude'])
+      table.index('locked')
     })
   }
 

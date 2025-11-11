@@ -29,8 +29,8 @@ export default class extends BaseSchema {
         'chk_grace_original_tier'
       )
 
-      table.index('user_id', 'idx_grace_periods_user')
-      table.index(['expires_at', 'resolved'], 'idx_grace_periods_expiry')
+      table.index('user_id')
+      table.index(['expires_at', 'resolved'])
     })
 
     // Partial unique index. Deferred to ensure that the dependent columns are created first. See docs at https://lucid.adonisjs.com/docs/migrations#performing-other-database-operations

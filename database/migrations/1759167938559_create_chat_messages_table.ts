@@ -21,8 +21,8 @@ export default class extends BaseSchema {
 
       table.check("?? IN ('text', 'system')", ['message_type'], 'chk_chat_messages_message_type')
 
-      table.index(['chat_room_id', 'created_at'], 'chat_messages_room_time_index')
-      table.index(['user_id'], 'chat_messages_use_index')
+      table.index(['chat_room_id', 'created_at'])
+      table.index(['user_id'])
 
       table.timestamp('created_at').defaultTo(this.now()).notNullable()
       table.timestamp('updated_at')

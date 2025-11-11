@@ -40,9 +40,9 @@ export default class extends BaseSchema {
         'chk_shared_gems_permission_level'
       )
 
-      table.index('hidden_gem_id', 'idx_hidden_gem_id')
-      table.index('user_id', 'idx_user_id')
-      table.index('share_group_id', 'idx_share_group_id')
+      table.index('hidden_gem_id')
+      table.index('user_id')
+      table.index('share_group_id')
 
       table.unique(['hidden_gem_id', 'user_id'])
       table.unique(['hidden_gem_id', 'share_group_id'])

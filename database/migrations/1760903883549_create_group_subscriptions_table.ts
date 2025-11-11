@@ -31,9 +31,9 @@ export default class extends BaseSchema {
       )
       table.check('?? >= 10 AND ?? <= 50', ['total_seats', 'total_seats'], 'chk_group_seats_range')
 
-      table.index('owner_user_id', 'idx_group_subs_owner')
-      table.index('dodo_subscription_id', 'idx_group_subs_dodo')
-      table.index('invite_code', 'idx_group_subs_code')
+      table.index('owner_user_id')
+      table.index('dodo_subscription_id')
+      table.index('invite_code')
     })
 
     this.defer(async (db) => {

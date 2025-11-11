@@ -45,8 +45,8 @@ export default class extends BaseSchema {
       table.timestamp('created_at')
       table.timestamp('updated_at')
 
-      table.index('hidden_gem_id', 'idx_hidden_gem_id')
-      table.index(['hidden_gem_id', 'is_primary'], 'idx_isprimary_hidden_gem_id')
+      table.index('hidden_gem_id')
+      table.index(['hidden_gem_id', 'is_primary'])
     })
   }
 

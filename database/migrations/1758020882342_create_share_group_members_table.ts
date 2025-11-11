@@ -45,10 +45,10 @@ export default class extends BaseSchema {
 
       table.unique(['share_group_id', 'user_id'])
 
-      table.index('user_id', 'idx_user_id')
-      table.index('share_group_id', 'id_share_group_id')
-      table.index(['user_id', 'status'], 'idx_user_id_status')
-      table.index(['share_group_id', 'status'], 'idx_share_group_id_status')
+      table.index('user_id')
+      table.index('share_group_id')
+      table.index(['user_id', 'status'])
+      table.index(['share_group_id', 'status'])
     })
   }
 
