@@ -214,6 +214,12 @@ export default class AuthController {
 
       const { currentPassword, newPassword } = await request.validateUsing(changePasswordValidator)
 
+      if (!user.password) {
+        return response.badRequest({
+          message: 'This account uses social sign-in and does not have a password.',
+        })
+      }
+
       const isValidPassword = await hash.verify(user.password, currentPassword)
       if (!isValidPassword) {
         return response.badRequest({

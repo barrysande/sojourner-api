@@ -7,6 +7,7 @@ import {
   resendVerifyEmailThrotte,
 } from './limiter.js'
 const AuthController = () => import('#controllers/auth_controller')
+const SocialAuthsController = () => import('#controllers/social_auths_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
 const ExpensesController = () => import('#controllers/expenses_controller')
 const ShareGroupsController = () => import('#controllers/share_groups_controller')
@@ -39,6 +40,18 @@ router
       .use(resendVerifyEmailThrotte)
   })
   .prefix('/auth')
+
+/*
+  |----------------------------------------------------------
+  | Social Auth Routes
+  |----------------------------------------------------------
+  */
+router
+  .group(() => {
+    router.get('/google/redirect', [SocialAuthsController, 'redirect'])
+    router.get('/google/callback', [SocialAuthsController, 'handleCallback'])
+  })
+  .prefix('/socialauth')
 
 /*
   |----------------------------------------------------------

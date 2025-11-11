@@ -32,13 +32,16 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare email: string
 
   @column({ serializeAs: null })
-  declare password: string
+  declare password: string | null
 
   @column()
   declare fullName: string
 
   @column()
   declare tier: 'free' | 'individual_paid' | 'group_paid'
+
+  @column()
+  declare avatarUrl: string
 
   @column.dateTime()
   declare tierUpdatedAt: DateTime | null
