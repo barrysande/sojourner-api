@@ -28,7 +28,6 @@ export default class Expense extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
-  // Relationships
   @belongsTo(() => HiddenGem)
   declare hiddenGem: BelongsTo<typeof HiddenGem>
 }

@@ -93,4 +93,15 @@ export default await Env.create(new URL('../', import.meta.url), {
   GOOGLE_CLIENT_ID: Env.schema.string(),
   GOOGLE_CLIENT_SECRET: Env.schema.string(),
   GOOGLE_CALLBACK_URL: Env.schema.string(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring the drive package
+  |----------------------------------------------------------
+  */
+  DRIVE_DISK: Env.schema.enum(['r2'] as const),
+  R2_KEY: Env.schema.string(),
+  R2_SECRET: Env.schema.string(),
+  R2_BUCKET: Env.schema.string(),
+  R2_ENDPOINT: Env.schema.string(),
 })

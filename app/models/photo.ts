@@ -11,16 +11,16 @@ export default class Photo extends BaseModel {
   declare hiddenGemId: number
 
   @column()
-  declare cloudinaryUrl: string
+  declare storageKey: string
 
   @column()
-  declare cloudinaryPublicId: string
+  declare url: string
 
   @column()
-  declare cloudinarySecureUrl: string
+  declare thumbnailUrl: string | null
 
   @column()
-  declare fileName: string
+  declare originalFileName: string
 
   @column()
   declare caption: string | null
@@ -29,10 +29,16 @@ export default class Photo extends BaseModel {
   declare isPrimary: boolean
 
   @column()
-  declare fileSize: number | null
+  declare fileSize: number
 
   @column()
-  declare mimeType: string | null
+  declare mimeType: string
+
+  @column()
+  declare width: number | null
+
+  @column()
+  declare height: number | null
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
@@ -40,7 +46,6 @@ export default class Photo extends BaseModel {
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   declare updatedAt: DateTime
 
-  // Relationships
   @belongsTo(() => HiddenGem)
   declare hiddenGem: BelongsTo<typeof HiddenGem>
 }
