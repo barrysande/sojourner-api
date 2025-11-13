@@ -9,6 +9,7 @@ import { customAlphabet } from 'nanoid'
 import TierService from './tier_service.js'
 import GracePeriodService from './grace_period_service.js'
 import DodoPaymentService from './dodo_payment_service.js'
+import { createGroupSubscriptionValidator } from '#validators/subscription'
 import type {
   CreateGroupSubscriptionParams,
   ChangeGroupSubscriptionPlanParams,
@@ -21,7 +22,11 @@ import {
   ActionDeniedException,
 } from '#exceptions/payment_errors_exception'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import SubscriptionConflictException from '#exceptions/subscription_conflict_exception'
+import type { Infer } from '@vinejs/vine/types'
+import { Exception } from '@adonisjs/core/exceptions'
 
+type CreateGroupPayload = Infer<typeof createGroupSubscriptionValidator>
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 
 @inject()
@@ -36,7 +41,7 @@ export class GroupSubscriptionService {
    * Generate 8-character alphanumeric invite code
    * Format: Uppercase letters and numbers only (e.g., XK94PL72)
    */
-  private async generateInviteCode(): Promise<string> {
+  async generateInviteCode(): Promise<string> {
     // if there start to be code collisions just bump chars to 21
     const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 12)
     const code = nanoid()
@@ -50,7 +55,7 @@ export class GroupSubscriptionService {
   /**
    * Calculate invite code expiry (30 days from now)
    */
-  private calculateInviteCodeExpiry(): DateTime {
+  calculateInviteCodeExpiry(): DateTime {
     return DateTime.now().plus({ days: 30 })
   }
 
@@ -68,64 +73,107 @@ export class GroupSubscriptionService {
   async createGroupSubscription(
     ownerUserId: number,
     planType: PlanType,
-    params: CreateGroupSubscriptionParams
+    payload: CreateGroupPayload
   ): Promise<SubscriptionCreateResponse> {
-    const conflictCheck = await this.tierService.detectTierConflict(ownerUserId)
+    const conflictCheck = await this.tierService.canCreateGroupSubscription(ownerUserId)
 
-    if (conflictCheck.hasConflict) {
-      throw new ConflictException(conflictCheck.message!, {
-        conflictType: conflictCheck.conflictType,
-        details: conflictCheck.details,
-      })
+    if (!conflictCheck.canCreate) {
+      throw new SubscriptionConflictException(conflictCheck.reason!)
+    }
+
+    const dodoParams: CreateGroupSubscriptionParams = {
+      productId: payload.product_id,
+      quantity: payload.quantity,
+      customer: {
+        email: payload.customer.email,
+        name: payload.customer.name,
+        phoneNumber: payload.customer.phone_number,
+      },
+      billing: {
+        street: payload.billing.street,
+        city: payload.billing.city,
+        state: payload.billing.state,
+        zipcode: payload.billing.zipcode,
+        country: payload.billing.country,
+      },
+      addons: payload.addons || [],
+      returnUrl: payload.return_url,
+      paymentLink: payload.payment_link,
+      trialPeriodDays: payload.trial_period_days,
+
+      // VERY VITAL for for self-recovery incase a user pays but for some reason my database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
+      metadata: {
+        ...payload.metadata,
+        ownerUserId: ownerUserId.toString(),
+        subscription_type: 'group',
+      },
     }
 
     logger.info('Creating group subscription with Dodo', {
       ownerUserId,
-      totalSeats: params.addons[0].quantity,
-      productId: params.productId,
+      totalSeats: dodoParams.addons[0].quantity,
+      productId: dodoParams.productId,
     })
 
-    const dodoResponse = await this.dodoPaymentService.createGroupSubscription(params)
+    const dodoResponse = await this.dodoPaymentService.createGroupSubscription(dodoParams)
 
-    return await db.transaction(async (trx) => {
-      const inviteCode = await this.generateInviteCode()
-      const inviteCodeExpiresAt = this.calculateInviteCodeExpiry()
+    try {
+      return await db.transaction(async (trx) => {
+        const inviteCode = await this.generateInviteCode()
+        const inviteCodeExpiresAt = this.calculateInviteCodeExpiry()
 
-      const subscription = await GroupSubscription.create(
+        const subscription = await GroupSubscription.create(
+          {
+            ownerUserId,
+            dodoSubscriptionId: dodoResponse.subscription_id,
+            totalSeats: dodoParams.addons[0].quantity,
+            inviteCode,
+            inviteCodeExpiresAt,
+            status: 'pending',
+            planType,
+          },
+          { client: trx }
+        )
+
+        await GroupSubscriptionMember.create(
+          {
+            groupSubscriptionId: subscription.id,
+            userId: ownerUserId,
+            joinedAt: DateTime.now(),
+            status: 'active',
+          },
+          { client: trx }
+        )
+
+        return {
+          addons: dodoResponse.addons,
+          client_secret: dodoResponse.client_secret,
+          customer: dodoResponse.customer,
+          metadata: dodoResponse.metadata,
+          payment_id: dodoResponse.payment_id,
+          recurring_pre_tax_amount: dodoResponse.recurring_pre_tax_amount,
+          subscription_id: dodoResponse.subscription_id,
+          payment_link: dodoResponse.payment_link,
+          discount_id: dodoResponse.discount_id,
+          expires_on: dodoResponse.expires_on,
+        }
+      })
+    } catch (dbError) {
+      logger.error('CRITICAL: Failed to save group subscription record after payment success', {
+        dodoSubscriptionId: dodoResponse.subscription_id,
+        ownerUserId,
+        error: dbError.message,
+        stack: dbError.stack,
+      })
+
+      throw new Exception(
+        'Payment was processed but failed to update account. Please contact support.',
         {
-          ownerUserId,
-          dodoSubscriptionId: dodoResponse.subscription_id,
-          totalSeats: params.addons[0].quantity,
-          inviteCode,
-          inviteCodeExpiresAt,
-          status: 'pending',
-          planType,
-        },
-        { client: trx }
+          status: 500,
+          code: 'E_SUBSCRIPTION_SAVE_FAILED',
+        }
       )
-
-      await GroupSubscriptionMember.create(
-        {
-          groupSubscriptionId: subscription.id,
-          userId: ownerUserId,
-          joinedAt: DateTime.now(),
-          status: 'active',
-        },
-        { client: trx }
-      )
-      return {
-        addons: dodoResponse.addons,
-        client_secret: dodoResponse.client_secret,
-        customer: dodoResponse.customer,
-        metadata: dodoResponse.metadata,
-        payment_id: dodoResponse.payment_id,
-        recurring_pre_tax_amount: dodoResponse.recurring_pre_tax_amount,
-        subscription_id: dodoResponse.subscription_id,
-        payment_link: dodoResponse.payment_link,
-        discount_id: dodoResponse.discount_id,
-        expires_on: dodoResponse.expires_on,
-      }
-    })
+    }
   }
 
   /**

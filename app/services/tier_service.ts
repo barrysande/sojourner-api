@@ -24,13 +24,13 @@ export default class TierService {
       free: {
         maxPhotosPerGem: 1,
         maxGemsTotal: 3,
-        canShare: false,
-        maxShareGroups: 0,
-        maxMembersPerGroup: 0,
+        canShare: true,
+        maxShareGroups: 1,
+        maxMembersPerGroup: 2,
         maxFileSize: 2 * 1024 * 1024, // 2MB
       },
       individual_paid: {
-        maxPhotosPerGem: 3,
+        maxPhotosPerGem: 5,
         maxGemsTotal: 500,
         canShare: true,
         maxShareGroups: 10,
@@ -38,7 +38,7 @@ export default class TierService {
         maxFileSize: 10 * 1024 * 1024, // 10MB
       },
       group_paid: {
-        maxPhotosPerGem: 3,
+        maxPhotosPerGem: 5,
         maxGemsTotal: 500,
         canShare: true,
         maxShareGroups: 10,
@@ -49,14 +49,31 @@ export default class TierService {
     return limits[tier as keyof typeof limits] || limits.free
   }
 
-  //Check if user can add photos bases on tier limits set in limits object.
+  validateFileSize(fileSize: number, tier: string): { isValid: boolean; error?: string } {
+    const limits = this.getTierLimits(tier)
+    const maxSize = limits.maxFileSize
+
+    if (fileSize > maxSize) {
+      const maxSizeMB = (maxSize / 1024 / 1024).toFixed(1)
+      return {
+        isValid: false,
+        error: `File size exceeds your tier limit of ${maxSizeMB}MB`,
+      }
+    }
+
+    return { isValid: true }
+  }
+
+  /**
+   * Check if user can add photos bases on tier limits set in limits object.
+   *
+   */
   async canCreateGem(
     userId: number
   ): Promise<{ canCreate: boolean; currentCount: number; limit: number; message?: string }> {
     const user = await User.findOrFail(userId)
     const limits = this.getTierLimits(user.tier)
 
-    // count the current gems i.e currentCount
     const currentGemCount = await HiddenGem.query().where('user_id', userId).count('* as total')
     const currentCount = Number(currentGemCount[0].$extras.total)
 
@@ -75,7 +92,10 @@ export default class TierService {
     }
   }
 
-  //Check if user can add photos based on tier limits set in limits object.
+  /**
+   * Check if user can add photos based on tier limits set in limits object.
+   *
+   */
   async canAddPhotosToGem(
     userId: number,
     gemId: number,
@@ -308,7 +328,6 @@ export default class TierService {
       })
       .first()
 
-    // check if the user owns a group subscription
     const ownedGroupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', userId)
       .where('status', 'active')
@@ -356,7 +375,6 @@ export default class TierService {
     return { hasConflict: false }
   }
 
-  // subscription tier validation 1: Check if user can join a group subscription & block if user has active individual subscription
   async canJoinGroupSubscription(
     userId: number,
     trx: TransactionClientContract
@@ -364,6 +382,7 @@ export default class TierService {
     canJoin: boolean
     reason?: string
   }> {
+    // subscription tier validation 1: Check if user can join a group subscription & block if user has active individual subscription
     const conflict = await this.detectTierConflict(userId, trx)
 
     if (conflict.hasConflict && conflict.conflictType === 'has_individual') {
@@ -376,31 +395,39 @@ export default class TierService {
     return { canJoin: true }
   }
 
-  // subscription tier validation 2: Check if user can create a group subscription (as owner) and block if user has active individual subscription
   async canCreateGroupSubscription(
     userId: number,
-    trx: TransactionClientContract
+    trx?: TransactionClientContract
   ): Promise<{
     canCreate: boolean
     reason?: string
   }> {
+    // 1. subscription tier validation 2: Check if user can create a group subscription (as owner) and block if user has active individual subscription
     const conflict = await this.detectTierConflict(userId, trx)
 
-    if (conflict) {
-      return {
-        canCreate: false,
-        reason: conflict.message,
-      }
+    if (!conflict.hasConflict) {
+      return { canCreate: true }
     }
+
+    // Default to the detectTierConflict message
+    let reason = conflict.message
+
+    if (conflict.conflictType === 'has_group_membership') {
+      reason =
+        'You cannot create a new group subscription while you are a member of another group. Please leave your current group first.'
+    } else if (conflict.conflictType === 'has_group_ownership') {
+      reason = 'You already own an active group subscription.'
+    }
+
     return {
-      canCreate: true,
+      canCreate: false,
+      reason: reason,
     }
   }
 
-  // subscription tier validation 2: Check if user can create/subscribe to individual plan and block if user has active group membership or ownership
   async canSubscribeIndividual(
     userId: number,
-    trx: TransactionClientContract
+    trx?: TransactionClientContract
   ): Promise<{
     canSubscribe: boolean
     reason?: string

@@ -82,7 +82,7 @@ export default class DodoPaymentService {
           zipcode: params.billing.zipcode,
         },
         metadata: params.metadata || {},
-        // TODO: Add more url params like success and subscription plan and tier
+
         return_url: env.get('FRONTEND_URL'),
       })
 

@@ -6,8 +6,8 @@ import TierService from './tier_service.js'
 import GracePeriodService from './grace_period_service.js'
 import DodoPaymentService from './dodo_payment_service.js'
 import type {
-  CreateIndividualSubscriptionParams,
   ChangeIndividualSubscriptionPlanParams,
+  CreateIndividualSubscriptionParams,
 } from '../../types/webhook.js'
 import type {
   SubscriptionCreateResponse,
@@ -15,6 +15,12 @@ import type {
 } from 'dodopayments/resources/subscriptions.mjs'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import User from '#models/user'
+import SubscriptionConflictException from '#exceptions/subscription_conflict_exception'
+import { createIndividualSubscriptionValidator } from '#validators/subscription'
+import type { Infer } from '@vinejs/vine/types'
+import { Exception } from '@adonisjs/core/exceptions'
+
+type CreateSubPayload = Infer<typeof createIndividualSubscriptionValidator>
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 // type SubscriptionStatus =  'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
@@ -39,16 +45,60 @@ export default class IndividualSubscriptionService {
   async createIndividualSubscription(
     userId: number,
     planType: PlanType,
-    params: CreateIndividualSubscriptionParams
+    payload: CreateSubPayload
   ): Promise<SubscriptionCreateResponse> {
-    const dodoResponse = await this.dodoPaymentService.createIndividualSubscription(params)
+    const { canSubscribe, reason } = await this.tierService.canSubscribeIndividual(userId)
 
-    await IndividualSubscription.create({
-      userId,
-      dodoSubscriptionId: dodoResponse.subscription_id,
-      planType,
-      status: 'pending',
-    })
+    if (!canSubscribe) {
+      throw new SubscriptionConflictException(reason!)
+    }
+
+    const dodoParams: CreateIndividualSubscriptionParams = {
+      productId: payload.product_id,
+      quantity: payload.quantity,
+      customer: {
+        email: payload.customer.email,
+        name: payload.customer.name,
+        phoneNumber: payload.customer.phone_number,
+      },
+      billing: {
+        street: payload.billing.street,
+        city: payload.billing.city,
+        state: payload.billing.state,
+        zipcode: payload.billing.zipcode,
+        country: payload.billing.country,
+      },
+      returnUrl: payload.return_url,
+      paymentLink: payload.payment_link,
+      trialPeriodDays: payload.trial_period_days,
+
+      // VERY VITAL for for self-recovery incase a user pays but for some reason my database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
+      metadata: {
+        ...payload.metadata,
+        userId: userId.toString(),
+        subscription_type: 'individual',
+      },
+    }
+
+    const dodoResponse = await this.dodoPaymentService.createIndividualSubscription(dodoParams)
+
+    try {
+      await IndividualSubscription.create({
+        userId,
+        dodoSubscriptionId: dodoResponse.subscription_id,
+        planType,
+        status: 'pending',
+      })
+    } catch (dbError) {
+      logger.error('Failed to save subscription record after payment success', {
+        dodoSubscriptionId: dodoResponse.subscription_id,
+        userId,
+        error: dbError,
+      })
+      throw new Exception(
+        'Payment was processed but failed to update account. Please contact support.'
+      )
+    }
 
     return {
       addons: dodoResponse.addons,

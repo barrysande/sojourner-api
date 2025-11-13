@@ -14,32 +14,10 @@ export default class IndividualSubscriptionsController {
     const user = auth.getUserOrFail()
     const payload = await request.validateUsing(createIndividualSubscriptionValidator)
 
-    const params = {
-      productId: payload.product_id,
-      quantity: payload.quantity,
-      customer: {
-        email: payload.customer.email,
-        name: payload.customer.name,
-        phoneNumber: payload.customer.phone_number,
-      },
-
-      billing: {
-        street: payload.billing.street,
-        city: payload.billing.city,
-        state: payload.billing.state,
-        zipcode: payload.billing.zipcode,
-        country: payload.billing.country,
-      },
-      metadata: payload.metadata,
-      returnUrl: payload.return_url,
-      paymentLink: payload.payment_link,
-      trialPeriodDays: payload.trial_period_days,
-    }
-
     const result = await this.individualSubscriptionService.createIndividualSubscription(
       user.id,
       payload.plan_type,
-      params
+      payload
     )
 
     return response.created(result)

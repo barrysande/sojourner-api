@@ -6,7 +6,6 @@ import { DateTime } from 'luxon'
 import env from '#start/env'
 import app from '@adonisjs/core/services/app'
 import Job, { WebhookJobPayload } from '#models/job'
-import db from '@adonisjs/lucid/services/db'
 
 export default class ProcessWebhooks extends BaseCommand {
   static commandName = 'process:webhooks'
@@ -77,38 +76,30 @@ export default class ProcessWebhooks extends BaseCommand {
       const payload = job.payload as WebhookJobPayload
       const webhookEvent = await WebhookEvent.findOrFail(payload.eventId)
 
-      await db.transaction(async (trx) => {
-        const webhookService = await app.container.make('webhookService')
+      const webhookService = await app.container.make('webhookService')
 
-        const user = await webhookService.processWebhookEvent(webhookEvent)
+      const user = await webhookService.processWebhookEvent(webhookEvent)
 
-        await webhookEvent
-          .useTransaction(trx)
-          .merge({ status: 'completed', processedAt: DateTime.now() })
-          .save()
+      await webhookEvent.merge({ status: 'completed', processedAt: DateTime.now() }).save()
 
-        if (user) {
-          logger.info('Enqueuing payment receipt for user', { userId: user.id })
+      if (user) {
+        logger.info('Enqueuing payment receipt for user', { userId: user.id })
 
-          await Job.create(
-            {
-              queueName: 'emails',
-              payload: {
-                userId: user.id,
-                emailType: 'email_verification',
-                metadata: {
-                  eventName: webhookEvent.eventType,
-                },
-              },
-              status: 'pending',
-              priority: 10,
+        await Job.create({
+          queueName: 'emails',
+          payload: {
+            userId: user.id,
+            emailType: 'email_verification',
+            metadata: {
+              eventName: webhookEvent.eventType,
             },
-            { client: trx }
-          )
-        }
+          },
+          status: 'pending',
+          priority: 10,
+        })
+      }
 
-        await job.useTransaction(trx).merge({ status: 'completed' }).save()
-      })
+      await job.merge({ status: 'completed' }).save()
 
       logger.info('Webhook job processed successfully', {
         jobId: job.id,

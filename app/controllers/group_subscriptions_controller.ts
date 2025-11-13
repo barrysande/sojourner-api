@@ -19,32 +19,10 @@ export default class GroupSubscriptionsController {
 
     const payload = await request.validateUsing(createGroupSubscriptionValidator)
 
-    const params = {
-      productId: payload.product_id,
-      quantity: payload.quantity,
-      customer: {
-        email: payload.customer.email,
-        name: payload.customer.name,
-        phoneNumber: payload.customer.phone_number,
-      },
-      billing: {
-        street: payload.billing.street,
-        city: payload.billing.city,
-        state: payload.billing.state,
-        zipcode: payload.billing.zipcode,
-        country: payload.billing.country,
-      },
-      metadata: payload.metadata,
-      addons: payload.addons || [],
-      returnUrl: payload.return_url,
-      paymentLink: payload.payment_link,
-      trialPeriodDays: payload.trial_period_days,
-    }
-
     const result = await this.groupSubscriptionService.createGroupSubscription(
       user.id,
       payload.plan_type,
-      params
+      payload
     )
 
     return response.created(result)
