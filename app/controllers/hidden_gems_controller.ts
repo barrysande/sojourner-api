@@ -1,42 +1,22 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
-import { hiddenGemWithPhotosValidator } from '#validators/cloudinary_photo'
+import { fileUploadValidator, updateGemValidator } from '#validators/file_upload'
 import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
 import TierService from '#services/tier_service'
-import CloudinaryService from '#services/cloudinary_service'
+import ImageProcessingService from '#services/image_processing_service'
+import drive from '@adonisjs/drive/services/main'
+import logger from '@adonisjs/core/services/logger'
 
 @inject()
 export default class HiddenGemsController {
   constructor(
     private tierService: TierService,
-    private cloudinaryService: CloudinaryService
+    private imageProcessingService: ImageProcessingService
   ) {}
 
-  // HELPER FUNCTION TO VALIDATE PHOTOS IN BATCHES
-  private async validatePhotosBatch(photos: any[]): Promise<{
-    isValid: boolean
-    error?: string
-    invalidIndex?: number
-  }> {
-    if (!photos || photos.length === 0) {
-      return { isValid: true }
-    }
-
-    for (const [i, photo] of photos.entries()) {
-      if (!this.cloudinaryService.validateCloudinaryResponse(photo)) {
-        return {
-          isValid: false,
-          error: `Photo #${i + 1} has invalid data. Please remove and re-upload it.`,
-          invalidIndex: i,
-        }
-      }
-    }
-    return { isValid: true }
-  }
-
-  //   LIST ALL HIDDEN GEMS
+  // LIST ALL HIDDEN GEMS
   async index({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -46,7 +26,7 @@ export default class HiddenGemsController {
       const gems = await HiddenGem.query()
         .where('userId', user.id)
         .preload('photos', (gemsQuery) => {
-          gemsQuery.select(['id', 'cloudinaryPublicId', 'caption', 'isPrimary'])
+          gemsQuery.select(['id', 'storageKey', 'url', 'thumbnailUrl', 'caption', 'isPrimary'])
           gemsQuery.orderBy('isPrimary', 'desc')
           gemsQuery.orderBy('createdAt', 'asc')
         })
@@ -63,7 +43,7 @@ export default class HiddenGemsController {
     }
   }
 
-  //SHOW ONE HIDDEN GEM BASED ON THE ID
+  // SHOW ONE HIDDEN GEM
   async show({ response, auth, params }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -90,15 +70,18 @@ export default class HiddenGemsController {
     }
   }
 
-  // POST CREATE A HIDDEN GEM POST
+  // CREATE HIDDEN GEM WITH PHOTOS
   async store({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const data = await request.validateUsing(hiddenGemWithPhotosValidator)
+      const data = await request.validateUsing(fileUploadValidator)
+      const photos = request.files('photos', {
+        size: '10mb',
+        extnames: ['jpg', 'jpeg', 'png', 'webp'],
+      })
 
-      // 1. Use tierService to check if user can create more gems 2. check if the photos submitted by user are within tier limits 3. validate cloudinary photos metadata using validatePhotosBatch method 4. Create new hidden gem with any photo submitted 5. return the created gem
+      // Check if user can create more gems
       const gemCheck = await this.tierService.canCreateGem(user.id)
-
       if (!gemCheck.canCreate) {
         return response.forbidden({
           message: gemCheck.message,
@@ -108,28 +91,41 @@ export default class HiddenGemsController {
         })
       }
 
-      if (data.photos && data.photos.length > 0) {
-        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, data.photos.length)
+      // Validate photo count against tier limits
+      if (photos && photos.length > 0) {
+        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, photos.length)
         if (!photoCheck.canAdd) {
           return response.forbidden({
             message: photoCheck.message,
-            attempted: data.photos.length,
+            attempted: photos.length,
             limit: photoCheck.limit,
             upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more photos per gem'),
           })
         }
 
-        const photoValidation = await this.validatePhotosBatch(data.photos)
-        if (!photoValidation.isValid) {
-          return response.badRequest({
-            message: photoValidation.error,
-            code: 'INVALID_PHOTO_DATA',
-            invalidPhotoIndex: photoValidation.invalidIndex,
-          })
+        // Validate each file
+        for (const photo of photos) {
+          const validation = this.imageProcessingService.validateImage(photo)
+          if (!validation.isValid) {
+            return response.badRequest({
+              message: validation.error,
+              code: 'INVALID_IMAGE',
+            })
+          }
+
+          // Validate file size per tier
+          const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
+          if (!sizeValidation.isValid) {
+            return response.badRequest({
+              message: sizeValidation.error,
+              code: 'FILE_SIZE_EXCEEDED',
+            })
+          }
         }
       }
 
       const gem = await db.transaction(async (trx) => {
+        // Create gem
         const newGem = await HiddenGem.create(
           {
             userId: user.id,
@@ -143,18 +139,44 @@ export default class HiddenGemsController {
           { client: trx }
         )
 
-        if (data.photos && data.photos.length > 0) {
-          const photoData = data.photos.map((photo, index) => ({
-            hiddenGemId: newGem.id,
-            cloudinaryPublicId: photo.public_id,
-            cloudinaryUrl: photo.url,
-            cloudinarySecureUrl: photo.secure_url,
-            fileName: photo.original_filename || `photo-${index + 1}.jpg`,
-            caption: photo.caption || null,
-            isPrimary: index === 0, // make the first photo is primary
-          }))
+        // Process and upload photos
+        if (photos && photos.length > 0) {
+          const photoRecords = []
+          const disk = drive.use()
 
-          await Photo.createMany(photoData, { client: trx })
+          for (const [index, photo] of photos.entries()) {
+            // Process image
+            const processed = await this.imageProcessingService.processAndSave(
+              photo,
+              user.id,
+              newGem.id
+            )
+
+            // Upload to R2 using Drive
+            await disk.put(processed.fullKey, processed.fullBuffer)
+            await disk.put(processed.thumbKey, processed.thumbBuffer)
+
+            // Get URLs
+            const fullUrl = await disk.getUrl(processed.fullKey)
+            const thumbUrl = await disk.getUrl(processed.thumbKey)
+
+            // Create photo record
+            photoRecords.push({
+              hiddenGemId: newGem.id,
+              storageKey: processed.fullKey,
+              url: fullUrl,
+              thumbnailUrl: thumbUrl,
+              originalFileName: photo.clientName,
+              caption: null,
+              isPrimary: index === 0,
+              fileSize: processed.metadata.size,
+              mimeType: processed.metadata.mimeType,
+              width: processed.metadata.width,
+              height: processed.metadata.height,
+            })
+          }
+
+          await Photo.createMany(photoRecords, { client: trx })
         }
 
         return newGem
@@ -177,47 +199,57 @@ export default class HiddenGemsController {
     }
   }
 
-  // UPDATE A HIDDEN GEM BASED ON ID
+  // UPDATE HIDDEN GEM
   async update({ params, response, request, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const data = await request.validateUsing(hiddenGemWithPhotosValidator)
+      const data = await request.validateUsing(updateGemValidator)
+      const photos = request.files('photos', {
+        size: '10mb',
+        extnames: ['jpg', 'jpeg', 'png', 'webp'],
+      })
 
-      // 1. get the hidden gem based on id and userId 2. use tierService to check photos to be added against limits 3. validate cloudinary photos metadata using validatePhotosBatch method 4. update the hidden gem 5. return the updated gem
       const gem = await HiddenGem.query()
         .where('id', params.id)
         .where('userId', user.id)
         .firstOrFail()
 
-      if (data.photos && data.photos.length > 0) {
-        const photoCheck = await this.tierService.canAddPhotosToGem(
-          user.id,
-          gem.id,
-          data.photos.length
-        )
+      // Validate photo addition
+      if (photos && photos.length > 0) {
+        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
         if (!photoCheck.canAdd) {
           return response.forbidden({
-            message:
-              photoCheck.message ||
-              `Adding ${data.photos.length} photos would exceed the limit of ${photoCheck.limit}`,
+            message: photoCheck.message,
             current: photoCheck.currentCount,
             limit: photoCheck.limit,
-            attempted: data.photos.length,
+            attempted: photos.length,
           })
         }
 
-        const photoValidation = await this.validatePhotosBatch(data.photos)
-        if (!photoValidation.isValid) {
-          return response.badRequest({
-            message: photoValidation.error,
-            code: 'INVALID_PHOTO_DATA',
-            invalidPhotoIndex: photoValidation.invalidIndex,
-          })
+        // Validate each file
+        for (const photo of photos) {
+          const validation = this.imageProcessingService.validateImage(photo)
+          if (!validation.isValid) {
+            return response.badRequest({
+              message: validation.error,
+              code: 'INVALID_IMAGE',
+            })
+          }
+
+          const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
+          if (!sizeValidation.isValid) {
+            return response.badRequest({
+              message: sizeValidation.error,
+              code: 'FILE_SIZE_EXCEEDED',
+            })
+          }
         }
       }
 
       await db.transaction(async (trx) => {
         gem.useTransaction(trx)
+
+        // Update gem details
         await gem
           .merge({
             name: data.name,
@@ -228,20 +260,41 @@ export default class HiddenGemsController {
           })
           .save()
 
-        if (data.photos && data.photos.length > 0) {
-          const photoData = data.photos.map((photo) => ({
-            hiddenGemId: gem.id,
-            cloudinaryPublicId: photo.public_id,
-            cloudinaryUrl: photo.url,
-            cloudinarySecureUrl: photo.secure_url,
-            fileName: photo.original_filename || 'uploaded-photo.jpg',
-            caption: photo.caption || null,
-            isPrimary: false,
-          }))
-          await Photo.createMany(photoData, { client: trx })
-        }
+        // Process and upload new photos
+        if (photos && photos.length > 0) {
+          const photoRecords = []
+          const disk = drive.use()
 
-        return gem
+          for (const photo of photos) {
+            const processed = await this.imageProcessingService.processAndSave(
+              photo,
+              user.id,
+              gem.id
+            )
+
+            await disk.put(processed.fullKey, processed.fullBuffer)
+            await disk.put(processed.thumbKey, processed.thumbBuffer)
+
+            const fullUrl = await disk.getUrl(processed.fullKey)
+            const thumbUrl = await disk.getUrl(processed.thumbKey)
+
+            photoRecords.push({
+              hiddenGemId: gem.id,
+              storageKey: processed.fullKey,
+              url: fullUrl,
+              thumbnailUrl: thumbUrl,
+              originalFileName: photo.clientName,
+              caption: null,
+              isPrimary: false,
+              fileSize: processed.metadata.size,
+              mimeType: processed.metadata.mimeType,
+              width: processed.metadata.width,
+              height: processed.metadata.height,
+            })
+          }
+
+          await Photo.createMany(photoRecords, { client: trx })
+        }
       })
 
       const updatedGem = await HiddenGem.query().where('id', gem.id).preload('photos').first()
@@ -267,11 +320,11 @@ export default class HiddenGemsController {
     }
   }
 
-  // DELETE HIDDEN GEM AND CLEANUP PHOTOS ON CLOUDINARY
+  // DELETE HIDDEN GEM
   async destroy({ params, response, auth }: HttpContext) {
-    // 1. get the gem to be deleted using id and userId 2. get the gem photos' cloudinaryPublicIds 3. cleanup/delete the gem's photos on cloudinary 4. check for failed cloudinary cleanups. 4. delete hidden gem
     try {
       const user = auth.getUserOrFail()
+      const disk = drive.use()
 
       const gem = await HiddenGem.query()
         .where('id', params.id)
@@ -279,25 +332,36 @@ export default class HiddenGemsController {
         .preload('photos')
         .firstOrFail()
 
-      const publicIds = gem.photos.map((photo) => photo.cloudinaryPublicId)
-
-      const bulkDeleteResult = await this.cloudinaryService.deleteMultipleImages(publicIds)
-
-      if (bulkDeleteResult.failed.length > 0) {
-        return response.badRequest({
-          message: 'Failed to cleanup some photos. Gem not deleted.',
-          failedPhotos: bulkDeleteResult.failed,
-        })
+      // Delete all photos from R2
+      const deletionResults = {
+        successful: [] as string[],
+        failed: [] as { key: string; error: string }[],
       }
 
+      for (const photo of gem.photos) {
+        try {
+          await disk.delete(photo.storageKey)
+          deletionResults.successful.push(photo.storageKey)
+
+          // Delete thumbnail if exists
+          if (photo.thumbnailUrl) {
+            const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
+            await disk.delete(thumbKey)
+          }
+        } catch (error) {
+          deletionResults.failed.push({
+            key: photo.storageKey,
+            error: error.message,
+          })
+        }
+      }
+
+      // Delete gem (cascade will delete photos from DB)
       await gem.delete()
 
       return response.ok({
         message: 'Hidden gem deleted successfully',
-        photoCleanup: {
-          successful: bulkDeleteResult.successful,
-          failed: bulkDeleteResult.failed,
-        },
+        photoCleanup: deletionResults,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -306,23 +370,23 @@ export default class HiddenGemsController {
           code: 'GEM_NOT_FOUND',
         })
       }
-
       throw error
     }
   }
 
-  //ADDING PHOTOS TO AN EXISTING GEM
+  // ADD PHOTOS TO EXISTING GEM
   async addPhotos({ params, auth, request, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const photos = request.input('photos', [])
-
-      // 1. check if request has photos 2. get the gem using gem id and userId 3. check users' tier limits 4. check if user can add photos based on tier limits 5. validate cloudinary photos metadata using validatePhotosBatch method 6. create photo records if tests pass
+      const photos = request.files('photos', {
+        size: '10mb',
+        extnames: ['jpg', 'jpeg', 'png', 'webp'],
+      })
 
       if (!photos || photos.length === 0) {
         return response.badRequest({
           message: 'No photos provided!',
-          code: 'NO PHOTOS_PROVIDED',
+          code: 'NO_PHOTOS_PROVIDED',
         })
       }
 
@@ -331,6 +395,7 @@ export default class HiddenGemsController {
         .where('userId', user.id)
         .firstOrFail()
 
+      // Check tier limits
       const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
       if (!photoCheck.canAdd) {
         return response.forbidden({
@@ -341,25 +406,53 @@ export default class HiddenGemsController {
         })
       }
 
-      const photoValidation = await this.validatePhotosBatch(photos)
-      if (!photoValidation.isValid) {
-        return response.badRequest({
-          message: photoValidation.error,
-          code: 'INVALID_PHOTO_DATA',
-          invalidPhotoIndex: photoValidation.invalidIndex,
+      // Validate each file
+      for (const photo of photos) {
+        const validation = this.imageProcessingService.validateImage(photo)
+        if (!validation.isValid) {
+          return response.badRequest({
+            message: validation.error,
+            code: 'INVALID_IMAGE',
+          })
+        }
+
+        const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
+        if (!sizeValidation.isValid) {
+          return response.badRequest({
+            message: sizeValidation.error,
+            code: 'FILE_SIZE_EXCEEDED',
+          })
+        }
+      }
+
+      const photoRecords = []
+      const disk = drive.use()
+
+      for (const photo of photos) {
+        const processed = await this.imageProcessingService.processAndSave(photo, user.id, gem.id)
+
+        await disk.put(processed.fullKey, processed.fullBuffer)
+        await disk.put(processed.thumbKey, processed.thumbBuffer)
+
+        const fullUrl = await disk.getUrl(processed.fullKey)
+        const thumbUrl = await disk.getUrl(processed.thumbKey)
+
+        photoRecords.push({
+          hiddenGemId: gem.id,
+          storageKey: processed.fullKey,
+          url: fullUrl,
+          thumbnailUrl: thumbUrl,
+          originalFileName: photo.clientName,
+          caption: null,
+          isPrimary: false,
+          fileSize: processed.metadata.size,
+          mimeType: processed.metadata.mimeType,
+          width: processed.metadata.width,
+          height: processed.metadata.height,
         })
       }
 
-      const photoData = photos.map((photo: any) => ({
-        hiddenGemId: gem.id,
-        cloudinaryPublicId: photo.public_id,
-        cloudinaryUrl: photo.url,
-        cloudinarySecureUrl: photo.secure_url,
-        fileName: photo.original_filename || 'uploaded-photo.jpg',
-        caption: photo.caption || null,
-        isPrimary: false,
-      }))
-      const newPhotos = await Photo.createMany(photoData)
+      const newPhotos = await Photo.createMany(photoRecords)
 
       return response.created({
         message: 'Photos added successfully',
@@ -372,12 +465,11 @@ export default class HiddenGemsController {
           code: 'GEM_NOT_FOUND',
         })
       }
-
       throw error
     }
   }
 
-  // REASSIGN THE PRIMARY PHOTO INCASE ITS DELETED
+  // REASSIGN PRIMARY PHOTO
   private async reassignPrimaryPhoto(gemId: number): Promise<void> {
     const firstPhoto = await Photo.query()
       .where('hiddenGemId', gemId)
@@ -386,16 +478,15 @@ export default class HiddenGemsController {
 
     if (firstPhoto) {
       firstPhoto.isPrimary = true
-
       await firstPhoto.save()
     }
   }
 
   // DELETE ONE PHOTO
   async deletePhoto({ params, auth, response }: HttpContext) {
-    // 1. get photo to be deleted using photo id and userId 2. create variable to hold primary photo 3. delete photo from cloudinary then database 4. check if deleted photo was primary then reassign primary status to next photo.
     try {
       const user = auth.getUserOrFail()
+      const disk = drive.use()
 
       const photo = await Photo.query()
         .where('id', params.photoId)
@@ -406,17 +497,27 @@ export default class HiddenGemsController {
 
       const wasPrimary = photo.isPrimary
 
-      const deleteResult = await this.cloudinaryService.deleteImage(photo.cloudinaryPublicId)
+      // Delete from R2
+      try {
+        await disk.delete(photo.storageKey)
+        if (photo.thumbnailUrl) {
+          const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
+          await disk.delete(thumbKey)
+        }
+      } catch (error) {
+        logger.error('R2 deletion failed', { storageKey: photo.storageKey, error: error.message })
+      }
 
+      // Delete from database
       await photo.delete()
 
+      // Reassign primary if needed
       if (wasPrimary) {
         await this.reassignPrimaryPhoto(params.id)
       }
 
       return response.ok({
         message: 'Photo deleted successfully',
-        cloudinaryDeleted: deleteResult.success,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -425,7 +526,6 @@ export default class HiddenGemsController {
           code: 'PHOTO_NOT_FOUND',
         })
       }
-
       throw error
     }
   }
