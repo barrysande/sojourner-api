@@ -1,6 +1,9 @@
 import ShareGroup from '#models/share_group'
 import ShareGroupMember from '#models/share_group_member'
+import User from '#models/user'
+import Notification from '#models/notification'
 import { DateTime } from 'luxon'
+import app from '@adonisjs/core/services/app'
 
 export default class ShareGroupService {
   generateUniqueInviteCode(): string {
@@ -81,6 +84,87 @@ export default class ShareGroupService {
       invitedAt: data.invitedAt,
       joinedAt: data.joinedAt || null,
     })
+  }
+
+  async inviteMembersToGroup(
+    shareGroupId: number,
+    inviterId: number,
+    emails: string[]
+  ): Promise<{ sent: string[]; failed: string[] }> {
+    const sent: string[] = []
+    const failed: string[] = []
+
+    // 1. Batch fetch all users by email (single query) 2. Batch fetch existing memberships (single query) 3. Create lookup maps 4. Process each email using cached data 5. Check tier permissions- tier limits and membership status 6. Construct invitation. 7. Batch create them 8. Batch create memberships 9. Batch create notifications 10. send invitation code via email.
+    const normalizedEmails = emails.map((email) => email.toLowerCase().trim())
+    const users = await User.query().whereIn('email', normalizedEmails)
+
+    const userIds = users.map((user) => user.id)
+    const existingMemberships = await ShareGroupMember.query()
+      .where('share_group_id', shareGroupId)
+      .whereIn('user_id', userIds)
+
+    const usersByEmail = new Map(users.map((user) => [user.email, user]))
+    const membershipsByUserId = new Map(
+      existingMemberships.map((membership) => [membership.userId, membership])
+    )
+
+    const validInvitations = []
+
+    for (const email of emails) {
+      const normalizedEmail = email.toLowerCase().trim()
+      const user = usersByEmail.get(normalizedEmail)
+
+      if (!user) {
+        failed.push(`${email}: User not found`)
+        continue
+      }
+
+      const tierService = await app.container.make('tierService')
+
+      const tierLimits = tierService.getTierLimits(user.tier)
+      if (!tierLimits.canShare) {
+        failed.push(`${email}: Upgrade to paid Individual Plan`)
+        continue
+      }
+      const existingMembership = membershipsByUserId.get(user.id)
+      if (existingMembership) {
+        if (existingMembership.status === 'active') {
+          failed.push(`${email}: Already a member`)
+          continue
+        }
+        if (existingMembership.status === 'pending') {
+          failed.push(`${email}: Already invited`)
+          continue
+        }
+      }
+
+      validInvitations.push({
+        userId: user.id,
+        shareGroupId,
+        invitedBy: inviterId,
+        status: 'pending' as const,
+        role: 'member' as const,
+        invitedAt: DateTime.now(),
+      })
+      sent.push(email)
+    }
+    if (validInvitations.length > 0) {
+      await ShareGroupMember.createMany(validInvitations)
+
+      const notificationData = validInvitations.map((invitation) => ({
+        userId: invitation.userId,
+        type: 'share_group_invite' as const,
+        title: 'Share Group Invitation',
+        message: `You've been invited to join a share group`,
+        data: { shareGroupId, inviterId },
+        isRead: false,
+        sentAt: DateTime.now(),
+      }))
+
+      await Notification.createMany(notificationData)
+    }
+
+    return { sent, failed }
   }
 
   async acceptGroupInvitation(
