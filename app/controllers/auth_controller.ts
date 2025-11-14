@@ -135,6 +135,7 @@ export default class AuthController {
           id: user.id,
           email: user.email,
           fullName: user.fullName,
+          verifiedAt: user.emailVerifiedAt,
         },
       })
     } catch (error) {
@@ -189,7 +190,7 @@ export default class AuthController {
           email: user.email,
           fullName: user.fullName,
           tier: user.tier,
-          createdAt: user.createdAt,
+          verifiedAt: user.emailVerifiedAt,
         },
       })
     } catch (error) {

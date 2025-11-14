@@ -62,7 +62,7 @@ export default defineConfig({
       environment: ['console'],
     },
     () => import('@adonisjs/ally/ally_provider'),
-    () => import('@adonisjs/drive/drive_provider')
+    () => import('@adonisjs/drive/drive_provider'),
   ],
 
   /*
