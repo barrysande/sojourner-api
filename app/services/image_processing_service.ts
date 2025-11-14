@@ -57,23 +57,21 @@ export default class ImageProcessingService {
     maxSize: number = this.FULL_SIZE
   ): Promise<ProcessedImage> {
     try {
-      const buffer = await sharp(file.tmpPath!)
+      const { data: buffer, info } = await sharp(file.tmpPath!)
         .resize(maxSize, maxSize, {
           fit: 'inside',
           withoutEnlargement: true,
         })
         .webp({ quality: 80 })
-        .toBuffer()
-
-      const metadata = await sharp(buffer).metadata()
+        .toBuffer({ resolveWithObject: true })
 
       return {
         buffer,
         metadata: {
-          width: metadata.width || 0,
-          height: metadata.height || 0,
-          size: buffer.length,
-          format: 'webp',
+          width: info.width,
+          height: info.height,
+          size: info.size,
+          format: info.format,
         },
       }
     } catch (error) {
@@ -87,23 +85,20 @@ export default class ImageProcessingService {
    */
   async generateThumbnail(file: MultipartFile): Promise<ProcessedImage> {
     try {
-      const buffer = await sharp(file.tmpPath!)
+      const { data: buffer, info } = await sharp(file.tmpPath!)
         .resize(this.THUMB_SIZE, this.THUMB_SIZE, {
           fit: 'cover',
-          position: 'center',
         })
         .webp({ quality: 75 })
-        .toBuffer()
-
-      const metadata = await sharp(buffer).metadata()
+        .toBuffer({ resolveWithObject: true })
 
       return {
         buffer,
         metadata: {
-          width: metadata.width || 0,
-          height: metadata.height || 0,
-          size: buffer.length,
-          format: 'webp',
+          width: info.width,
+          height: info.height,
+          size: info.size,
+          format: info.format,
         },
       }
     } catch (error) {
