@@ -9,6 +9,8 @@ import { DateTime } from 'luxon'
 import logger from '@adonisjs/core/services/logger'
 import GroupSubscriptionMember from '#models/group_subscription_member'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import ShareGroup from '#models/share_group'
+import ShareGroupMember from '#models/share_group_member'
 
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
 
@@ -132,7 +134,7 @@ export default class TierService {
 
   async getUpgrageMessage(userTier: string, feature: string) {
     if (userTier === 'free') {
-      return `Upgrade to Individual Plan to unlock ${feature}`
+      return `Upgrade to Individual or Group Paid Plan to unlock ${feature}`
     }
   }
 
@@ -140,10 +142,16 @@ export default class TierService {
     const user = await User.findOrFail(userId)
     const limits = this.getTierLimits(user.tier)
 
-    if (!limits.canShare) {
+    const currentGroupsCount = await ShareGroup.query()
+      .where('created_by', userId)
+      .count('* as total')
+
+    const currentCount = Number(currentGroupsCount[0].$extras.total)
+
+    if (currentCount >= limits.maxShareGroups) {
       return {
         canCreate: false,
-        message: `Upgrade from ${user.tier} to Individual Plan to share gems`,
+        message: `Share group limit reached. ${user.tier} tier allows maximum ${limits.maxShareGroups} groups. Upgrade to create more.`,
       }
     }
     return {
@@ -151,14 +159,20 @@ export default class TierService {
     }
   }
 
-  async canJoinShareGroup(userId: number): Promise<{ canJoin: boolean; message?: string }> {
-    const user = await User.findOrFail(userId)
-    const limits = this.getTierLimits(user.tier)
+  async canJoinShareGroup(shareGroupId: number): Promise<{ canJoin: boolean; message?: string }> {
+    const shareGroup = await ShareGroup.findOrFail(shareGroupId)
 
-    if (!limits.canShare) {
+    const currentMembers = await ShareGroupMember.query()
+      .where('share_group_id', shareGroupId)
+      .where('status', 'active')
+      .count('* as total')
+
+    const currentCount = Number(currentMembers[0].$extras.total)
+
+    if (currentCount >= shareGroup.maxMembers) {
       return {
         canJoin: false,
-        message: `Upgrade from ${user.tier} to the Individual Plan to join a share group`,
+        message: 'Share group is at maximum capacity.',
       }
     }
     return {

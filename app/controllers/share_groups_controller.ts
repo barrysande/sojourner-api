@@ -235,14 +235,7 @@ export default class ShareGroupsController {
       const user = auth.getUserOrFail()
       const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
 
-      // 1. Check tier permissions 2. Find share group by invite code 3. Check group capacity 4.  Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group 4. create notification 5. create system chat joined notification.
-      const canJoin = await this.tierService.canJoinShareGroup(user.id)
-      if (!canJoin.canJoin) {
-        return response.forbidden({
-          message: canJoin.message,
-        })
-      }
-
+      // 1. Find share group by invite code 2. Check tier permissions 3. Check group capacity 4. Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group 4. create notification 5. create system chat joined notification.
       const shareGroup = await this.shareGroupService.getShareGroupByInviteCode(inviteCode)
       if (!shareGroup) {
         return response.badRequest({
@@ -250,9 +243,11 @@ export default class ShareGroupsController {
         })
       }
 
-      const currentMembers = await this.shareGroupService.getGroupMembers(shareGroup.id)
-      if (currentMembers.length >= shareGroup.maxMembers) {
-        return response.badRequest({ message: 'Share group is full' })
+      const canJoin = await this.tierService.canJoinShareGroup(user.id)
+      if (!canJoin.canJoin) {
+        return response.forbidden({
+          message: canJoin.message,
+        })
       }
 
       const existingMembership = await this.shareGroupService.findMembership(user.id, shareGroup.id)
