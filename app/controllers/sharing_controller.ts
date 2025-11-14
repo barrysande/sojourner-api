@@ -3,21 +3,21 @@ import { inject } from '@adonisjs/core'
 import SharingService from '#services/sharing_service'
 import ShareGroupService from '#services/share_group_service'
 import NotificationService from '#services/notification_service'
-import TierService from '#services/tier_service'
 import { shareGemsValidator, unshareGemsValidator } from '#validators/sharing'
 import HiddenGem from '#models/hidden_gem'
 import SharedGem from '#models/shared_gem'
 import ChatService from '#services/chat_service'
 import logger from '@adonisjs/core/services/logger'
+import TierService from '#services/tier_service'
 
 @inject()
 export default class SharingController {
   constructor(
-    private sharingService: SharingService,
-    private shareGroupService: ShareGroupService,
-    private notificationService: NotificationService,
-    private tierService: TierService,
-    private chatService: ChatService
+    protected sharingService: SharingService,
+    protected shareGroupService: ShareGroupService,
+    protected notificationService: NotificationService,
+    protected chatService: ChatService,
+    protected tierService: TierService
   ) {}
 
   /**
@@ -37,8 +37,12 @@ export default class SharingController {
         return response.forbidden({ message: 'You are not a member of this share group' })
       }
 
-      const canShare = await this.tierService.canCreateShareGroup(user.id)
-      if (!canShare.canCreate) {
+      const canShare = await this.tierService.canShareGemsToGroup(
+        user.id,
+        shareGroupId,
+        gemIds.length
+      )
+      if (!canShare.canShare) {
         return response.forbidden({
           message: canShare.message,
         })

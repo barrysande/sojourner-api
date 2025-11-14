@@ -11,6 +11,7 @@ import GroupSubscriptionMember from '#models/group_subscription_member'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import ShareGroup from '#models/share_group'
 import ShareGroupMember from '#models/share_group_member'
+import SharedGem from '#models/shared_gem'
 
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
 
@@ -28,8 +29,9 @@ export default class TierService {
         maxGemsTotal: 3,
         canShare: true,
         maxShareGroups: 1,
-        maxMembersPerGroup: 2,
-        maxFileSize: 2 * 1024 * 1024, // 2MB
+        maxMembersPerGroup: 5,
+        maxSharedGemsPerGroup: 3,
+        maxFileSize: 2 * 1024 * 1024,
       },
       individual_paid: {
         maxPhotosPerGem: 5,
@@ -37,7 +39,8 @@ export default class TierService {
         canShare: true,
         maxShareGroups: 10,
         maxMembersPerGroup: 20,
-        maxFileSize: 10 * 1024 * 1024, // 10MB
+        maxSharedGemsPerGroup: 500,
+        maxFileSize: 10 * 1024 * 1024,
       },
       group_paid: {
         maxPhotosPerGem: 5,
@@ -45,7 +48,8 @@ export default class TierService {
         canShare: true,
         maxShareGroups: 10,
         maxMembersPerGroup: 20,
-        maxFileSize: 10 * 1024 * 1024, // 10MB
+        maxSharedGemsPerGroup: 500,
+        maxFileSize: 10 * 1024 * 1024,
       },
     }
     return limits[tier as keyof typeof limits] || limits.free
@@ -195,6 +199,37 @@ export default class TierService {
 
     return {
       maxMembers: limits.maxMembersPerGroup,
+    }
+  }
+
+  async canShareGemsToGroup(
+    userId: number,
+    shareGroupId: number,
+    gemsToAdd: number
+  ): Promise<{ canShare: boolean; currentCount: number; limit: number; message?: string }> {
+    const user = await User.findOrFail(userId)
+    const limits = this.getTierLimits(user.tier)
+
+    const currentSharedCount = await SharedGem.query()
+      .where('shared_by', userId)
+      .where('share_group_id', shareGroupId)
+      .count('* as total')
+
+    const currentCount = Number(currentSharedCount[0].$extras.total)
+
+    if (currentCount + gemsToAdd > limits.maxSharedGemsPerGroup) {
+      return {
+        canShare: false,
+        currentCount,
+        limit: limits.maxSharedGemsPerGroup,
+        message: `Sharing limit reached. ${user.tier} tier allows maximum ${limits.maxSharedGemsPerGroup} shared gems per group.`,
+      }
+    }
+
+    return {
+      canShare: true,
+      currentCount,
+      limit: limits.maxSharedGemsPerGroup,
     }
   }
 
