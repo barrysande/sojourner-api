@@ -7,18 +7,15 @@ import HiddenGem from '#models/hidden_gem'
 import Photo from '#models/photo'
 import ShareGroupMember from '#models/share_group_member'
 import TierService from '#services/tier_service'
-import CloudinaryService from '#services/cloudinary_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import drive from '@adonisjs/drive/services/main'
 
 type GracePeriodType = 'payment_failure' | 'group_removal'
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
 
 @inject()
 export default class GracePeriodService {
-  constructor(
-    protected tierService: TierService,
-    protected cloudinaryService: CloudinaryService
-  ) {}
+  constructor(protected tierService: TierService) {}
   /**
    * Calculate grace period duration based on type
    * - payment_failure: 3 days
@@ -31,7 +28,7 @@ export default class GracePeriodService {
   /**
    * Delete all non-primary photos for user's gems
    * Keeps the first (primary) photo for each gem
-   * Deletes from both Cloudinary and database
+   * Deletes from both Cloudflare R2 and database
    *
    * @param userId - User whose photos to delete
    * @param trx - Database transaction
@@ -41,7 +38,6 @@ export default class GracePeriodService {
     userId: number,
     trx: TransactionClientContract
   ): Promise<number> {
-    // 1. Get all user's gems with photos
     const gems = await HiddenGem.query({ client: trx })
       .where('user_id', userId)
       .forUpdate()
@@ -49,43 +45,56 @@ export default class GracePeriodService {
         query.where('is_primary', false)
       })
 
+    const storageKeys: string[] = []
     let deletedCount = 0
-    const cloudinaryPublicIds: string[] = []
 
-    // 2. Get all non-primary cloudinary public ids
+    // Collect storage keys
     for (const gem of gems) {
       for (const photo of gem.photos) {
-        cloudinaryPublicIds.push(photo.cloudinaryPublicId)
+        storageKeys.push(photo.storageKey)
+
+        if (photo.thumbnailUrl) {
+          const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
+          storageKeys.push(thumbKey)
+        }
+
         deletedCount++
       }
     }
 
-    if (cloudinaryPublicIds.length === 0) {
+    if (storageKeys.length === 0) {
       logger.info('No non-primary photos to delete', { userId })
       return 0
     }
 
-    // 3. Bulk delete from Cloudinary
-    const cloudinaryResult = await this.cloudinaryService.deleteMultipleImages(cloudinaryPublicIds)
-    if (cloudinaryResult.failed.length > 0) {
-      logger.warn('Some Cloudinary deletions failed during degradation', {
-        userId,
-        failed: cloudinaryResult.failed,
-      })
-    }
+    // Delete from R2 in parallel
+    const disk = drive.use()
+    const failed: string[] = []
 
-    // 4. Delete photos from database
+    await Promise.all(
+      storageKeys.map(async (key) => {
+        try {
+          await disk.delete(key)
+        } catch (error) {
+          failed.push(key)
+          logger.warn('R2 deletion failed', { key, error: error.message })
+        }
+      })
+    )
+
+    // Delete from database
     await Photo.query({ client: trx })
       .whereHas('hiddenGem', (query) => {
         query.where('user_id', userId)
       })
       .where('is_primary', false)
       .delete()
+
     logger.info('Non-primary photos deleted', {
       userId,
       deletedCount,
-      cloudinarySuccess: cloudinaryResult.successful.length,
-      cloudinaryFailed: cloudinaryResult.failed.length,
+      r2Success: storageKeys.length - failed.length,
+      r2Failed: failed.length,
     })
 
     return deletedCount

@@ -175,7 +175,7 @@ router
     router.post('/group/join', [GroupSubscriptionsController, 'join'])
     router.get('/group', [GroupSubscriptionsController, 'show'])
   })
-  .prefix('api/subscirptions')
+  .prefix('api/subscriptions')
   .use(middleware.auth())
 /*
   |----------------------------------------------------------
