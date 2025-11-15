@@ -61,7 +61,7 @@ export default class WebhookService {
                 payload.payment_frequency_count,
                 payload.payment_frequency_interval
               ),
-              status: 'pending', // Will be set to 'active' by the handler
+              status: 'pending',
             },
             { client: trx }
           )

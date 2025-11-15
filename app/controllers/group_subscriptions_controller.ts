@@ -19,11 +19,7 @@ export default class GroupSubscriptionsController {
 
     const payload = await request.validateUsing(createGroupSubscriptionValidator)
 
-    const result = await this.groupSubscriptionService.createGroupSubscription(
-      user.id,
-      payload.plan_type,
-      payload
-    )
+    const result = await this.groupSubscriptionService.createGroupSubscription(user.id, payload)
 
     return response.created(result)
   }

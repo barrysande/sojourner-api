@@ -72,7 +72,6 @@ export class GroupSubscriptionService {
    */
   async createGroupSubscription(
     ownerUserId: number,
-    planType: PlanType,
     payload: CreateGroupPayload
   ): Promise<SubscriptionCreateResponse> {
     const conflictCheck = await this.tierService.canCreateGroupSubscription(ownerUserId)
@@ -130,7 +129,7 @@ export class GroupSubscriptionService {
             inviteCode,
             inviteCodeExpiresAt,
             status: 'pending',
-            planType,
+            planType: payload.plan_type,
           },
           { client: trx }
         )

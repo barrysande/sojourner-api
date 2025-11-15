@@ -44,7 +44,6 @@ export default class IndividualSubscriptionService {
    */
   async createIndividualSubscription(
     userId: number,
-    planType: PlanType,
     payload: CreateSubPayload
   ): Promise<SubscriptionCreateResponse> {
     const { canSubscribe, reason } = await this.tierService.canSubscribeIndividual(userId)
@@ -86,7 +85,7 @@ export default class IndividualSubscriptionService {
       await IndividualSubscription.create({
         userId,
         dodoSubscriptionId: dodoResponse.subscription_id,
-        planType,
+        planType: payload.plan_type,
         status: 'pending',
       })
     } catch (dbError) {

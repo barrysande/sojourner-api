@@ -16,7 +16,6 @@ export default class IndividualSubscriptionsController {
 
     const result = await this.individualSubscriptionService.createIndividualSubscription(
       user.id,
-      payload.plan_type,
       payload
     )
 

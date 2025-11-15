@@ -6,6 +6,8 @@ import {
   loginThrottle,
   resendVerifyEmailThrotte,
 } from './limiter.js'
+import AutoSwagger from 'adonis-autoswagger'
+import swagger from '#config/swagger'
 const AuthController = () => import('#controllers/auth_controller')
 const SocialAuthsController = () => import('#controllers/social_auths_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
@@ -181,3 +183,21 @@ router
   |----------------------------------------------------------
   */
 router.post('/webhooks/dodo', [WebhooksController, 'handle'])
+
+/*
+  |----------------------------------------------------------
+  | Api docs Routes
+  |----------------------------------------------------------
+  */
+
+// returns swagger in YAML
+router.get('/swagger', async () => {
+  return AutoSwagger.default.docs(router.toJSON(), swagger)
+})
+
+// Renders Swagger-UI and passes YAML-output of /swagger
+router.get('/docs', async () => {
+  return AutoSwagger.default.ui('/swagger', swagger)
+  // return AutoSwagger.default.scalar("/swagger"); to use Scalar instead. If you want, you can pass proxy url as second argument here.
+  // return AutoSwagger.default.rapidoc("/swagger", "view"); to use RapiDoc instead (pass "view" default, or "read" to change the render-style)
+})
