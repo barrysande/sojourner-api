@@ -84,6 +84,7 @@ export default class DodoPaymentService {
         metadata: params.metadata || {},
 
         return_url: env.get('FRONTEND_URL'),
+        payment_link: true,
       })
 
       logger.info('Dodo subscription created successfully', {
@@ -135,6 +136,8 @@ export default class DodoPaymentService {
         },
         metadata: params.metadata || {},
         addons: [{ addon_id: params.addons[0].addon_id, quantity: params.addons[0].quantity }],
+        return_url: env.get('FRONTEND_URL'),
+        payment_link: true,
       })
 
       logger.info('Dodo subscription created successfully', {

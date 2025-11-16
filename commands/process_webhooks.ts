@@ -6,6 +6,7 @@ import { DateTime } from 'luxon'
 import env from '#start/env'
 import app from '@adonisjs/core/services/app'
 import Job, { WebhookJobPayload } from '#models/job'
+import WebhookService from '#services/webhook_processor_service'
 
 export default class ProcessWebhooks extends BaseCommand {
   static commandName = 'process:webhooks'
@@ -76,7 +77,7 @@ export default class ProcessWebhooks extends BaseCommand {
       const payload = job.payload as WebhookJobPayload
       const webhookEvent = await WebhookEvent.findOrFail(payload.eventId)
 
-      const webhookService = await app.container.make('webhookService')
+      const webhookService = await app.container.make(WebhookService)
 
       const user = await webhookService.processWebhookEvent(webhookEvent)
 
