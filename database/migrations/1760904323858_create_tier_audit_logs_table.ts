@@ -1,7 +1,7 @@
 import { BaseSchema } from '@adonisjs/lucid/schema'
 
 export default class extends BaseSchema {
-  protected tableName = 'tier_audit_log'
+  protected tableName = 'tier_audit_logs'
 
   async up() {
     this.schema.createTable(this.tableName, (table) => {
@@ -19,6 +19,7 @@ export default class extends BaseSchema {
       table.string('triggered_by', 50).notNullable()
       table.jsonb('metadata').nullable()
       table.timestamp('created_at').notNullable()
+      table.timestamp('updated_at').notNullable()
 
       //the ?? are placeholders in the check instead of hardcoding the names then you pass column names in the array as strings. From Knex.js docs https://knexjs.org/guide/schema-builder.html#check
       table.check(
