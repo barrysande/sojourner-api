@@ -1,0 +1,31 @@
+// app/services/payment_email_service.ts
+import User from '#models/user'
+import mail from '@adonisjs/mail/services/main'
+import logger from '@adonisjs/core/services/logger'
+import SubscriptionConfirmationMail from '#mails/subscription_confirmation_confirmation_mail'
+
+export default class SubscriptionEmailService {
+  /**
+   * Called by the ProcessJobs worker
+   */
+  public async sendSubscriptionConfirmation(userId: number) {
+    try {
+      const user = await User.findOrFail(userId)
+
+      await mail.send(new SubscriptionConfirmationMail(user))
+
+      logger.info('Subscription confirmation email sent', {
+        userId: user.id,
+        email: user.email,
+      })
+    } catch (error) {
+      logger.error('Failed to send subscription confirmation', {
+        userId,
+        error,
+      })
+      // Throw the error so the job worker
+      // can catch it and mark the job as 'failed'.
+      throw error
+    }
+  }
+}

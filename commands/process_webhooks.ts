@@ -1,5 +1,173 @@
+// import { BaseCommand } from '@adonisjs/core/ace'
+// import type { CommandOptions } from '@adonisjs/core/types/ace'
+// import WebhookEvent from '#models/webhook_event'
+// import logger from '@adonisjs/core/services/logger'
+// import { DateTime } from 'luxon'
+// import env from '#start/env'
+// import app from '@adonisjs/core/services/app'
+// import Job, { WebhookJobPayload } from '#models/job'
+// import WebhookService from '#services/webhook_processor_service'
+// import db from '@adonisjs/lucid/services/db'
+
+// const MAX_JOB_ATTEMPTS = 3
+// const RETRY_DELAYS = [0, 60, 300] // seconds: immediate, 1min, 5min
+
+// export default class ProcessWebhooks extends BaseCommand {
+//   static commandName = 'process:webhooks'
+//   static description = 'Process pending webhook events from the queue'
+
+//   static options: CommandOptions = {
+//     startApp: true,
+//     allowUnknownFlags: false,
+//     staysAlive: false,
+//   }
+
+//   async run() {
+//     this.logger.info('Webhook worker running: checking for jobs...')
+
+//     await this.recoverStuckWebhooks()
+
+//     const job = await Job.query()
+//       .where((query) => {
+//         query.where('status', 'pending').orWhere((subQuery) => {
+//           subQuery.where('status', 'failed').where('attempts', '<', MAX_JOB_ATTEMPTS)
+//         })
+//       })
+//       .where((query) => {
+//         query.whereNull('scheduled_for').orWhere('scheduled_for', '<=', DateTime.now().toSQL())
+//       })
+//       .where('queue_name', 'webhooks')
+//       .orderBy('priority', 'asc')
+//       .orderBy('scheduled_for', 'asc')
+//       .orderBy('created_at', 'asc')
+//       .forUpdate()
+//       .skipLocked()
+//       .limit(1)
+//       .first()
+
+//     if (!job) {
+//       this.logger.info('No pending webhook jobs found.')
+//       return
+//     }
+
+//     const maxAttempts = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
+//     await this.processJob(job, maxAttempts)
+//   }
+
+//   private async processJob(job: Job, maxAttempts: number): Promise<void> {
+//     const jobLogger = logger.child({
+//       jobId: job.id,
+//       attempt: job.attempts + 1,
+//       maxAttempts: maxAttempts,
+//     })
+
+//     try {
+//       await db.transaction(async (trx) => {
+//         await job.useTransaction(trx).merge({ status: 'processing' }).save()
+
+//         const payload = job.payload as WebhookJobPayload
+//         const webhookEvent = await WebhookEvent.findOrFail(payload.eventId, { client: trx })
+
+//         const webhookService = await app.container.make(WebhookService)
+//         const user = await webhookService.processWebhookEvent(webhookEvent)
+
+//         await webhookEvent
+//           .useTransaction(trx)
+//           .merge({ status: 'completed', processedAt: DateTime.now() })
+//           .save()
+
+//         if (user) {
+//           jobLogger.info('Enqueuing payment receipt for user', { userId: user.id })
+//           await Job.create(
+//             {
+//               queueName: 'emails',
+//               payload: {
+//                 userId: user.id,
+//                 emailType: 'subscription_confirmation',
+//                 metadata: { eventName: webhookEvent.eventType },
+//               },
+//               status: 'pending',
+//               priority: 1,
+//             },
+//             { client: trx }
+//           )
+//         }
+
+//         await job.useTransaction(trx).merge({ status: 'completed', lastError: null }).save()
+//       })
+
+//       jobLogger.info('Webhook job processed successfully')
+//     } catch (error) {
+//       const nextAttemptCount = job.attempts + 1
+//       const willRetry = nextAttemptCount < MAX_JOB_ATTEMPTS
+
+//       jobLogger.error(
+//         { err: error },
+//         `Job failed on attempt ${nextAttemptCount}/${maxAttempts}${willRetry ? ' - will retry' : ' - max attempts reached'}`
+//       )
+
+//       const scheduledFor = willRetry
+//         ? DateTime.now().plus({ seconds: RETRY_DELAYS[nextAttemptCount] })
+//         : null
+
+//       await job
+//         .merge({
+//           status: 'failed',
+//           attempts: nextAttemptCount,
+//           scheduledFor,
+//           lastError: error.message || 'Unknown error',
+//         })
+//         .save()
+
+//       try {
+//         const payload = job.payload as WebhookJobPayload
+//         const webhookEvent = await WebhookEvent.find(payload.eventId)
+//         if (webhookEvent) {
+//           await webhookEvent
+//             .merge({
+//               status: 'failed',
+//               attempts: nextAttemptCount,
+//               lastError: error.message,
+//             })
+//             .save()
+//         }
+//       } catch (webhookUpdateError) {
+//         logger.error('Failed to update webhook_event status', {
+//           error: webhookUpdateError.message,
+//         })
+//       }
+
+//       if (nextAttemptCount >= maxAttempts) {
+//         logger.error('Webhook job failed after max attempts', {
+//           jobId: job.id,
+//           attempts: nextAttemptCount,
+//         })
+//       }
+//     }
+//   }
+
+//   private async recoverStuckWebhooks(): Promise<void> {
+//     const stuckThreshold = DateTime.now().minus({ minutes: 5 })
+
+//     const stuckWebhooks = await WebhookEvent.query()
+//       .where('status', 'processing')
+//       .where('updated_at', '<', stuckThreshold.toSQL())
+
+//     if (stuckWebhooks.length > 0) {
+//       logger.warn('Recovering stuck webhooks', {
+//         count: stuckWebhooks.length,
+//       })
+
+//       for (const webhook of stuckWebhooks) {
+//         await webhook
+//           .merge({ status: 'pending', lastError: 'Recovered from stuck processing state' })
+//           .save()
+//       }
+//     }
+//   }
+// }
 import { BaseCommand } from '@adonisjs/core/ace'
-import { CommandOptions } from '@adonisjs/core/types/ace'
+import type { CommandOptions } from '@adonisjs/core/types/ace'
 import WebhookEvent from '#models/webhook_event'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
@@ -7,6 +175,11 @@ import env from '#start/env'
 import app from '@adonisjs/core/services/app'
 import Job, { WebhookJobPayload } from '#models/job'
 import WebhookService from '#services/webhook_processor_service'
+import db from '@adonisjs/lucid/services/db'
+import User from '#models/user'
+
+const MAX_JOB_ATTEMPTS = 3
+const RETRY_DELAYS = [0, 60, 300]
 
 export default class ProcessWebhooks extends BaseCommand {
   static commandName = 'process:webhooks'
@@ -15,112 +188,124 @@ export default class ProcessWebhooks extends BaseCommand {
   static options: CommandOptions = {
     startApp: true,
     allowUnknownFlags: false,
-    staysAlive: true,
+    staysAlive: false,
   }
-
-  private isShuttingDown = false
 
   async run() {
-    const workerSleepInterval = env.get('WEBHOOK_WORKER_INTERVAL', 5000)
+    this.logger.info('Webhook worker running: checking for jobs...')
+
+    await this.recoverStuckWebhooks()
+
+    const job = await Job.query()
+      .where((query) => {
+        query.where('status', 'pending').orWhere((subQuery) => {
+          subQuery.where('status', 'failed').where('attempts', '<', MAX_JOB_ATTEMPTS)
+        })
+      })
+      .where((query) => {
+        query.whereNull('scheduled_for').orWhere('scheduled_for', '<=', DateTime.now().toSQL())
+      })
+      .where('queue_name', 'webhooks')
+      .orderBy('priority', 'asc')
+      .orderBy('scheduled_for', 'asc')
+      .orderBy('created_at', 'asc')
+      .forUpdate()
+      .skipLocked()
+      .limit(1)
+      .first()
+
+    if (!job) {
+      this.logger.info('No pending webhook jobs found.')
+      return
+    }
 
     const maxAttempts = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
-
-    logger.info('Webhook worker started', {
-      workerSleepInterval,
-      maxAttempts,
-    })
-
-    this.setupGracefulShutdown()
-
-    while (!this.isShuttingDown) {
-      try {
-        // try to recover stuck webhooks then process new pending
-        await this.recoverStuckWebhooks()
-
-        const pendingJob = await Job.query()
-          .where('queue_name', 'webhooks')
-          .where('status', 'pending')
-          .orderBy('priority', 'asc')
-          .orderBy('created_at', 'asc')
-          .limit(1)
-          .forUpdate()
-          .skipLocked()
-
-        if (pendingJob.length === 0) {
-          return
-        }
-
-        await this.processJob(pendingJob[0], maxAttempts)
-
-        await this.sleep(workerSleepInterval)
-      } catch (error) {
-        logger.error('Error in webhook worker loop', {
-          error: error.message,
-          stack: error.stack,
-        })
-        // Continue loop even on error so that you don't crash the worker
-        await this.sleep(workerSleepInterval)
-      }
-    }
-    this.logger.info('Webhook worker stopped gracefully')
+    await this.processJob(job, maxAttempts)
   }
 
-  /**
-   * Process a single job. Extracted logic so that the processBatch method's loop only calls it passes
-   * @param webhook
-   * @param maxAttempts
-   */
   private async processJob(job: Job, maxAttempts: number): Promise<void> {
+    const jobLogger = logger.child({
+      jobId: job.id,
+      attempt: job.attempts + 1,
+      maxAttempts: maxAttempts,
+    })
+
     try {
-      await job.merge({ status: 'processing' }).save()
+      await db.transaction(async (trx) => {
+        await job.useTransaction(trx).merge({ status: 'processing' }).save()
 
-      const payload = job.payload as WebhookJobPayload
-      const webhookEvent = await WebhookEvent.findOrFail(payload.eventId)
+        const payload = job.payload as WebhookJobPayload
+        const webhookEvent = await WebhookEvent.findOrFail(payload.eventId, { client: trx })
 
-      const webhookService = await app.container.make(WebhookService)
+        const webhookService = await app.container.make(WebhookService)
+        await webhookService.processWebhookEvent(webhookEvent)
 
-      const user = await webhookService.processWebhookEvent(webhookEvent)
+        const userEmail = webhookEvent.payload.customer.email
+        if (!userEmail) {
+          throw new Error(`WebhookEvent ${webhookEvent.id} payload has no customer.email`)
+        }
 
-      await webhookEvent.merge({ status: 'completed', processedAt: DateTime.now() }).save()
+        const user = await User.findByOrFail('email', userEmail, { client: trx })
 
-      if (user) {
-        logger.info('Enqueuing payment receipt for user', { userId: user.id })
+        await webhookEvent
+          .useTransaction(trx)
+          .merge({ status: 'completed', processedAt: DateTime.now() })
+          .save()
 
-        await Job.create({
-          queueName: 'emails',
-          payload: {
-            userId: user.id,
-            emailType: 'email_verification',
-            metadata: {
-              eventName: webhookEvent.eventType,
+        if (user) {
+          jobLogger.info('Enqueuing payment receipt for user', { userId: user.id })
+          await Job.create(
+            {
+              queueName: 'emails',
+              payload: {
+                userId: user.id,
+                emailType: 'subscription_confirmation',
+                metadata: { eventName: webhookEvent.eventType },
+              },
+              status: 'pending',
+              priority: 1,
             },
-          },
-          status: 'pending',
-          priority: 10,
-        })
-      }
+            { client: trx }
+          )
+        }
 
-      await job.merge({ status: 'completed' }).save()
-
-      logger.info('Webhook job processed successfully', {
-        jobId: job.id,
-        eventId: webhookEvent.eventId,
-        eventType: webhookEvent.eventType,
-        attempts: job.attempts,
+        await job.useTransaction(trx).merge({ status: 'completed', lastError: null }).save()
       })
+
+      jobLogger.info('Webhook job processed successfully')
     } catch (error) {
+      const nextAttemptCount = job.attempts + 1
+      const willRetry = nextAttemptCount < MAX_JOB_ATTEMPTS
+
+      jobLogger.error(
+        { err: error },
+        `Job failed on attempt ${nextAttemptCount}/${maxAttempts}${willRetry ? ' - will retry' : ' - max attempts reached'}`
+      )
+
+      const scheduledFor = willRetry
+        ? DateTime.now().plus({ seconds: RETRY_DELAYS[nextAttemptCount] })
+        : null
+
       await job
-        .merge({ status: 'failed', attempts: (job.attempts += 1), lastError: error.message })
+        .merge({
+          status: 'failed',
+          attempts: nextAttemptCount,
+          scheduledFor,
+          lastError: error.message || 'Unknown error',
+        })
         .save()
 
       try {
         const payload = job.payload as WebhookJobPayload
         const webhookEvent = await WebhookEvent.find(payload.eventId)
         if (webhookEvent) {
-          webhookEvent.status = 'failed'
-          webhookEvent.attempts += 1
-          webhookEvent.lastError = error.message
-          await webhookEvent.save()
+          await webhookEvent
+            .merge({
+              status: 'failed',
+              attempts: nextAttemptCount,
+              lastError: error.message,
+            })
+            .save()
         }
       } catch (webhookUpdateError) {
         logger.error('Failed to update webhook_event status', {
@@ -128,28 +313,15 @@ export default class ProcessWebhooks extends BaseCommand {
         })
       }
 
-      logger.error('Webhook job processing failed', {
-        jobId: job.id,
-        attempts: job.attempts,
-        maxAttempts,
-        error: error.message,
-        stack: error.stack,
-      })
-
-      if (job.attempts >= maxAttempts) {
+      if (nextAttemptCount >= maxAttempts) {
         logger.error('Webhook job failed after max attempts', {
           jobId: job.id,
-          attempts: job.attempts,
+          attempts: nextAttemptCount,
         })
-        // TODO: Send alert (email, Slack, etc.)
       }
     }
   }
 
-  /**
-   * Recover webhooks stuck in 'processing' status
-   * These are webhooks that were being processed when worker crashed
-   */
   private async recoverStuckWebhooks(): Promise<void> {
     const stuckThreshold = DateTime.now().minus({ minutes: 5 })
 
@@ -168,45 +340,5 @@ export default class ProcessWebhooks extends BaseCommand {
           .save()
       }
     }
-  }
-
-  /**
-   * Sleep for specified milliseconds
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
-  }
-
-  private setupGracefulShutdown(): void {
-    const shutdown = async (signal: string) => {
-      if (this.isShuttingDown) {
-        return
-      }
-
-      logger.info(`Received ${signal}, shutting down gracefully...`)
-      this.isShuttingDown = true
-
-      // Wait for current batch to finish (max 30 seconds)
-      const maxWait = 30000
-      const startTime = Date.now()
-
-      while (Date.now() - startTime < maxWait) {
-        // Check if any webhooks are being processed
-        const processingCount = await WebhookEvent.query()
-          .where('status', 'processing')
-          .count('*', 'total')
-
-        if (Number(processingCount[0].$extras.total) === 0) {
-          break
-        }
-
-        await this.sleep(1000)
-      }
-
-      process.exit(0)
-    }
-
-    process.on('SIGTERM', () => shutdown('SIGTERM'))
-    process.on('SIGINT', () => shutdown('SIGINT'))
   }
 }

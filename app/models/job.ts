@@ -11,7 +11,7 @@ export interface WebhookJobPayload {
 
 export interface EmailJobPayload {
   userId: number
-  emailType: 'email_verification' | 'password_reset'
+  emailType: 'email_verification' | 'password_reset' | 'subscription_confirmation'
   metadata?: Record<string, any>
 }
 

@@ -5,7 +5,7 @@ import User from './user.js'
 
 export default class TierAuditLog extends BaseModel {
   @column({ isPrimary: true })
-  declare id: number
+  declare id: bigint
 
   @column()
   declare userId: number

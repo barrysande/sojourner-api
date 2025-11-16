@@ -32,7 +32,7 @@ export default class ProcessJobs extends BaseCommand {
         query.whereNull('scheduled_for').orWhere('scheduled_for', '<=', DateTime.now().toSQL())
       })
       .where('queue_name', 'emails')
-      .orderBy('priority', 'desc')
+      .orderBy('priority', 'asc')
       .orderBy('scheduled_for', 'asc')
       .orderBy('created_at', 'asc')
       .forUpdate()
@@ -57,24 +57,33 @@ export default class ProcessJobs extends BaseCommand {
     const payload = job.payload as EmailJobPayload
 
     try {
-      if (payload.emailType === 'email_verification') {
-        const emailVerificationService = await this.app.container.make('emailVerificationService')
-        jobLogger.info('Sending verification email')
+      switch (payload.emailType) {
+        case 'email_verification':
+          const emailService = await this.app.container.make('emailVerificationService')
+          jobLogger.info('Sending verification email')
+          await emailService.sendVerificationEmail(payload.userId, payload.metadata!.plainToken)
+          break
 
-        await emailVerificationService.sendVerificationEmail(
-          payload.userId,
-          payload.metadata!.plainToken
-        )
-      } else if (payload.emailType === 'password_reset') {
-        const passwordService = await this.app.container.make('passwordResetService')
-        jobLogger.info('Calling PasswordResetService.sendResetEmail')
-        await passwordService.sendResetEmail(payload.userId, payload.metadata!.plainToken)
+        case 'password_reset':
+          const passwordService = await this.app.container.make('passwordResetService')
+          jobLogger.info('Sending password reset email')
+          await passwordService.sendResetEmail(payload.userId, payload.metadata!.plainToken)
+          break
+
+        case 'subscription_confirmation':
+          const subscriptionEmailService = await this.app.container.make('subscriptionEmailService')
+          jobLogger.info('Sending subscription confirmation email')
+          await subscriptionEmailService.sendSubscriptionConfirmation(payload.userId)
+          break
+
+        default:
+          throw new Error(`Unknown emailType: ${payload.emailType}`)
       }
 
       await job
         .merge({
           status: 'completed',
-          lastError: null, // Clear any previous errors
+          lastError: null,
         })
         .save()
 

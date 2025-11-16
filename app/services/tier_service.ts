@@ -233,9 +233,12 @@ export default class TierService {
     }
   }
 
-  async calculateEffectiveTier(userId: number): Promise<TierCalculationResult> {
-    // Check subscription in a priority basis group > indibidual > grace period > free
-    const groupSubscriptionMembership = await GroupSubscriptionMember.query()
+  async calculateEffectiveTier(
+    userId: number,
+    trx?: TransactionClientContract
+  ): Promise<TierCalculationResult> {
+    // Check subscription in a priority basis group > individual > grace period > free
+    const groupSubscriptionMembership = await GroupSubscriptionMember.query({ client: trx })
       .where('user_id', userId)
       .where('status', 'active')
       .whereHas('groupSubscription', (query) => {
@@ -252,7 +255,7 @@ export default class TierService {
       }
     }
 
-    const individualSubscription = await IndividualSubscription.query()
+    const individualSubscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
@@ -266,7 +269,7 @@ export default class TierService {
       }
     }
 
-    const gracePeriod = await GracePeriod.query()
+    const gracePeriod = await GracePeriod.query({ client: trx })
       .where('user_id', userId)
       .where('resolved', false)
       .where('expires_at', '>', DateTime.now().toSQL())
@@ -306,7 +309,7 @@ export default class TierService {
     const oldTier = user.tier
 
     // 1. calc effective tier using the calculateEffectiveTier method.
-    const tierResult = await this.calculateEffectiveTier(userId)
+    const tierResult = await this.calculateEffectiveTier(userId, trx)
     const newTier = tierResult.tier
 
     // 2. only update tier if user wants to change tier
