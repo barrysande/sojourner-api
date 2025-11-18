@@ -73,7 +73,10 @@ export default class ProcessJobs extends BaseCommand {
         case 'subscription_confirmation':
           const subscriptionEmailService = await this.app.container.make('subscriptionEmailService')
           jobLogger.info('Sending subscription confirmation email')
-          await subscriptionEmailService.sendSubscriptionConfirmation(payload.userId)
+          await subscriptionEmailService.sendSubscriptionConfirmation(
+            payload.userId,
+            payload.metadata!
+          )
           break
 
         default:
