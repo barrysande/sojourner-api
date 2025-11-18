@@ -16,10 +16,10 @@ export default class extends BaseSchema {
       table.string('dodo_subscription_id', 255).notNullable().unique()
       table.string('plan_type', 50).notNullable()
       table.integer('total_seats').notNullable()
-      table.string('invite_code', 8).notNullable().unique()
+      table.string('invite_code', 50).notNullable().unique()
       table.timestamp('invite_code_expires_at').notNullable()
       table.string('status', 50).notNullable()
-      table.timestamp('expires_at').notNullable()
+      table.timestamp('expires_at').nullable()
       table.timestamp('created_at').notNullable()
       table.timestamp('updated_at').notNullable()
 
@@ -29,7 +29,7 @@ export default class extends BaseSchema {
         ['status'],
         'chk_group_status'
       )
-      table.check('?? >= 10 AND ?? <= 50', ['total_seats', 'total_seats'], 'chk_group_seats_range')
+      table.check('?? >= 1 AND ?? <= 50', ['total_seats', 'total_seats'], 'chk_group_seats_range')
 
       table.index('owner_user_id')
       table.index('dodo_subscription_id')
