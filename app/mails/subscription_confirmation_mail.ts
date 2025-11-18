@@ -14,7 +14,7 @@ export default class SubscriptionConfirmationMail extends BaseMail {
 
   from = `Sojourner <${env.get('MAIL_FROM_ADDRESS')}>`
 
-  subject = ''
+  subject = 'Subscription Update'
 
   prepare() {
     const frontendUrl = env.get('FRONTEND_URL')
@@ -78,7 +78,7 @@ export default class SubscriptionConfirmationMail extends BaseMail {
         break
     }
 
-    this.subject = subjectLine
+    this.message.subject(subjectLine)
 
     const textContent = `
 Hi ${this.user.fullName},
@@ -136,7 +136,6 @@ The Sojourner Team
               <p style="font-size: 12px; color: #999;">
                 © ${DateTime.now().year} Sojourner. All rights reserved.<br/>
                 You are receiving this email because you made a purchase on our platform.
-              </SameSite>
             </td>
           </tr>
         </table>
