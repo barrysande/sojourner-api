@@ -100,7 +100,7 @@ export class GroupSubscriptionService {
       paymentLink: payload.payment_link,
       trialPeriodDays: payload.trial_period_days,
 
-      // VERY VITAL for for self-recovery incase a user pays but for some reason my database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
+      // Edge Case: VERY VITAL for for self-recovery incase a user pays but for some reason my database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
       metadata: {
         ...payload.metadata,
         ownerUserId: ownerUserId.toString(),

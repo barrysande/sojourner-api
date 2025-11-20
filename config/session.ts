@@ -26,7 +26,7 @@ const sessionConfig = defineConfig({
     path: '/',
     httpOnly: true,
     secure: app.inProduction,
-    sameSite: 'lax',
+    sameSite: 'lax', //TODO in Production: Change to strict.
 
     // change in prod to correct domain - store in env
     // domain: '.somedomain.com',
