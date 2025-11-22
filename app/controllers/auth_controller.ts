@@ -196,7 +196,7 @@ export default class AuthController {
     } catch (error) {
       if (error instanceof authErrors.E_UNAUTHORIZED_ACCESS) {
         return response.unauthorized({
-          message: 'Authentication required',
+          message: 'Unauthorized access',
         })
       }
 
