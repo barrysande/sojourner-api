@@ -6,7 +6,7 @@ import { messageHistoryValidator, deleteMessageValidator } from '#validators/cha
 
 @inject()
 export default class ChatsController {
-  constructor(private chatService: ChatService) {}
+  constructor(protected chatService: ChatService) {}
 
   async getGroupChatRoom({ auth, params, response }: HttpContext) {
     const user = auth.getUserOrFail()

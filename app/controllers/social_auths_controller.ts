@@ -55,7 +55,7 @@ export default class SocialAuthsController {
         } else {
           userToLogin = await User.create(
             {
-              fullName: googleUser.name,
+              fullName: googleUser.name || googleUser.nickName,
               email: googleUser.email,
               password: null,
               avatarUrl: googleUser.avatarUrl,
