@@ -14,14 +14,17 @@ import logger from '@adonisjs/core/services/logger'
 import PasswordResetService from '#services/password_reset_service'
 import { inject } from '@adonisjs/core'
 import EmailVerificationService from '#services/email_verification_service'
+import AvatarService from '#services/avatar_service'
 import db from '@adonisjs/lucid/services/db'
 import Job from '#models/job'
+import { DateTime } from 'luxon'
 
 @inject()
 export default class AuthController {
   constructor(
     protected passwordResetService: PasswordResetService,
-    protected emailVerificationService: EmailVerificationService
+    protected emailVerificationService: EmailVerificationService,
+    protected avatarService: AvatarService
   ) {}
 
   async register({ request, response }: HttpContext) {
@@ -191,6 +194,7 @@ export default class AuthController {
           fullName: user.fullName,
           tier: user.tier,
           verifiedAt: user.emailVerifiedAt,
+          avatarUrl: user.avatarUrl,
         },
       })
     } catch (error) {
@@ -309,6 +313,29 @@ export default class AuthController {
       return response.internalServerError({
         message: 'Unable to reset password',
       })
+    }
+  }
+
+  async updateAvatar({ request, auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const file = request.file('avatar')
+
+    if (!file) {
+      return response.badRequest('No avatar file uploaded')
+    }
+
+    if (file.hasErrors) {
+      return response.badRequest(file.errors[0].message)
+    }
+
+    try {
+      const newUrl = await this.avatarService.updateAvatar(user, file)
+
+      await user.merge({ avatarUrl: newUrl, updatedAt: DateTime.now() }).save()
+
+      return response.ok({ avatarUrl: newUrl, message: 'Display avatar successfully changed.' })
+    } catch (error) {
+      return response.badRequest({ message: error.message })
     }
   }
 }

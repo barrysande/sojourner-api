@@ -80,7 +80,7 @@ export default class HiddenGemsController {
         extnames: ['jpg', 'jpeg', 'png', 'webp'],
       })
 
-      // Check if user can create more gems
+      // 1. Check if user can create more gems
       const gemCheck = await this.tierService.canCreateGem(user.id)
       if (!gemCheck.canCreate) {
         return response.forbidden({
@@ -91,7 +91,7 @@ export default class HiddenGemsController {
         })
       }
 
-      // Validate photo count against tier limits
+      // 2. Validate photo count against tier limits
       if (photos && photos.length > 0) {
         const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, photos.length)
         if (!photoCheck.canAdd) {
@@ -103,7 +103,7 @@ export default class HiddenGemsController {
           })
         }
 
-        // Validate each file
+        // 3. Validate each file
         for (const photo of photos) {
           const validation = this.imageProcessingService.validateImage(photo)
           if (!validation.isValid) {
@@ -113,7 +113,7 @@ export default class HiddenGemsController {
             })
           }
 
-          // Validate file size per tier
+          // 4. Validate file size per tier
           const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
           if (!sizeValidation.isValid) {
             return response.badRequest({
@@ -125,7 +125,7 @@ export default class HiddenGemsController {
       }
 
       const gem = await db.transaction(async (trx) => {
-        // Create gem
+        // 5. Create gem
         const newGem = await HiddenGem.create(
           {
             userId: user.id,
@@ -139,28 +139,28 @@ export default class HiddenGemsController {
           { client: trx }
         )
 
-        // Process and upload photos
+        // 6. Process and upload photos
         if (photos && photos.length > 0) {
           const photoRecords = []
           const disk = drive.use()
 
           for (const [index, photo] of photos.entries()) {
-            // Process image
+            // 6.1 Process image
             const processed = await this.imageProcessingService.processAndSave(
               photo,
               user.id,
               newGem.id
             )
 
-            // Upload to R2 using Drive
+            // 6.2 Upload to R2 using Drive
             await disk.put(processed.fullKey, processed.fullBuffer)
             await disk.put(processed.thumbKey, processed.thumbBuffer)
 
-            // Get URLs
+            // 6.3 Get URLs
             const fullUrl = await disk.getUrl(processed.fullKey)
             const thumbUrl = await disk.getUrl(processed.thumbKey)
 
-            // Create photo record
+            // 6.4 Create photo record
             photoRecords.push({
               hiddenGemId: newGem.id,
               storageKey: processed.fullKey,
