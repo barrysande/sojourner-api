@@ -19,7 +19,7 @@ interface ImagePaths {
 }
 
 export default class ImageProcessingService {
-  private readonly ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+  private readonly ALLOWED_SUBTYPES = ['jpeg', 'jpg', 'png', 'webp']
   private readonly MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB (will be validated per tier)
   private readonly FULL_SIZE = 1200
   private readonly THUMB_SIZE = 400
@@ -32,11 +32,10 @@ export default class ImageProcessingService {
       return { isValid: false, error: 'No file provided' }
     }
 
-    if (!this.ALLOWED_TYPES.includes(file.type || '')) {
-      return {
-        isValid: false,
-        error: 'Invalid file type. Only JPEG, PNG, and WebP are allowed.',
-      }
+    const subtype = (file.subtype || '').toLowerCase()
+
+    if (!this.ALLOWED_SUBTYPES.includes(subtype)) {
+      throw new Error(`Invalid file type (${subtype}). Only JPEG, PNG, and WebP are allowed.`)
     }
 
     if (file.size && file.size > this.MAX_FILE_SIZE) {
