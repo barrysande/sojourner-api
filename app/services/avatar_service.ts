@@ -6,7 +6,7 @@ import logger from '@adonisjs/core/services/logger'
 import User from '#models/user'
 
 export default class AvatarService {
-  private readonly ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+  private readonly ALLOWED_SUBTYPES = ['jpeg', 'jpg', 'png', 'webp']
   private readonly MAX_FILE_SIZE = 5 * 1024 * 1024
   private readonly AVATAR_SIZE = 400
 
@@ -18,8 +18,19 @@ export default class AvatarService {
       throw new Error('No file provided')
     }
 
-    if (!this.ALLOWED_TYPES.includes(file.type || '')) {
-      throw new Error('Invalid file type. Only JPEG, PNG, and WebP are allowed.')
+    logger.info(
+      {
+        incomingType: file.type,
+        incomingSubtype: file.subtype,
+        clientName: file.clientName,
+      },
+      'Avatar Debug Info'
+    )
+
+    const subtype = (file.subtype || '').toLowerCase()
+
+    if (!this.ALLOWED_SUBTYPES.includes(subtype)) {
+      throw new Error(`Invalid file type (${subtype}). Only JPEG, PNG, and WebP are allowed.`)
     }
 
     if (file.size && file.size > this.MAX_FILE_SIZE) {

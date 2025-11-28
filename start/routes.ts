@@ -40,6 +40,7 @@ router
       .post('/resend-verification', [AuthController, 'resendEmailVerification'])
       .use(middleware.auth())
       .use(resendVerifyEmailThrotte)
+    router.patch('/user/avatar', [AuthController, 'updateAvatar']).use(middleware.auth())
   })
   .prefix('/auth')
 
