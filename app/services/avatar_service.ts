@@ -18,15 +18,6 @@ export default class AvatarService {
       throw new Error('No file provided')
     }
 
-    logger.info(
-      {
-        incomingType: file.type,
-        incomingSubtype: file.subtype,
-        clientName: file.clientName,
-      },
-      'Avatar Debug Info'
-    )
-
     const subtype = (file.subtype || '').toLowerCase()
 
     if (!this.ALLOWED_SUBTYPES.includes(subtype)) {
