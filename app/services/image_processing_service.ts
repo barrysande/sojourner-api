@@ -1,6 +1,8 @@
 import sharp from 'sharp'
 import { cuid } from '@adonisjs/core/helpers'
 import { MultipartFile } from '@adonisjs/core/bodyparser'
+import drive from '@adonisjs/drive/services/main'
+import HiddenGem from '#models/hidden_gem'
 import logger from '@adonisjs/core/services/logger'
 
 interface ProcessedImage {
@@ -159,5 +161,42 @@ export default class ImageProcessingService {
         mimeType: 'image/webp',
       },
     }
+  }
+
+  /**
+   * Delete ALL photos for a user's hidden gems.
+   * Called when a user deletes their account.
+   */
+  async deleteAllUserPhotos(userId: number): Promise<void> {
+    const disk = drive.use()
+
+    // 1. Fetch all gems and photos from DB before deleting the user
+    const gems = await HiddenGem.query().where('userId', userId).preload('photos')
+
+    // 2. Flatten to get a list of all photos
+    const allPhotos = gems.flatMap((gem) => gem.photos)
+
+    // 3. Delete from R2
+    // Using Promise.allSettled ensures that one failure doesn't stop the process
+    await Promise.allSettled(
+      allPhotos.map(async (photo) => {
+        try {
+          // Delete Full Size
+          await disk.delete(photo.storageKey)
+
+          // Delete Thumbnail
+          if (photo.thumbnailUrl) {
+            const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
+            await disk.delete(thumbKey)
+          }
+        } catch (error) {
+          // Just log the error instead of throwing it so that account deletion proceeds
+          logger.warn(
+            { key: photo.storageKey, err: error },
+            'Failed to delete gem photo during account destroy'
+          )
+        }
+      })
+    )
   }
 }

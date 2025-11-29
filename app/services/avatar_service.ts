@@ -69,6 +69,26 @@ export default class AvatarService {
     }
   }
 
+  async deleteAvatar(avatarUrl: string | null): Promise<void> {
+    if (!avatarUrl) return
+
+    try {
+      const urlObj = new URL(avatarUrl)
+      // Remove leading slash to get the key (e.g., 'avatars/xyz.webp')
+      const key = urlObj.pathname.substring(1)
+
+      // Safety check: prevent deleting things outside the avatars folder
+      if (key.startsWith('avatars/')) {
+        await drive.use().delete(key)
+        logger.info({ key }, 'Avatar deleted from R2')
+      }
+    } catch (error) {
+      // Log but don't throw. If the file is already gone, we still want
+      // the account deletion to succeed.
+      logger.warn({ avatarUrl, err: error }, 'Failed to delete avatar file')
+    }
+  }
+
   /**
    * Main entry point: Validates, Processes, Uploads, and cleans up old avatar
    */

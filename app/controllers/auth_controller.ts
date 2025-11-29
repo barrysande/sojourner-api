@@ -15,6 +15,7 @@ import PasswordResetService from '#services/password_reset_service'
 import { inject } from '@adonisjs/core'
 import EmailVerificationService from '#services/email_verification_service'
 import AvatarService from '#services/avatar_service'
+import ImageProcessingService from '#services/image_processing_service'
 import db from '@adonisjs/lucid/services/db'
 import Job from '#models/job'
 import { DateTime } from 'luxon'
@@ -24,7 +25,8 @@ export default class AuthController {
   constructor(
     protected passwordResetService: PasswordResetService,
     protected emailVerificationService: EmailVerificationService,
-    protected avatarService: AvatarService
+    protected avatarService: AvatarService,
+    protected imageProcessingService: ImageProcessingService
   ) {}
 
   async register({ request, response }: HttpContext) {
@@ -345,6 +347,14 @@ export default class AuthController {
       const { password } = request.only(['password'])
 
       await User.verifyCredentials(user.email, password)
+
+      // Clear avatars from Cloudflare
+      if (user.avatarUrl) {
+        await this.avatarService.deleteAvatar(user.avatarUrl)
+      }
+
+      // Clear hidden gem photos from Cloudflare
+      await this.imageProcessingService.deleteAllUserPhotos(user.id)
 
       await user.delete()
 
