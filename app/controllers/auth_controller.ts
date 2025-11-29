@@ -338,4 +338,33 @@ export default class AuthController {
       return response.badRequest({ message: error.message })
     }
   }
+
+  async deleteAccount({ auth, request, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const { password } = request.only(['password'])
+
+      await User.verifyCredentials(user.email, password)
+
+      await user.delete()
+
+      await auth.use('web').logout()
+
+      return response.ok({
+        message: 'Account deleted successfully.',
+      })
+    } catch (error) {
+      if (error.code === 'E_INVALID_CREDENTIALS') {
+        return response.badRequest({
+          message: 'Invalid password',
+        })
+      }
+
+      logger.error('Account deletion error:', { err: error })
+
+      return response.internalServerError({
+        message: 'Unable to delete the account',
+      })
+    }
+  }
 }

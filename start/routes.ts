@@ -41,6 +41,7 @@ router
       .use(middleware.auth())
       .use(resendVerifyEmailThrotte)
     router.patch('/user/avatar', [AuthController, 'updateAvatar']).use(middleware.auth())
+    router.delete('/user/account', [AuthController, 'deleteAccount']).use(middleware.auth())
   })
   .prefix('/auth')
 
