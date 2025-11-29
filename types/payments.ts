@@ -40,10 +40,16 @@ export interface CreateIndividualSubscriptionParams {
     zipcode: string
     country: CountryCode
   }
+  confirm: boolean
   metadata?: Record<string, any>
   returnUrl?: string
   paymentLink?: boolean
   trialPeriodDays?: number
+}
+
+export interface SubscriptionCreateResponse {
+  checkoutUrl: string
+  sessionId: string
 }
 
 export interface CreateGroupSubscriptionParams {

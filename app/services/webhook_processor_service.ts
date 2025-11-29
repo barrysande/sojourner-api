@@ -40,15 +40,17 @@ export default class WebhookService {
         }
 
         let subscription = await IndividualSubscription.query({ client: trx })
-          .where('dodoSubscriptionId', dodoSubId)
+          .where('userId', userId)
+          .whereNull('dodoSubscriptionId')
           .first()
 
         if (!subscription) {
           logger.warn(`ORPHAN individual subscription found. Healing now: ${dodoSubId}`)
-          await IndividualSubscription.create(
+          subscription = await IndividualSubscription.create(
             {
               userId: userId,
-              dodoSubscriptionId: dodoSubId,
+              dodoSessionId: payload.session_id || 'unknown',
+              dodoSubscriptionId: null,
               planType: resolvePlanType(
                 payload.payment_frequency_count,
                 payload.payment_frequency_interval
@@ -60,6 +62,7 @@ export default class WebhookService {
         }
 
         return this.individualSubscriptionService.handleSubscriptionActive(
+          userId,
           dodoSubId,
           expiresAt,
           trx
@@ -70,7 +73,8 @@ export default class WebhookService {
         }
 
         let subscription = await GroupSubscription.query({ client: trx })
-          .where('dodoSubscriptionId', dodoSubId)
+          .where('ownerUserId', ownerUserId)
+          .whereNull('dodoSubscriptionId')
           .first()
 
         if (!subscription) {
@@ -83,7 +87,8 @@ export default class WebhookService {
           subscription = await GroupSubscription.create(
             {
               ownerUserId,
-              dodoSubscriptionId: dodoSubId,
+              dodoSessionId: payload.session_id || 'unknown',
+              dodoSubscriptionId: null,
               totalSeats,
               inviteCode,
               inviteCodeExpiresAt,
@@ -107,7 +112,12 @@ export default class WebhookService {
           )
         }
 
-        return this.groupSubscriptionService.handleSubscriptionActive(dodoSubId, expiresAt, trx)
+        return this.groupSubscriptionService.handleSubscriptionActive(
+          ownerUserId,
+          dodoSubId,
+          expiresAt,
+          trx
+        )
       } else {
         throw new Exception(`Unknown metadata.subscription_type: '${subType}'`)
       }
@@ -121,6 +131,8 @@ export default class WebhookService {
     const dodoSubId = payload.subscription_id
     const newExpiresAt = payload.expires_at
     const subType = payload.metadata?.subscription_type
+    const userId = Number(payload.metadata?.userId)
+    const ownerUserId = Number(payload.metadata?.ownerUserId)
 
     if (!dodoSubId || !newExpiresAt) {
       throw new MissingSubscriptionFieldsException()
@@ -128,15 +140,26 @@ export default class WebhookService {
 
     const user = await db.transaction(async (trx) => {
       if (subType === 'individual') {
+        if (!userId) {
+          throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
+        }
         return this.individualSubscriptionService.handleSubscriptionRenewed(
-          dodoSubId,
+          userId,
           newExpiresAt,
           trx
         )
       } else if (subType === 'group') {
-        return this.groupSubscriptionService.handleSubscriptionRenewed(dodoSubId, newExpiresAt, trx)
+        if (!ownerUserId) {
+          throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
+        }
+        return this.groupSubscriptionService.handleSubscriptionRenewed(
+          ownerUserId,
+          dodoSubId,
+          newExpiresAt,
+          trx
+        )
       }
-      throw new MissingSubscriptionFieldsException(`Subscription not found ${dodoSubId}`)
+      throw new Exception(`Unknown subscription type: ${subType}`)
     })
 
     return user
@@ -146,6 +169,8 @@ export default class WebhookService {
     const payload = webhookEvent.payload
     const dodoSubId = payload.subscription_id
     const subType = payload.metadata?.subscription_type
+    const userId = Number(payload.metadata?.userId)
+    const ownerUserId = Number(payload.metadata?.ownerUserId)
 
     if (!dodoSubId) {
       throw new MissingSubscriptionFieldsException(`Missing required field: ${dodoSubId}`)
@@ -153,11 +178,21 @@ export default class WebhookService {
 
     const user = await db.transaction(async (trx) => {
       if (subType === 'individual') {
-        return this.individualSubscriptionService.handleSubscriptionCancelled(dodoSubId, trx)
+        if (!userId) {
+          throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
+        }
+        return this.individualSubscriptionService.handleSubscriptionCancelled(userId, trx)
       } else if (subType === 'group') {
-        return this.groupSubscriptionService.handleSubscriptionCancelled(dodoSubId, trx)
+        if (!ownerUserId) {
+          throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
+        }
+        return this.groupSubscriptionService.handleSubscriptionCancelled(
+          ownerUserId,
+          dodoSubId,
+          trx
+        )
       }
-      throw new MissingSubscriptionFieldsException(`Subscription not found ${dodoSubId}`)
+      throw new Exception(`Unknown subscription type: ${subType}`)
     })
 
     return user
@@ -167,6 +202,8 @@ export default class WebhookService {
     const payload = webhookEvent.payload
     const dodoSubId = payload.subscription_id
     const subType = payload.metadata?.subscription_type
+    const userId = Number(payload.metadata?.userId)
+    const ownerUserId = Number(payload.metadata?.ownerUserId)
 
     if (!dodoSubId) {
       throw new MissingSubscriptionFieldsException(`Missing required field: ${dodoSubId}`)
@@ -174,11 +211,17 @@ export default class WebhookService {
 
     const user = await db.transaction(async (trx) => {
       if (subType === 'individual') {
-        return this.individualSubscriptionService.handleSubscriptionExpired(dodoSubId, trx)
+        if (!userId) {
+          throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
+        }
+        return this.individualSubscriptionService.handleSubscriptionExpired(userId, trx)
       } else if (subType === 'group') {
-        return this.groupSubscriptionService.handleSubscriptionExpired(dodoSubId, trx)
+        if (!ownerUserId) {
+          throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
+        }
+        return this.groupSubscriptionService.handleSubscriptionExpired(ownerUserId, dodoSubId, trx)
       }
-      throw new MissingSubscriptionFieldsException(`Subscription not found ${dodoSubId}`)
+      throw new Exception(`Unknown subscription type: ${subType}`)
     })
 
     return user
@@ -188,6 +231,8 @@ export default class WebhookService {
     const payload = webhookEvent.payload
     const dodoSubId = payload.subscription_id
     const subType = payload.metadata?.subscription_type
+    const userId = Number(payload.metadata?.userId)
+    const ownerUserId = Number(payload.metadata?.ownerUserId)
 
     if (!dodoSubId) {
       throw new MissingSubscriptionFieldsException(`Missing required field: ${dodoSubId}`)
@@ -195,11 +240,17 @@ export default class WebhookService {
 
     const user = await db.transaction(async (trx) => {
       if (subType === 'individual') {
-        return this.individualSubscriptionService.handleSubscriptionFailed(dodoSubId, trx)
+        if (!userId) {
+          throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
+        }
+        return this.individualSubscriptionService.handleSubscriptionFailed(userId, trx)
       } else if (subType === 'group') {
-        return this.groupSubscriptionService.handleSubscriptionFailed(dodoSubId, trx)
+        if (!ownerUserId) {
+          throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
+        }
+        return this.groupSubscriptionService.handleSubscriptionFailed(ownerUserId, dodoSubId, trx)
       }
-      throw new MissingSubscriptionFieldsException(`Subscription not found ${dodoSubId}`)
+      throw new Exception(`Unknown subscription type: ${subType}`)
     })
 
     return user
@@ -209,6 +260,8 @@ export default class WebhookService {
     const payload = webhookEvent.payload
     const dodoSubId = payload.subscription_id
     const subType = payload.metadata?.subscription_type
+    const userId = Number(payload.metadata?.userId)
+    const ownerUserId = Number(payload.metadata?.ownerUserId)
     const newQuantity = payload.addons?.[0]?.quantity
 
     if (!dodoSubId) {
@@ -222,21 +275,28 @@ export default class WebhookService {
 
     const user = await db.transaction(async (trx) => {
       if (subType === 'individual') {
+        if (!userId) {
+          throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
+        }
         return this.individualSubscriptionService.handleSubscriptionPlanChanged(
-          dodoSubId,
+          userId,
           planType,
           payload.expires_at!,
           trx
         )
       } else if (subType === 'group') {
+        if (!ownerUserId) {
+          throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
+        }
         return this.groupSubscriptionService.handleSubscriptionPlanChanged(
+          ownerUserId,
           dodoSubId,
           newQuantity || 1,
           planType,
           trx
         )
       }
-      throw new MissingSubscriptionFieldsException(`Subscription not found ${dodoSubId}`)
+      throw new Exception(`Unknown subscription type: ${subType}`)
     })
 
     return user

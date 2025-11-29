@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon'
 import { BaseModel, column } from '@adonisjs/lucid/orm'
 import type { WebhookEventType } from 'dodopayments/resources/webhook-events.mjs'
-import type { SubscriptionWebhookPayload, WebhookEventStatus } from '../../types/webhook.js'
+import type { SubscriptionWebhookPayload, WebhookEventStatus } from '../../types/payments.js'
 
 export default class WebhookEvent extends BaseModel {
   @column({ isPrimary: true })

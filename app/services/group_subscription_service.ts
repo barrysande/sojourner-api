@@ -13,8 +13,8 @@ import { createGroupSubscriptionValidator } from '#validators/subscription'
 import type {
   CreateGroupSubscriptionParams,
   ChangeGroupSubscriptionPlanParams,
-} from '../../types/webhook.js'
-import type { SubscriptionCreateResponse } from 'dodopayments/resources/subscriptions.mjs'
+  SubscriptionCreateResponse,
+} from '../../types/payments.js'
 import ConflictException from '#exceptions/conflict_exception'
 import {
   UserAlreadyInGroupException,
@@ -25,6 +25,7 @@ import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import SubscriptionConflictException from '#exceptions/subscription_conflict_exception'
 import type { Infer } from '@vinejs/vine/types'
 import { Exception } from '@adonisjs/core/exceptions'
+import { Subscription } from 'dodopayments/resources/subscriptions.mjs'
 
 type CreateGroupPayload = Infer<typeof createGroupSubscriptionValidator>
 type PlanType = 'monthly' | 'quarterly' | 'annual'
@@ -124,7 +125,8 @@ export class GroupSubscriptionService {
         const subscription = await GroupSubscription.create(
           {
             ownerUserId,
-            dodoSubscriptionId: dodoResponse.subscription_id,
+            dodoSessionId: dodoResponse.sessionId,
+            dodoSubscriptionId: null,
             totalSeats: dodoParams.addons[0].quantity,
             inviteCode,
             inviteCodeExpiresAt,
@@ -145,21 +147,13 @@ export class GroupSubscriptionService {
         )
 
         return {
-          addons: dodoResponse.addons,
-          client_secret: dodoResponse.client_secret,
-          customer: dodoResponse.customer,
-          metadata: dodoResponse.metadata,
-          payment_id: dodoResponse.payment_id,
-          recurring_pre_tax_amount: dodoResponse.recurring_pre_tax_amount,
-          subscription_id: dodoResponse.subscription_id,
-          payment_link: dodoResponse.payment_link,
-          discount_id: dodoResponse.discount_id,
-          expires_on: dodoResponse.expires_on,
+          checkoutUrl: dodoResponse.checkoutUrl,
+          sessionId: dodoResponse.sessionId,
         }
       })
     } catch (dbError) {
       logger.error('CRITICAL: Failed to save group subscription record after payment success', {
-        dodoSubscriptionId: dodoResponse.subscription_id,
+        sessionId: dodoResponse.sessionId,
         ownerUserId,
         error: dbError.message,
         stack: dbError.stack,
@@ -328,7 +322,7 @@ export class GroupSubscriptionService {
     }
 
     const result = await this.dodoPaymentService.changeGroupSubscriptionPlan(
-      groupSubscription.dodoSubscriptionId,
+      groupSubscription.dodoSubscriptionId!,
       params
     )
 
@@ -387,7 +381,7 @@ export class GroupSubscriptionService {
     }
 
     const dodoResponse = await this.dodoPaymentService.changeGroupSubscriptionPlan(
-      groupSubscription.dodoSubscriptionId,
+      groupSubscription.dodoSubscriptionId!,
       params
     )
 
@@ -411,19 +405,33 @@ export class GroupSubscriptionService {
    * @param groupSub: GroupSubscription
    * Pass the whole GroupSubscription instance so that working with the controller is easy.
    */
-  async cancelGroupSubscription(groupSubscription: GroupSubscription): Promise<GroupSubscription> {
-    await this.dodoPaymentService.cancelSubscription(groupSubscription.dodoSubscriptionId, true)
+  async cancelGroupSubscription(
+    groupSubscriptionId: number,
+    ownerId: number
+  ): Promise<Partial<Subscription>> {
+    const groupSubscription = await GroupSubscription.query()
+      .where('id', groupSubscriptionId)
+      .where('status', 'active')
+      .firstOrFail()
 
-    // TODO in worker: Update group subscription membership status on subscription.cancelled.
+    if (groupSubscription.ownerUserId !== ownerId) {
+      throw new ActionDeniedException('Only the owner can cancel the subscription')
+    }
+
+    const dodoResponse = await this.dodoPaymentService.cancelSubscription(
+      groupSubscription.dodoSubscriptionId!,
+      true
+    )
+
+    await groupSubscription.merge({ status: 'cancelled' }).save()
 
     logger.info('Group subscription cancelled', {
-      groupSubscriptionId: groupSubscription.id,
-      dodoSubscriptionId: groupSubscription.dodoSubscriptionId,
-      expiresAt: groupSubscription.expiresAt.toISO(),
-      message: 'All members will retain access until expiry date',
+      groupSubscriptionId,
+      ownerId,
+      expiresAt: groupSubscription.expiresAt?.toISO(),
     })
 
-    return groupSubscription
+    return dodoResponse
   }
 
   /**
@@ -555,12 +563,14 @@ export class GroupSubscriptionService {
   }
 
   async handleSubscriptionActive(
+    ownerUserId: number,
     dodoSubscriptionId: string,
     expiresAt: string,
     trx: TransactionClientContract
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
-      .where('dodo_subscription_id', dodoSubscriptionId)
+      .where('owner_user_id', ownerUserId)
+      .whereNull('dodoSubscriptionId')
       .preload('owner')
       .forUpdate()
       .firstOrFail()
@@ -569,7 +579,11 @@ export class GroupSubscriptionService {
 
     await groupSubscription
       .useTransaction(trx)
-      .merge({ status: 'active', expiresAt: DateTime.fromISO(expiresAt) })
+      .merge({
+        dodoSubscriptionId: dodoSubscriptionId,
+        status: 'active',
+        expiresAt: DateTime.fromISO(expiresAt),
+      })
       .save()
 
     const members = await GroupSubscriptionMember.query({ client: trx })
@@ -594,21 +608,27 @@ export class GroupSubscriptionService {
   }
 
   async handleSubscriptionRenewed(
+    ownerUserId: number,
     dodoSubscriptionId: string,
     newExpiresAt: string,
     trx: TransactionClientContract
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
-      .where('dodo_subscription_id', dodoSubscriptionId)
+      .where('owner_user_id', ownerUserId)
       .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
 
+    // Populate dodoSubscriptionId if missing (handles out-of-order webhooks)
+    if (!groupSubscription.dodoSubscriptionId) {
+      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
+    }
+
     await groupSubscription
       .useTransaction(trx)
-      .merge({ expiresAt: DateTime.fromISO(newExpiresAt) })
+      .merge({ expiresAt: DateTime.fromISO(newExpiresAt), status: 'active' })
       .save()
 
     const members = await GroupSubscriptionMember.query({ client: trx })
@@ -622,9 +642,7 @@ export class GroupSubscriptionService {
           'Group subscription renewed.',
           'webhook',
           trx,
-          {
-            group_subscription_id: groupSubscription.id,
-          }
+          { group_subscription_id: groupSubscription.id }
         )
       )
     )
@@ -633,15 +651,22 @@ export class GroupSubscriptionService {
   }
 
   async handleSubscriptionCancelled(
+    ownerUserId: number,
     dodoSubscriptionId: string,
     trx: TransactionClientContract
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
-      .where('dodo_subscription_id', dodoSubscriptionId)
+      .where('owner_user_id', ownerUserId)
+      .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
+
+    // Populate dodoSubscriptionId if missing
+    if (!groupSubscription.dodoSubscriptionId) {
+      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
+    }
 
     await groupSubscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
 
@@ -658,7 +683,7 @@ export class GroupSubscriptionService {
           trx,
           {
             group_subscription_id: groupSubscription.id,
-            expires_at: groupSubscription.expiresAt.toISO(),
+            expires_at: groupSubscription.expiresAt?.toISO(),
           }
         )
       )
@@ -667,58 +692,23 @@ export class GroupSubscriptionService {
     return owner
   }
 
-  async handleSubscriptionExpired(
-    dodoSubscriptionId: string,
-    trx: TransactionClientContract
-  ): Promise<User> {
-    const groupSubscription = await GroupSubscription.query({ client: trx })
-      .where('dodo_subscription_id', dodoSubscriptionId)
-      .forUpdate()
-      .firstOrFail()
-
-    const owner = groupSubscription.owner
-
-    await groupSubscription.useTransaction(trx).merge({ status: 'expired' }).save()
-
-    const members = await GroupSubscriptionMember.query({ client: trx })
-      .where('group_subscription_id', groupSubscription.id)
-      .where('status', 'active')
-
-    await Promise.all(
-      members.map(async (member) => {
-        await this.gracePeriodService.startGracePeriod(
-          member.userId,
-          'group_removal',
-          'group_paid',
-          trx
-        )
-
-        await this.tierService.updateUserTier(
-          member.userId,
-          'group_subscription_expired',
-          'webhook',
-          trx,
-          {
-            group_subscription_id: groupSubscription.id,
-            grace_period_days: 7,
-          }
-        )
-      })
-    )
-
-    return owner
-  }
-
   async handleSubscriptionFailed(
+    ownerUserId: number,
     dodoSubscriptionId: string,
     trx: TransactionClientContract
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
-      .where('dodo_subscription_id', dodoSubscriptionId)
+      .where('owner_user_id', ownerUserId)
+      .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
+
+    // Populate dodoSubscriptionId if missing
+    if (!groupSubscription.dodoSubscriptionId) {
+      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
+    }
 
     await groupSubscription.useTransaction(trx).merge({ status: 'on_hold' }).save()
 
@@ -737,12 +727,12 @@ export class GroupSubscriptionService {
 
         await this.tierService.updateUserTier(
           member.userId,
-          'group_subscription_expired',
+          'group_subscription_payment_failed',
           'webhook',
           trx,
           {
             group_subscription_id: groupSubscription.id,
-            grace_period_days: 7,
+            grace_period_days: 3,
           }
         )
       })
@@ -752,17 +742,24 @@ export class GroupSubscriptionService {
   }
 
   async handleSubscriptionPlanChanged(
+    ownerUserId: number,
     dodoSubscriptionId: string,
     newQuantity: number,
     newPlanType: PlanType,
     trx: TransactionClientContract
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
-      .where('dodo_subscription_id', dodoSubscriptionId)
+      .where('owner_user_id', ownerUserId)
+      .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
+
+    // Populate dodoSubscriptionId if missing
+    if (!groupSubscription.dodoSubscriptionId) {
+      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
+    }
 
     await groupSubscription
       .useTransaction(trx)
@@ -775,6 +772,47 @@ export class GroupSubscriptionService {
       'webhook',
       trx,
       { group_subscription_id: groupSubscription.id }
+    )
+
+    return owner
+  }
+
+  async handleSubscriptionExpired(
+    ownerUserId: number,
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<User> {
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('owner_user_id', ownerUserId)
+      .preload('owner')
+      .forUpdate()
+      .firstOrFail()
+
+    const owner = groupSubscription.owner
+
+    // Populate dodoSubscriptionId if missing
+    if (!groupSubscription.dodoSubscriptionId) {
+      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
+    }
+
+    await groupSubscription.useTransaction(trx).merge({ status: 'expired' }).save()
+
+    const members = await GroupSubscriptionMember.query({ client: trx })
+      .where('group_subscription_id', groupSubscription.id)
+      .where('status', 'active')
+
+    await Promise.all(
+      members.map((member) =>
+        this.tierService.updateUserTier(
+          member.userId,
+          'Group subscription expired',
+          'webhook',
+          trx,
+          {
+            group_subscription_id: groupSubscription.id,
+          }
+        )
+      )
     )
 
     return owner

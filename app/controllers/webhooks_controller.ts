@@ -6,7 +6,7 @@ import Job, { WebhookJobPayload } from '#models/job'
 import DodoPaymentService from '#services/dodo_payment_service'
 import { WebhookVerificationException } from '#exceptions/payment_errors_exception'
 import logger from '@adonisjs/core/services/logger'
-import type { SubscriptionWebhookPayload } from '../../types/webhook.js'
+import type { SubscriptionWebhookPayload } from '../../types/payments.js'
 
 @inject()
 export default class WebhooksController {

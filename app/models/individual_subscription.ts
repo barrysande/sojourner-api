@@ -11,7 +11,10 @@ export default class IndividualSubscription extends BaseModel {
   declare userId: number
 
   @column()
-  declare dodoSubscriptionId: string
+  declare dodoSessionId: string
+
+  @column()
+  declare dodoSubscriptionId: string | null
 
   @column()
   declare planType: 'monthly' | 'quarterly' | 'annual'

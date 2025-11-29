@@ -1,10 +1,7 @@
 import DodoPayments from 'dodopayments'
 import env from '#start/env'
 import logger from '@adonisjs/core/services/logger'
-import type {
-  SubscriptionCreateResponse,
-  Subscription,
-} from 'dodopayments/resources/subscriptions.mjs'
+import type { Subscription } from 'dodopayments/resources/subscriptions.mjs'
 import type { BillingAddress } from 'dodopayments/resources/payments.mjs'
 import {
   SubscriptionGatewayUnavailableError,
@@ -15,7 +12,8 @@ import type {
   CreateGroupSubscriptionParams,
   ChangeGroupSubscriptionPlanParams,
   ChangeIndividualSubscriptionPlanParams,
-} from '../../types/webhook.js'
+  SubscriptionCreateResponse,
+} from '../../types/payments.js'
 
 export default class DodoPaymentService {
   client: DodoPayments
@@ -70,42 +68,34 @@ export default class DodoPaymentService {
     params: CreateIndividualSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
     try {
-      const response = await this.client.subscriptions.create({
-        product_id: params.productId,
-        quantity: params.quantity,
-        customer: { email: params.customer.email, name: params.customer.name },
-        billing: {
+      const response = await this.client.checkoutSessions.create({
+        product_cart: [
+          {
+            product_id: params.productId,
+            quantity: params.quantity,
+          },
+        ],
+        billing_address: {
           city: params.billing.city,
           country: params.billing.country,
           state: params.billing.state,
           street: params.billing.street,
           zipcode: params.billing.zipcode,
         },
-        metadata: params.metadata || {},
-
+        confirm: true,
+        customer: { email: params.customer.email, name: params.customer.name },
         return_url: env.get('FRONTEND_URL'),
-        payment_link: true,
+        metadata: params.metadata,
       })
 
       logger.info('Dodo subscription created successfully', {
-        subscriptionId: response.subscription_id,
-        paymentId: response.payment_id,
+        checkoutUrl: response.checkout_url,
+        sessionId: response.session_id,
       })
 
       return {
-        client_secret: response.client_secret,
-        customer: {
-          customer_id: response.customer.customer_id,
-          email: response.customer.email,
-          name: response.customer.name,
-        },
-        metadata: response.metadata,
-        payment_id: response.payment_id,
-        payment_link: response.payment_link,
-        recurring_pre_tax_amount: response.recurring_pre_tax_amount,
-        subscription_id: response.subscription_id,
-        addons: response.addons,
-        expires_on: response.expires_on,
+        checkoutUrl: response.checkout_url,
+        sessionId: response.session_id,
       }
     } catch (error) {
       this.handleDodoApiError(error)
@@ -123,42 +113,35 @@ export default class DodoPaymentService {
     params: CreateGroupSubscriptionParams
   ): Promise<SubscriptionCreateResponse> {
     try {
-      const response = await this.client.subscriptions.create({
-        product_id: params.productId,
-        quantity: params.quantity,
-        customer: { email: params.customer.email, name: params.customer.name },
-        billing: {
+      const response = await this.client.checkoutSessions.create({
+        product_cart: [
+          {
+            product_id: params.productId,
+            quantity: params.quantity,
+            addons: [{ addon_id: params.addons[0].addon_id, quantity: params.addons[0].quantity }],
+          },
+        ],
+        billing_address: {
           city: params.billing.city,
           country: params.billing.country,
           state: params.billing.state,
           street: params.billing.street,
           zipcode: params.billing.zipcode,
         },
-        metadata: params.metadata || {},
-        addons: [{ addon_id: params.addons[0].addon_id, quantity: params.addons[0].quantity }],
+        confirm: true,
+        customer: { email: params.customer.email, name: params.customer.name },
         return_url: env.get('FRONTEND_URL'),
-        payment_link: true,
+        metadata: params.metadata,
       })
 
       logger.info('Dodo subscription created successfully', {
-        subscriptionId: response.subscription_id,
-        paymentId: response.payment_id,
+        checkoutUrl: response.checkout_url,
+        sessionId: response.session_id,
       })
 
       return {
-        client_secret: response.client_secret,
-        customer: {
-          customer_id: response.customer.customer_id,
-          email: response.customer.email,
-          name: response.customer.name,
-        },
-        metadata: response.metadata,
-        payment_id: response.payment_id,
-        payment_link: response.payment_link,
-        recurring_pre_tax_amount: response.recurring_pre_tax_amount,
-        subscription_id: response.subscription_id,
-        addons: response.addons,
-        expires_on: response.expires_on,
+        checkoutUrl: response.checkout_url,
+        sessionId: response.session_id,
       }
     } catch (error) {
       this.handleDodoApiError(error)

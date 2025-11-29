@@ -1,4 +1,4 @@
-import type { PlanType, PaymentFrequencyInterval } from '../../types/webhook.js'
+import type { PlanType, PaymentFrequencyInterval } from '../../types/payments.js'
 
 export function resolvePlanType(count: number, interval: PaymentFrequencyInterval): PlanType {
   if (interval === 'Month' && count === 1) return 'monthly'

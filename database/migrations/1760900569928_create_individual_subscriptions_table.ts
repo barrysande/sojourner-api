@@ -13,7 +13,8 @@ export default class extends BaseSchema {
         .references('id')
         .inTable('users')
         .onDelete('CASCADE')
-      table.string('dodo_subscription_id', 255).notNullable().unique()
+      table.string('dodo_session_id', 255).notNullable().unique()
+      table.string('dodo_subscription_id', 255).nullable().unique()
       table.string('plan_type', 50).notNullable()
       table.string('status', 50).notNullable()
       table.timestamp('expires_at').nullable()
@@ -36,6 +37,7 @@ export default class extends BaseSchema {
       table.index('user_id')
       table.index('dodo_subscription_id')
       table.index(['status', 'expires_at'])
+      table.index('dodo_session_id')
     })
 
     this.defer(async (db) => {
