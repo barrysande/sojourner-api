@@ -9,6 +9,7 @@ import {
   changeSeatsValidator,
   regenerateInviteCodeValidator,
 } from '#validators/subscription'
+import { Exception } from '@adonisjs/core/exceptions'
 
 @inject()
 export default class GroupSubscriptionsController {
@@ -87,8 +88,16 @@ export default class GroupSubscriptionsController {
       user.id
     )
 
-    const result =
-      await this.groupSubscriptionService.cancelGroupSubscription(ownedGroupSubscription)
+    if (!ownedGroupSubscription.dodoSubscriptionId) {
+      throw new Exception(
+        `Missing dodoSubscriptionId for group subscription ${ownedGroupSubscription.id}`
+      )
+    }
+
+    const result = await this.groupSubscriptionService.cancelGroupSubscription(
+      ownedGroupSubscription.id,
+      user.id
+    )
 
     return response.ok(result)
   }
@@ -134,6 +143,12 @@ export default class GroupSubscriptionsController {
 
     const result = await this.groupSubscriptionService.getActiveGroupMembership(user.id)
 
+    return response.ok(result)
+  }
+
+  async getCustomerPortalLink({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const result = await this.groupSubscriptionService.getCustomerPortalLink(user.id)
     return response.ok(result)
   }
 }

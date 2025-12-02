@@ -163,6 +163,10 @@ router
     router.patch('/individual/plan', [IndividualSubscriptionsController, 'changePlan'])
     router.patch('/individual', [IndividualSubscriptionsController, 'cancel'])
     router.get('/individual', [IndividualSubscriptionsController, 'show'])
+    router.get('/individual/customer-portal', [
+      IndividualSubscriptionsController,
+      'getCustomerPortalLink',
+    ])
 
     router.post('/group', [GroupSubscriptionsController, 'create'])
     router.post('/group/seats/expand', [GroupSubscriptionsController, 'expandSeats'])
@@ -176,6 +180,7 @@ router
     router.get('/group/members', [GroupSubscriptionsController, 'listMembers'])
     router.post('/group/join', [GroupSubscriptionsController, 'join'])
     router.get('/group', [GroupSubscriptionsController, 'show'])
+    router.get('/group/customer-portal', [GroupSubscriptionsController, 'getCustomerPortalLink'])
   })
   .prefix('api/subscriptions')
   .use(middleware.auth())

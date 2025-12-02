@@ -58,4 +58,10 @@ export default class IndividualSubscriptionsController {
 
     return response.ok(result)
   }
+
+  async getCustomerPortalLink({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const result = await this.individualSubscriptionService.getCustomerPortalLink(user.id)
+    return response.ok(result)
+  }
 }

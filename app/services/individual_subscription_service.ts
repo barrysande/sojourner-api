@@ -188,6 +188,7 @@ export default class IndividualSubscriptionService {
   async handleSubscriptionActive(
     userId: number,
     dodoSubscriptionId: string,
+    dodoCustomerId: string,
     expiresAt: string,
     trx: TransactionClientContract
   ): Promise<User> {
@@ -203,6 +204,7 @@ export default class IndividualSubscriptionService {
       .useTransaction(trx)
       .merge({
         dodoSubscriptionId,
+        dodoCustomerId,
         status: 'active',
         expiresAt: DateTime.fromISO(expiresAt),
       })
@@ -448,5 +450,9 @@ export default class IndividualSubscriptionService {
     await this.tierService.updateUserTier(subscription.userId, 'Payment failed', 'webhook', trx, {})
 
     return user
+  }
+
+  async getCustomerPortalLink(userId: number): Promise<{ link: string }> {
+    return await this.dodoPaymentService.getIndividualCustomerPortalLink(userId)
   }
 }

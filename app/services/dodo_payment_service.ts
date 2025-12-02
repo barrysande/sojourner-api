@@ -14,6 +14,9 @@ import type {
   ChangeIndividualSubscriptionPlanParams,
   SubscriptionCreateResponse,
 } from '../../types/payments.js'
+import IndividualSubscription from '#models/individual_subscription'
+import GroupSubscription from '#models/group_subscription'
+import { Exception } from '@adonisjs/core/exceptions'
 
 export default class DodoPaymentService {
   client: DodoPayments
@@ -323,6 +326,60 @@ export default class DodoPaymentService {
         billing: subscription.billing,
         metadata: subscription.metadata,
       }
+    } catch (error) {
+      this.handleDodoApiError(error)
+    }
+  }
+
+  async getIndividualCustomerPortalLink(userId: number): Promise<{ link: string }> {
+    try {
+      const subscription = await IndividualSubscription.query()
+        .where('user_id', userId)
+        .whereIn('status', ['active', 'on_hold'])
+        .firstOrFail()
+
+      if (!subscription.dodoCustomerId) {
+        throw new Exception('Customer ID not found. Please contact support.')
+      }
+
+      const response = await this.client.customers.customerPortal.create(
+        subscription.dodoCustomerId,
+        { send_email: false }
+      )
+
+      logger.info('Customer portal link generated', {
+        userId,
+        customerId: subscription.dodoCustomerId,
+      })
+
+      return { link: response.link }
+    } catch (error) {
+      this.handleDodoApiError(error)
+    }
+  }
+
+  async getGroupCustomerPortalLink(userId: number): Promise<{ link: string }> {
+    try {
+      const subscription = await GroupSubscription.query()
+        .where('owner_id', userId)
+        .whereIn('status', ['active', 'on_hold'])
+        .firstOrFail()
+
+      if (!subscription.dodoCustomerId) {
+        throw new Exception('Customer ID not found. Please contact support.')
+      }
+
+      const response = await this.client.customers.customerPortal.create(
+        subscription.dodoCustomerId,
+        { send_email: false }
+      )
+
+      logger.info('Customer portal link generated', {
+        userId,
+        customerId: subscription.dodoCustomerId,
+      })
+
+      return { link: response.link }
     } catch (error) {
       this.handleDodoApiError(error)
     }

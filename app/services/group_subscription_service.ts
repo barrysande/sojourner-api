@@ -397,20 +397,17 @@ export class GroupSubscriptionService {
    * Cancel group subscription (cancel_at_next_billing_date)
    * All members keep access until expiry
    * Grace periods start when subscription expires
-   *
-   * @param groupSub: GroupSubscription
-   * Pass the whole GroupSubscription instance so that working with the controller is easy.
    */
   async cancelGroupSubscription(
     groupSubscriptionId: number,
-    ownerId: number
+    ownerUserId: number
   ): Promise<Partial<Subscription>> {
     const groupSubscription = await GroupSubscription.query()
       .where('id', groupSubscriptionId)
       .where('status', 'active')
       .firstOrFail()
 
-    if (groupSubscription.ownerUserId !== ownerId) {
+    if (groupSubscription.ownerUserId !== ownerUserId) {
       throw new ActionDeniedException('Only the owner can cancel the subscription')
     }
 
@@ -423,7 +420,7 @@ export class GroupSubscriptionService {
 
     logger.info('Group subscription cancelled', {
       groupSubscriptionId,
-      ownerId,
+      ownerUserId,
       expiresAt: groupSubscription.expiresAt?.toISO(),
     })
 
@@ -561,6 +558,7 @@ export class GroupSubscriptionService {
   async handleSubscriptionActive(
     ownerUserId: number,
     dodoSubscriptionId: string,
+    dodoCustomerId: string,
     expiresAt: string,
     trx: TransactionClientContract
   ): Promise<User> {
@@ -576,7 +574,8 @@ export class GroupSubscriptionService {
     await groupSubscription
       .useTransaction(trx)
       .merge({
-        dodoSubscriptionId: dodoSubscriptionId,
+        dodoSubscriptionId,
+        dodoCustomerId,
         status: 'active',
         expiresAt: DateTime.fromISO(expiresAt),
       })
@@ -812,5 +811,9 @@ export class GroupSubscriptionService {
     )
 
     return owner
+  }
+
+  async getCustomerPortalLink(userId: number): Promise<{ link: string }> {
+    return await this.dodoPaymentService.getGroupCustomerPortalLink(userId)
   }
 }

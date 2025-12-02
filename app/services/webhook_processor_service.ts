@@ -24,9 +24,14 @@ export default class WebhookService {
     const payload = webhookEvent.payload
     const dodoSubId = payload.subscription_id
     const expiresAt = payload.expires_at
+    const dodoCustomerId = payload.customer?.customer_id
 
     if (!dodoSubId || !expiresAt) {
       throw new MissingSubscriptionFieldsException()
+    }
+
+    if (!dodoCustomerId) {
+      throw new Exception(`Missing customer_id for ${dodoSubId}`)
     }
 
     const subType = payload.metadata?.subscription_type
@@ -64,6 +69,7 @@ export default class WebhookService {
         return this.individualSubscriptionService.handleSubscriptionActive(
           userId,
           dodoSubId,
+          dodoCustomerId,
           expiresAt,
           trx
         )
@@ -115,6 +121,7 @@ export default class WebhookService {
         return this.groupSubscriptionService.handleSubscriptionActive(
           ownerUserId,
           dodoSubId,
+          dodoCustomerId,
           expiresAt,
           trx
         )
