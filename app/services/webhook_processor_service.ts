@@ -45,7 +45,7 @@ export default class WebhookService {
           .first()
 
         if (!subscription) {
-          logger.warn(`ORPHAN individual subscription found. Healing now: ${dodoSubId}`)
+          logger.warn(`Orphan individual subscription found. Healing now: ${dodoSubId}`)
           subscription = await IndividualSubscription.create(
             {
               userId: userId,
@@ -78,7 +78,7 @@ export default class WebhookService {
           .first()
 
         if (!subscription) {
-          logger.warn(`ORPHAN group subscription found. Healing now: ${dodoSubId}`)
+          logger.warn(`Orphan group subscription found. Healing now: ${dodoSubId}`)
           const totalSeats = payload.addons?.[0]?.quantity
 
           const inviteCode = await this.groupSubscriptionService.generateInviteCode()

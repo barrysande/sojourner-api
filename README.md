@@ -56,8 +56,8 @@ const dodoResponse = await this.dodoPaymentService.createIndividualSubscription(
 
 await IndividualSubscription.create({
   userId,
-  dodoSessionId: dodoResponse.sessionId, // ✓ Have this
-  dodoSubscriptionId: null, // ✗ Don't have this yet
+  dodoSessionId: dodoResponse.sessionId, //  Have this
+  dodoSubscriptionId: null, //  Don't have this yet
   planType: payload.plan_type,
   status: 'pending',
 })
@@ -81,8 +81,8 @@ const dodoResponse = await this.dodoPaymentService.createGroupSubscription({
 
 await GroupSubscription.create({
   ownerUserId,
-  dodoSessionId: dodoResponse.sessionId, // ✓ Have this
-  dodoSubscriptionId: null, // ✗ Don't have this yet
+  dodoSessionId: dodoResponse.sessionId, //  Have this
+  dodoSubscriptionId: null, //  Don't have this yet
   totalSeats: payload.total_seats,
   inviteCode,
   inviteCodeExpiresAt,
@@ -391,7 +391,7 @@ if (subType === 'individual') {
 if (subType === 'group') {
   return groupSubscriptionService.handleSubscriptionRenewed(
     ownerUserId,
-    dodoSubId, // Pass for defensive population
+    dodoSubId, 
     newExpiresAt,
     trx
   )
@@ -467,11 +467,11 @@ CREATE INDEX idx_group_subscriptions_dodo_subscription_id ON group_subscriptions
 
 ## Orphan Healing
 
-If a webhook arrives without a matching pending subscription (edge case), the system creates one:
+If a webhook arrives without a matching pending subscription (edge case) because the user experience an internet cut off while paying or the server is down so the database does not record the payment but receives the webhook, then the system creates one:
 
 ```typescript
 if (!subscription) {
-  logger.warn(`ORPHAN subscription found. Healing now: ${dodoSubId}`)
+  logger.warn(`Orphan subscription found. Healing now: ${dodoSubId}`)
 
   subscription = await GroupSubscription.create({
     ownerUserId,
@@ -576,5 +576,3 @@ The decoupled architecture solves the temporal gap between checkout and subscrip
 2. **Querying by stable identifiers** (`userId`/`ownerUserId`)
 3. **Populating late** with `dodoSubscriptionId` (from webhook)
 4. **Handling disorder** via defensive ID population in all handlers
-
-This makes the system resilient to webhook timing issues while maintaining data integrity.

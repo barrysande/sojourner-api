@@ -21,7 +21,6 @@ import { Exception } from '@adonisjs/core/exceptions'
 type CreateSubPayload = Infer<typeof createIndividualSubscriptionValidator>
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
-// type SubscriptionStatus =  'pending' | 'active' | 'on_hold' | 'cancelled' | 'failed' | 'expired'
 
 @inject()
 export default class IndividualSubscriptionService {
@@ -68,7 +67,7 @@ export default class IndividualSubscriptionService {
       returnUrl: payload.return_url,
       confirm: true,
 
-      // Edge Case: VERY VITAL for for self-recovery incase a user pays but for some reason like sudden outage either on my server or client's internet issue and my database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
+      // Edge Case: VERY VITAL for for self-recovery incase a user pays but for some reason like sudden outage either on my server or client's internet issue and the database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
       metadata: {
         ...payload.metadata,
         userId: userId.toString(),
@@ -211,7 +210,6 @@ export default class IndividualSubscriptionService {
 
     await this.gracePeriodService.clearGracePeriod(subscription.userId, trx)
 
-    // ADD THIS:
     await this.tierService.updateUserTier(
       subscription.userId,
       'Payment successful - subscription activated',

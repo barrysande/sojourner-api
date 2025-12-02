@@ -43,18 +43,14 @@ export class GroupSubscriptionService {
    * Format: Uppercase letters and numbers only (e.g., XK94PL72)
    */
   async generateInviteCode(): Promise<string> {
-    // if there start to be code collisions just bump chars to 21
+    // if there are any code collisions just bump chars to 21 and check the table column constraints for changes needed.
     const nanoid = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 12)
     const code = nanoid()
     return code.match(/.{1,4}/g)?.join('-') || code
   }
 
   /**
-   * Calculate expiry date based on plan type
-   */
-
-  /**
-   * Calculate invite code expiry (30 days from now)
+   * Calculate invite code expiry (30 days validity)
    */
   calculateInviteCodeExpiry(): DateTime {
     return DateTime.now().plus({ days: 30 })
@@ -101,7 +97,7 @@ export class GroupSubscriptionService {
       paymentLink: payload.payment_link,
       trialPeriodDays: payload.trial_period_days,
 
-      // Edge Case: VERY VITAL for for self-recovery incase a user pays but for some reason my database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
+      // Edge Case: VERY VITAL for for self-recovery incase a user pays but for some reason the database fails to create a subscription record with pending status. The scheduled worker will use the userId and subscription_type to recreate it thereby correcting the failure. This means the job will be successfully processed.
       metadata: {
         ...payload.metadata,
         ownerUserId: ownerUserId.toString(),
