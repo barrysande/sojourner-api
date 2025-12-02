@@ -4,7 +4,7 @@
 
 The subscription system uses a **two-phase creation pattern** to handle Dodo Payments' checkout session flow where subscription IDs aren't available immediately.
 
-**Old Flow (Deprecated):**
+**Old Flow (owning to dodopayments deprecating the create subscriptions endpoint):**
 
 ```ts
 subscriptions.create → immediate dodoSubscriptionId → save to DB → webhooks update
@@ -308,7 +308,7 @@ Must include in metadata:
 
 ```typescript
 {
-  ownerUserId: ownerUserId.toString(),  // NOT userId - owner's ID
+  ownerUserId: ownerUserId.toString(),  // NOT userId - owner's ID because semantically correct and it is a subtle indicator that you are dealing with group subscription information 
   subscription_type: 'group'
 }
 ```
@@ -391,7 +391,7 @@ if (subType === 'individual') {
 if (subType === 'group') {
   return groupSubscriptionService.handleSubscriptionRenewed(
     ownerUserId,
-    dodoSubId, 
+    dodoSubId,
     newExpiresAt,
     trx
   )
@@ -490,26 +490,26 @@ if (!subscription) {
 
 ### Webhook fails with "Row not found"
 
-- ✓ Check metadata includes correct `userId`/`ownerUserId`
-- ✓ Verify handler queries by `userId`/`ownerUserId`, not `dodoSubscriptionId`
-- ✓ Confirm `dodoSessionId` was saved in Phase 1
+- Check metadata includes correct `userId`/`ownerUserId`
+- Verify handler queries by `userId`/`ownerUserId`, not `dodoSubscriptionId`
+- Confirm `dodoSessionId` was saved in Phase 1
 
 ### dodoSubscriptionId stays null
 
-- ✓ Check `subscription.active` webhook arrived
-- ✓ Verify handler calls `.merge({ dodoSubscriptionId })` and `.save()`
-- ✓ Check for transaction rollbacks
+- Check `subscription.active` webhook arrived
+- Verify handler calls `.merge({ dodoSubscriptionId })` and `.save()`
+- Check for transaction rollbacks
 
 ### Duplicate subscriptions created
 
-- ✓ Verify `dodo_session_id` has UNIQUE constraint
-- ✓ Check idempotency in webhook processing
-- ✓ Confirm no race conditions in Phase 1 creation
+- Verify `dodo_session_id` has UNIQUE constraint
+- Check idempotency in webhook processing
+- Confirm no race conditions in Phase 1 creation
 
 ### Wrong subscription updated
 
-- ✓ Verify metadata has correct `userId`/`ownerUserId` (not switched)
-- ✓ Check webhook processor extracts correct metadata field for group vs individual
+- Verify metadata has correct `userId`/`ownerUserId` (not switched)
+- Check webhook processor extracts correct metadata field for group vs individual
 
 ## Complete Flow Diagram
 
@@ -542,7 +542,7 @@ Populate: dodoSubscriptionId, status='active', expiresAt
     ↓
 Clear grace periods, update tiers
     ↓
-✓ Subscription fully active
+ Subscription fully active
 
 [Later: subscription.renewed webhook]
     ↓
@@ -556,7 +556,7 @@ Update expiresAt, maintain status='active'
     ↓
 Update tiers
     ↓
-✓ Subscription renewed
+ Subscription renewed
 ```
 
 ## Files Modified
