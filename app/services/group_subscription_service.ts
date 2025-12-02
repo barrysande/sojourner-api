@@ -416,14 +416,18 @@ export class GroupSubscriptionService {
       true
     )
 
-    await groupSubscription.merge({ status: 'cancelled' }).save()
+    await groupSubscription
+      .merge({
+        status: 'cancelled',
+        cancelAtNextBillingDate: true,
+      })
+      .save()
 
     logger.info('Group subscription cancelled', {
       groupSubscriptionId,
       ownerUserId,
       expiresAt: groupSubscription.expiresAt?.toISO(),
     })
-
     return dodoResponse
   }
 

@@ -20,6 +20,9 @@ export default class IndividualSubscription extends BaseModel {
   declare dodoCustomerId: string | null
 
   @column()
+  declare cancelAtNextBillingDate: boolean
+
+  @column()
   declare planType: 'monthly' | 'quarterly' | 'annual'
 
   @column()

@@ -147,17 +147,17 @@ export default class IndividualSubscriptionService {
    * User keeps access until expiry
    */
   async cancelIndividualSubscription(userId: number): Promise<Partial<Subscription>> {
-    // 1. check if user has an active subscription.
     const subscription = await IndividualSubscription.query()
       .where('user_id', userId)
       .where('status', 'active')
       .firstOrFail()
 
-    // 2. call dodo api to cancel the sub at next billing date.
     const dodoResponse = await this.dodoPaymentService.cancelSubscription(
       subscription.dodoSubscriptionId!,
       true
     )
+
+    await subscription.merge({ cancelAtNextBillingDate: true }).save()
 
     return dodoResponse
   }
