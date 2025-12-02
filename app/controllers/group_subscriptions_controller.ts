@@ -146,6 +146,12 @@ export default class GroupSubscriptionsController {
     return response.ok(result)
   }
 
+  async getBillingDetails({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const result = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+    return response.ok(result)
+  }
+
   async getCustomerPortalLink({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
     const result = await this.groupSubscriptionService.getCustomerPortalLink(user.id)

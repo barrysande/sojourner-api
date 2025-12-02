@@ -181,6 +181,7 @@ router
     router.post('/group/join', [GroupSubscriptionsController, 'join'])
     router.get('/group', [GroupSubscriptionsController, 'show'])
     router.get('/group/customer-portal', [GroupSubscriptionsController, 'getCustomerPortalLink'])
+    router.get('/group/billing', [GroupSubscriptionsController, 'getBillingDetails'])
   })
   .prefix('api/subscriptions')
   .use(middleware.auth())
