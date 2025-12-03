@@ -8,6 +8,7 @@ import {
   removeMemberValidator,
   changeSeatsValidator,
   regenerateInviteCodeValidator,
+  changeGroupPlanValidator,
 } from '#validators/subscription'
 import { Exception } from '@adonisjs/core/exceptions'
 
@@ -23,6 +24,28 @@ export default class GroupSubscriptionsController {
     const result = await this.groupSubscriptionService.createGroupSubscription(user.id, payload)
 
     return response.created(result)
+  }
+
+  async changePlan({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(changeGroupPlanValidator)
+
+    const params = {
+      newProductId: payload.new_product_id,
+      quantity: payload.quantity,
+      prorationBillingMode: payload.proration_billing_mode,
+      addons: payload.addons || [],
+    }
+
+    const result = await this.groupSubscriptionService.changeGroupSubscriptionPlan(
+      payload.group_subscription_id,
+      user.id,
+      payload.new_plan_type,
+      params
+    )
+
+    return response.ok(result)
   }
 
   async expandSeats({ auth, request, response }: HttpContext) {

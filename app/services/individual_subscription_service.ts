@@ -112,19 +112,16 @@ export default class IndividualSubscriptionService {
     newPlanType: PlanType,
     params: ChangeIndividualSubscriptionPlanParams
   ): Promise<string> {
-    // 1. check if user has an active subscription.
     const subscription = await IndividualSubscription.query()
       .where('user_id', userId)
       .where('status', 'active')
       .firstOrFail()
 
-    // 2. Validate that user isn't trying to change same plan
     if (subscription.planType === newPlanType) {
       throw new Error(`Already subscribed to ${newPlanType} plan`)
     }
     const oldPlanType = subscription.planType
 
-    // 3. call dodo api to change subscription and prorate immediately - endpoint returns a success string, must fetch the new sub
     const dodoResponse = await this.dodoPaymentService.changeIndividualSubscriptionPlan(
       subscription.dodoSubscriptionId!,
       params

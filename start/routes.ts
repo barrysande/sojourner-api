@@ -171,6 +171,7 @@ router
     router.post('/group', [GroupSubscriptionsController, 'create'])
     router.post('/group/seats/expand', [GroupSubscriptionsController, 'expandSeats'])
     router.post('/group/seats/reduce', [GroupSubscriptionsController, 'reduceSeats'])
+    router.patch('/group/plan', [GroupSubscriptionsController, 'changePlan'])
     router.delete('/group/members/:userId', [GroupSubscriptionsController, 'removeMember'])
     router.patch('/group/cancel', [GroupSubscriptionsController, 'cancel'])
     router.post('/group/invite-code/regenerate', [

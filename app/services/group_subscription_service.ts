@@ -292,11 +292,64 @@ export class GroupSubscriptionService {
   }
 
   /**
+   * Change group subscription from monthly to either quarterly or annual.
+   * Prorated charge applied immediately by Dodo Payments
+   */
+  async changeGroupSubscriptionPlan(
+    groupSubscriptionId: number,
+    requestingUserId: number,
+    newPlanType: PlanType,
+    params: ChangeGroupSubscriptionPlanParams
+  ): Promise<string> {
+    const groupSubscription = await GroupSubscription.query()
+      .where('owner_user_id', requestingUserId)
+      .where('id', groupSubscriptionId)
+      .where('status', 'active')
+      .firstOrFail()
+
+    if (groupSubscription.planType === newPlanType) {
+      throw new Error(`Already subscribed to ${newPlanType} plan`)
+    }
+    const oldPlanType = groupSubscription.planType
+
+    if (!params.addons || params.addons.length === 0) {
+      throw new Error('Addons are required for group subscriptions')
+    }
+
+    if (params.addons[0].quantity > 20) {
+      throw new ActionDeniedException('Maximum seats is 20.')
+    }
+
+    const newSeats = params.addons[0].quantity
+
+    const filledSeats = await this.getAvailableSeats(groupSubscription.id)
+
+    if (newSeats < filledSeats.usedSeats) {
+      throw new ActionDeniedException(
+        `Cannot reduce seats below current members (${filledSeats.usedSeats})`
+      )
+    }
+
+    const result = await this.dodoPaymentService.changeGroupSubscriptionPlan(
+      groupSubscription.dodoSubscriptionId!,
+      params
+    )
+
+    logger.info('Group subscription seats expanded', {
+      oldPlanType,
+      newPlanType,
+      groupSubscriptionId,
+      oldSeats: groupSubscription.totalSeats,
+      newSeats: params.addons[0].quantity,
+      requestedBy: requestingUserId,
+    })
+
+    return result
+  }
+
+  /**
    * Expand seats for group subscription (mid-cycle increase)
    * Prorated charge applied immediately by Dodo Payments
-   *
-   * @param groupSubId - Group subscription ID
-   * @param newQuantity - New total seat count
    */
   async expandSeats(
     groupSubscriptionId: number,
@@ -337,9 +390,6 @@ export class GroupSubscriptionService {
   /**
    * Reduce seats for group subscription (mid-cycle decrease)
    * Blocked if new quantity < current member count
-   *
-   * @param groupSubId - Group subscription ID
-   * @param newQuantity - New total seat count
    */
   async reduceSeats(
     groupSubscriptionId: number,
@@ -381,7 +431,7 @@ export class GroupSubscriptionService {
       params
     )
 
-    // 6. TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
+    //TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
 
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
@@ -435,7 +485,6 @@ export class GroupSubscriptionService {
    * Regenerate invite code for group subscription
    * Old code becomes invalid, new code expires in 30 days
    * Try generating random code up to 10 times if it is unique, save and return it, if it is not throw an error.
-   * @param groupSubId - Group subscription ID
    */
   async regenerateInviteCode(
     groupSubscriptionId: number,
@@ -471,8 +520,6 @@ export class GroupSubscriptionService {
 
   /**
    * Get available seats in group subscription
-   *
-   * @param groupSubId - Group subscription ID
    * @returns Object with total, used, and available seats
    */
   async getAvailableSeats(groupSubcriptionId: number): Promise<{

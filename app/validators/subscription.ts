@@ -352,6 +352,24 @@ export const changeSeatsValidator = vine.compile(
   })
 )
 
+export const changeGroupPlanValidator = vine.compile(
+  vine.object({
+    new_plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
+    group_subscription_id: vine.number().positive(),
+    new_product_id: vine.string().trim(),
+    quantity: vine.number().min(1).max(100),
+    proration_billing_mode: vine.literal('prorated_immediately'),
+    addons: vine
+      .array(
+        vine.object({
+          addon_id: vine.string().trim(),
+          quantity: vine.number().min(1),
+        })
+      )
+      .optional(),
+  })
+)
+
 export const regenerateInviteCodeValidator = vine.compile(
   vine.object({
     group_subscription_id: vine.number().positive(),

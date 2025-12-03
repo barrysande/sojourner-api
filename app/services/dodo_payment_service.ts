@@ -87,7 +87,7 @@ export default class DodoPaymentService {
         },
         confirm: true,
         customer: { email: params.customer.email, name: params.customer.name },
-        return_url: env.get('FRONTEND_URL'),
+        return_url: env.get('FRONTEND_URL') + '/dashboard',
         metadata: params.metadata,
       })
 
@@ -133,7 +133,7 @@ export default class DodoPaymentService {
         },
         confirm: true,
         customer: { email: params.customer.email, name: params.customer.name },
-        return_url: env.get('FRONTEND_URL'),
+        return_url: env.get('FRONTEND_URL') + '/dashboard',
         metadata: params.metadata,
       })
 
