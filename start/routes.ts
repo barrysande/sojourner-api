@@ -20,10 +20,11 @@ const WebhooksController = () => import('#controllers/webhooks_controller')
 const IndividualSubscriptionsController = () =>
   import('#controllers/individual_subscriptions_controller')
 const GroupSubscriptionsController = () => import('#controllers/group_subscriptions_controller')
+const ProductsSyncController = () => import('#controllers/products_sync_controller')
 
 /*
   |----------------------------------------------------------
-  | Auth Routes
+  | Users' Auth Routes
   |----------------------------------------------------------
   */
 router
@@ -47,7 +48,7 @@ router
 
 /*
   |----------------------------------------------------------
-  | Social Auth Routes
+  | Social Users' Auth Routes
   |----------------------------------------------------------
   */
 router
@@ -56,6 +57,18 @@ router
     router.get('/google/callback', [SocialAuthsController, 'handleCallback'])
   })
   .prefix('/socialauth')
+
+/*
+  |----------------------------------------------------------
+  | Auth Routes
+  |----------------------------------------------------------
+  */
+router
+  .group(() => {
+    router.post('/sync-products', [ProductsSyncController, 'sync'])
+  })
+  .prefix('/admin')
+  .use([middleware.auth(), middleware.isAdmin()])
 
 /*
   |----------------------------------------------------------

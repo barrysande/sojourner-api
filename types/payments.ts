@@ -132,3 +132,81 @@ export interface SubscriptionWebhookPayload extends WebhookEventData, Subscripti
 export type PlanType = 'monthly' | 'quarterly' | 'annual'
 
 export type PaymentFrequencyInterval = 'Day' | 'Week' | 'Month' | 'Year'
+export type PriceDetail = RecurringPriceDetail | OneTimePriceDetail
+
+export type TaxCategory = 'saas' | 'digital_products' | 'e_book' | 'edtech'
+
+export type SubscriptionFrequencyInterval = 'Day' | 'Week' | 'Month' | 'Year'
+
+export interface RecurringPriceDetail {
+  type: 'recurring_price'
+  currency: Currency
+  price: number
+  discount: number
+  payment_frequency_count: number
+  payment_frequency_interval: SubscriptionFrequencyInterval
+  subscription_period_count: number
+  subscription_period_interval: SubscriptionFrequencyInterval
+  purchasing_power_parity: boolean
+  tax_inclusive: boolean | null
+  trial_period_days: number
+}
+
+export interface OneTimePriceDetail {
+  type: 'one_time_price'
+  currency: Currency
+  price: number
+  tax_inclusive: boolean | null
+}
+
+export interface ProductPriceDetails {
+  currency: Currency
+  discount: number
+  payment_frequency_count: number
+  payment_frequency_interval: SubscriptionFrequencyInterval
+  price: number
+  purchasing_power_parity: boolean
+  subscription_period_count: number
+  subscription_period_interval: SubscriptionFrequencyInterval
+  type: 'recurring_price'
+  tax_inclusive: boolean | null
+  trial_period_days: number
+}
+
+export interface LicenseKeyDuration {
+  count: number
+  interval: SubscriptionFrequencyInterval
+}
+
+export interface DigitalProductDeliveryFile {
+  file_id: string
+  file_name: string
+  url: string
+}
+
+export interface DigitalProductDelivery {
+  external_url: string | null
+  files: DigitalProductDeliveryFile[] | null
+  instructions: string | null
+}
+
+export interface DodoProductWithDetails {
+  brand_id: string
+  business_id: string
+  created_at: string
+  is_recurring: boolean
+  license_key_enabled: boolean
+  metadata: Record<string, unknown>
+  price: ProductPriceDetails
+  product_id: string
+  tax_category: TaxCategory
+  updated_at: string
+  addons: string[]
+  description: string | null
+  digital_product_delivery: DigitalProductDelivery | null
+  image: string | null
+  license_key_activation_message: string | null
+  license_key_activations_limit: number | null
+  license_key_duration: LicenseKeyDuration | null
+  name: string
+}
