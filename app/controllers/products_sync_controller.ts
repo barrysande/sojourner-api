@@ -10,7 +10,7 @@ export default class ProductsSyncsController {
     const admin = auth.getUserOrFail()
 
     if (!admin.isAdmin) {
-      return response.forbidden('Unable to take this action.')
+      return response.forbidden({ message: 'Unable to take this action.' })
     }
 
     try {
@@ -18,9 +18,10 @@ export default class ProductsSyncsController {
 
       return response.ok(result)
     } catch (error) {
+      console.error('Product sync error:', error)
       return response.internalServerError({
         message: 'Failed to sync products',
-        error,
+        error: error.message,
       })
     }
   }

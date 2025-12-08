@@ -8,6 +8,7 @@ import {
 } from './limiter.js'
 import AutoSwagger from 'adonis-autoswagger'
 import swagger from '#config/swagger'
+
 const AuthController = () => import('#controllers/auth_controller')
 const SocialAuthsController = () => import('#controllers/social_auths_controller')
 const HiddenGemsController = () => import('#controllers/hidden_gems_controller')
@@ -21,7 +22,7 @@ const IndividualSubscriptionsController = () =>
   import('#controllers/individual_subscriptions_controller')
 const GroupSubscriptionsController = () => import('#controllers/group_subscriptions_controller')
 const ProductsSyncController = () => import('#controllers/products_sync_controller')
-
+const AdminAuthsController = () => import('#controllers/admin_auths_controller')
 /*
   |----------------------------------------------------------
   | Users' Auth Routes
@@ -60,15 +61,28 @@ router
 
 /*
   |----------------------------------------------------------
-  | Auth Routes
+  | Admin Routes
   |----------------------------------------------------------
   */
 router
   .group(() => {
-    router.post('/sync-products', [ProductsSyncController, 'sync'])
+    router
+      .post('/sync-products', [ProductsSyncController, 'sync'])
+      .use([middleware.auth(), middleware.isAdmin()])
+    router.post('/register', [AdminAuthsController, 'register'])
+    router.post('/login', [AdminAuthsController, 'login'])
+    router
+      .post('/logout', [AdminAuthsController, 'logout'])
+      .use([middleware.auth(), middleware.isAdmin()])
+    router.get('/me', [AdminAuthsController, 'me']).use([middleware.auth(), middleware.isAdmin()])
+    router
+      .post('/forgot-password', [AdminAuthsController, 'forgotPassword'])
+      .use([middleware.auth(), middleware.isAdmin()])
+    router
+      .post('/reset-password', [AdminAuthsController, 'resetPassword'])
+      .use([middleware.auth(), middleware.isAdmin()])
   })
   .prefix('/admin')
-  .use([middleware.auth(), middleware.isAdmin()])
 
 /*
   |----------------------------------------------------------

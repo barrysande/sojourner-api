@@ -95,7 +95,7 @@ export default class AuthController {
       return response.ok({ userEmail: email, message: `Email successfully verified` })
     } catch (error) {
       if (error.code === 'E_INVALID_TOKEN' || error.code === 'E_NOT_FOUND') {
-        return response.badRequest({ message: 'This verification link is invalid or has expired.' })
+        return response.badRequest({ message: 'This verification link is invalid or has expired' })
       }
 
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -103,7 +103,7 @@ export default class AuthController {
       }
 
       return response.internalServerError({
-        message: 'An error occurred during verification.',
+        message: 'An error occurred during verification',
       })
     }
   }
@@ -140,27 +140,24 @@ export default class AuthController {
           id: user.id,
           email: user.email,
           fullName: user.fullName,
-          verifiedAt: user.emailVerifiedAt,
         },
       })
     } catch (error) {
-      if (error instanceof authErrors.E_INVALID_CREDENTIALS) {
-        return response.badRequest({
-          message: 'Invalid email or password',
-          errors: { credentials: ['Invalid email or password'] },
-        })
-      }
-
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
-          errors: error.messages,
         })
       }
 
-      if (error.message?.includes('Unable to verify user credentials')) {
+      if (error instanceof authErrors.E_INVALID_CREDENTIALS) {
         return response.badRequest({
           message: 'Invalid email or password',
+        })
+      }
+
+      if (error instanceof authErrors.E_UNAUTHORIZED_ACCESS) {
+        return response.badRequest({
+          message: 'You cannot take this action.',
         })
       }
 
@@ -197,6 +194,7 @@ export default class AuthController {
           tier: user.tier,
           verifiedAt: user.emailVerifiedAt,
           avatarUrl: user.avatarUrl,
+          isAdmin: user.isAdmin,
         },
       })
     } catch (error) {
