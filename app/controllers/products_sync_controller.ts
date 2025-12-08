@@ -18,10 +18,9 @@ export default class ProductsSyncsController {
 
       return response.ok(result)
     } catch (error) {
-      console.error('Product sync error:', error)
       return response.internalServerError({
         message: 'Failed to sync products',
-        error: error.message,
+        error,
       })
     }
   }
