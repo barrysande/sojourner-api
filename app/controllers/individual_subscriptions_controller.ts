@@ -5,6 +5,7 @@ import {
   createIndividualSubscriptionValidator,
   changeIndividualPlanValidator,
 } from '#validators/subscription'
+import Plan from '#models/plan'
 
 @inject()
 export default class IndividualSubscriptionsController {
@@ -24,17 +25,23 @@ export default class IndividualSubscriptionsController {
 
   async changePlan({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
-
     const payload = await request.validateUsing(changeIndividualPlanValidator)
+
+    // Lookup plan by slug
+    const plan = await Plan.query().where('slug', payload.plan_slug).firstOrFail()
+
+    // Derive plan type from slug (assuming slug format like "individual-monthly")
+    const planType = plan.slug.replace('individual-', '') as 'monthly' | 'quarterly' | 'annual'
+
     const params = {
-      newProductId: payload.new_product_id,
+      newProductId: plan.productId,
       quantity: payload.quantity,
       prorationBillingMode: payload.proration_billing_mode,
     }
 
     const result = await this.individualSubscriptionService.changeIndividualSubscriptionPlan(
       user.id,
-      payload.new_plan_type,
+      planType,
       params
     )
 

@@ -24,4 +24,12 @@ export default class ProductsSyncsController {
       })
     }
   }
+
+  async index({ auth, response }: HttpContext) {
+    auth.getUserOrFail()
+
+    const plans = await this.productSyncService.showProducts()
+
+    return response.ok(plans)
+  }
 }

@@ -11,6 +11,7 @@ import {
   changeGroupPlanValidator,
 } from '#validators/subscription'
 import { Exception } from '@adonisjs/core/exceptions'
+import Plan from '#models/plan'
 
 @inject()
 export default class GroupSubscriptionsController {
@@ -28,20 +29,34 @@ export default class GroupSubscriptionsController {
 
   async changePlan({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
-
     const payload = await request.validateUsing(changeGroupPlanValidator)
 
+    // Get plan by slug
+    const plan = await Plan.query().where('slug', payload.plan_slug).firstOrFail()
+
+    // Get owned group subscription
+    const groupSubscription = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+
+    // Derive plan type from slug (e.g., "group-monthly" -> "monthly")
+    const planType = plan.slug.replace('group-', '') as 'monthly' | 'quarterly' | 'annual'
+
+    // Construct params with addon from plan
     const params = {
-      newProductId: payload.new_product_id,
+      newProductId: plan.productId,
       quantity: payload.quantity,
       prorationBillingMode: payload.proration_billing_mode,
-      addons: payload.addons || [],
+      addons: [
+        {
+          addon_id: plan.addonId,
+          quantity: groupSubscription.totalSeats, // Keep existing seat count
+        },
+      ],
     }
 
     const result = await this.groupSubscriptionService.changeGroupSubscriptionPlan(
-      payload.group_subscription_id,
+      groupSubscription.id,
       user.id,
-      payload.new_plan_type,
+      planType,
       params
     )
 

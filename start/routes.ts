@@ -210,7 +210,9 @@ router
     router.get('/group', [GroupSubscriptionsController, 'show'])
     router.get('/group/customer-portal', [GroupSubscriptionsController, 'getCustomerPortalLink'])
     router.get('/group/billing', [GroupSubscriptionsController, 'getBillingDetails'])
+    router.get('/products/change-subscription', [ProductsSyncController, 'index'])
   })
+
   .prefix('api/subscriptions')
   .use(middleware.auth())
 /*

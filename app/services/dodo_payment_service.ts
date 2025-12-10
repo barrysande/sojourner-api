@@ -360,9 +360,16 @@ export default class DodoPaymentService {
   async getGroupCustomerPortalLink(userId: number): Promise<{ link: string }> {
     try {
       const subscription = await GroupSubscription.query()
-        .where('owner_id', userId)
+        .where('owner_user_id', userId)
         .whereIn('status', ['active', 'on_hold'])
         .firstOrFail()
+
+      logger.info('Group subscription found', {
+        userId,
+        subscriptionId: subscription.id,
+        dodoCustomerId: subscription.dodoCustomerId,
+        status: subscription.status,
+      })
 
       if (!subscription.dodoCustomerId) {
         throw new Exception('Customer ID not found. Please contact support.')
