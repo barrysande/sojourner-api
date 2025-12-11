@@ -246,6 +246,28 @@ export default class DodoPaymentService {
     }
   }
 
+  async changeGroupSubscriptionSeats(
+    dodoSubscriptionId: string,
+    params: ChangeGroupSubscriptionPlanParams
+  ): Promise<string> {
+    try {
+      await this.client.subscriptions.changePlan(dodoSubscriptionId, {
+        product_id: params.newProductId,
+        quantity: params.quantity,
+        proration_billing_mode: params.prorationBillingMode,
+        addons: params.addons,
+      })
+
+      logger.info('Subscription plan changed', {
+        subscriptionId: dodoSubscriptionId,
+        newProductId: params.newProductId,
+      })
+      return 'Subscription plan changed'
+    } catch (error) {
+      this.handleDodoApiError(error)
+    }
+  }
+
   /**
    * Update subscription details (billing, metadata, etc.)
    * @params newBillingParams typed as the BillingAddress from dodo Payments.
@@ -363,13 +385,6 @@ export default class DodoPaymentService {
         .where('owner_user_id', userId)
         .whereIn('status', ['active', 'on_hold'])
         .firstOrFail()
-
-      logger.info('Group subscription found', {
-        userId,
-        subscriptionId: subscription.id,
-        dodoCustomerId: subscription.dodoCustomerId,
-        status: subscription.status,
-      })
 
       if (!subscription.dodoCustomerId) {
         throw new Exception('Customer ID not found. Please contact support.')

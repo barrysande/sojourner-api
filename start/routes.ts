@@ -211,6 +211,7 @@ router
     router.get('/group/customer-portal', [GroupSubscriptionsController, 'getCustomerPortalLink'])
     router.get('/group/billing', [GroupSubscriptionsController, 'getBillingDetails'])
     router.get('/products/change-subscription', [ProductsSyncController, 'index'])
+    router.get('/group/seats', [GroupSubscriptionsController, 'getSeatsInfo'])
   })
 
   .prefix('api/subscriptions')

@@ -336,18 +336,10 @@ export const removeMemberValidator = vine.compile(
 
 export const changeSeatsValidator = vine.compile(
   vine.object({
-    group_subscription_id: vine.number().positive(),
-    new_product_id: vine.string().trim(),
-    quantity: vine.number().min(1).max(100),
-    proration_billing_mode: vine.literal('prorated_immediately'),
-    addons: vine
-      .array(
-        vine.object({
-          addon_id: vine.string().trim(),
-          quantity: vine.number().min(1),
-        })
-      )
-      .optional(),
+    new_seat_count: vine.number().min(1).max(20),
+    plan_slug: vine.string(),
+    quantity: vine.number(),
+    proration_billing_mode: vine.enum(['prorated_immediately']),
   })
 )
 

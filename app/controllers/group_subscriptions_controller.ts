@@ -68,15 +68,19 @@ export default class GroupSubscriptionsController {
 
     const payload = await request.validateUsing(changeSeatsValidator)
 
+    const plan = await Plan.query().where('slug', payload.plan_slug).firstOrFail()
+
+    const groupSubscription = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+
     const params = {
-      newProductId: payload.new_product_id,
+      newProductId: plan.productId,
       quantity: payload.quantity,
       prorationBillingMode: payload.proration_billing_mode,
-      addons: payload.addons || [],
+      addons: [{ addon_id: plan.addonId, quantity: payload.new_seat_count }],
     }
 
     const result = await this.groupSubscriptionService.expandSeats(
-      payload.group_subscription_id,
+      groupSubscription.id,
       user.id,
       params
     )
@@ -89,15 +93,19 @@ export default class GroupSubscriptionsController {
 
     const payload = await request.validateUsing(changeSeatsValidator)
 
+    const plan = await Plan.query().where('slug', payload.plan_slug).firstOrFail()
+
+    const groupSubscription = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+
     const params = {
-      newProductId: payload.new_product_id,
+      newProductId: plan.productId,
       quantity: payload.quantity,
       prorationBillingMode: payload.proration_billing_mode,
-      addons: payload.addons || [],
+      addons: [{ addon_id: plan.addonId, quantity: payload.new_seat_count }],
     }
 
     const result = await this.groupSubscriptionService.reduceSeats(
-      payload.group_subscription_id,
+      groupSubscription.id,
       user.id,
       params
     )
@@ -186,13 +194,27 @@ export default class GroupSubscriptionsController {
 
   async getBillingDetails({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
+
     const result = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+
     return response.ok(result)
   }
 
   async getCustomerPortalLink({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
+
     const result = await this.groupSubscriptionService.getCustomerPortalLink(user.id)
+
     return response.ok(result)
+  }
+
+  async getSeatsInfo({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const groupSubscription = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+
+    const seatsInfo = await this.groupSubscriptionService.getAvailableSeats(groupSubscription.id)
+
+    return response.ok(seatsInfo)
   }
 }

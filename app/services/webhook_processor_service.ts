@@ -107,15 +107,22 @@ export default class WebhookService {
             { client: trx }
           )
 
-          await GroupSubscriptionMember.create(
-            {
-              groupSubscriptionId: subscription.id,
-              userId: ownerUserId,
-              joinedAt: DateTime.now(),
-              status: 'active',
-            },
-            { client: trx }
-          )
+          const existingMember = await GroupSubscriptionMember.query({ client: trx })
+            .where('userId', ownerUserId)
+            .where('status', 'active')
+            .first()
+
+          if (!existingMember) {
+            await GroupSubscriptionMember.create(
+              {
+                groupSubscriptionId: subscription.id,
+                userId: ownerUserId,
+                joinedAt: DateTime.now(),
+                status: 'active',
+              },
+              { client: trx }
+            )
+          }
         }
 
         return this.groupSubscriptionService.handleSubscriptionActive(

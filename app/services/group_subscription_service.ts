@@ -358,7 +358,7 @@ export class GroupSubscriptionService {
   ): Promise<string> {
     const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
 
-    if (groupSubscription.ownerUserId !== requestingUserId) {
+    if (Number(groupSubscription.ownerUserId) !== requestingUserId) {
       throw new ActionDeniedException('You must be a group owner to add seats.')
     }
 
@@ -370,7 +370,7 @@ export class GroupSubscriptionService {
       throw new ActionDeniedException('Maximum seats is 20.')
     }
 
-    const result = await this.dodoPaymentService.changeGroupSubscriptionPlan(
+    const result = await this.dodoPaymentService.changeGroupSubscriptionSeats(
       groupSubscription.dodoSubscriptionId!,
       params
     )
@@ -398,7 +398,7 @@ export class GroupSubscriptionService {
   ): Promise<string> {
     const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
 
-    if (groupSubscription.ownerUserId !== requestingUserId) {
+    if (Number(groupSubscription.ownerUserId) !== requestingUserId) {
       throw new ActionDeniedException('You must be a group owner to add seats.')
     }
 
@@ -415,7 +415,6 @@ export class GroupSubscriptionService {
     const currentMembers = await GroupSubscriptionMember.query()
       .where('group_subscription_id', groupSubscription.id)
       .where('status', 'active')
-      .forUpdate()
       .count('* as total')
 
     const activeMemberCount = Number(currentMembers[0].$extras.total)
@@ -426,7 +425,7 @@ export class GroupSubscriptionService {
       )
     }
 
-    const dodoResponse = await this.dodoPaymentService.changeGroupSubscriptionPlan(
+    const dodoResponse = await this.dodoPaymentService.changeGroupSubscriptionSeats(
       groupSubscription.dodoSubscriptionId!,
       params
     )
