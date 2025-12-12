@@ -51,6 +51,8 @@ export default class SocialAuthsController {
           userToLogin = existingUser
           if (!userToLogin.avatarUrl && googleUser.avatarUrl) {
             userToLogin.avatarUrl = googleUser.avatarUrl
+            userToLogin.avatarSource = 'social'
+            userToLogin.avatarKey = null
           }
         } else {
           userToLogin = await User.create(
@@ -59,6 +61,8 @@ export default class SocialAuthsController {
               email: googleUser.email,
               password: null,
               avatarUrl: googleUser.avatarUrl,
+              avatarSource: 'social',
+              avatarKey: null,
               emailVerifiedAt:
                 googleUser.emailVerificationState === 'verified' ? DateTime.now() : null,
             },

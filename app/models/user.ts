@@ -41,10 +41,16 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare tier: 'free' | 'individual_paid' | 'group_paid'
 
   @column()
-  declare avatarUrl: string
+  declare avatarUrl: string | null
 
   @column()
   declare isAdmin: boolean
+
+  @column()
+  declare avatarKey: string | null
+
+  @column()
+  declare avatarSource: 'uploaded' | 'social' | null
 
   @column.dateTime()
   declare tierUpdatedAt: DateTime | null

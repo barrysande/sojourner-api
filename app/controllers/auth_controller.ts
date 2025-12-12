@@ -186,6 +186,8 @@ export default class AuthController {
     try {
       const user = auth.getUserOrFail()
 
+      const avatarUrl = await this.avatarService.getAvatarUrl(user)
+
       return response.ok({
         user: {
           id: user.id,
@@ -195,6 +197,8 @@ export default class AuthController {
           verifiedAt: user.emailVerifiedAt,
           avatarUrl: user.avatarUrl,
           isAdmin: user.isAdmin,
+          avatarSource: user.avatarSource,
+          generatedAvatarUrl: avatarUrl,
         },
       })
     } catch (error) {
@@ -329,11 +333,20 @@ export default class AuthController {
     }
 
     try {
-      const newUrl = await this.avatarService.updateAvatar(user, file)
+      const newKey = await this.avatarService.updateAvatar(user, file)
 
-      await user.merge({ avatarUrl: newUrl, updatedAt: DateTime.now() }).save()
+      await user
+        .merge({
+          avatarKey: newKey,
+          avatarUrl: null,
+          avatarSource: 'uploaded',
+          updatedAt: DateTime.now(),
+        })
+        .save()
 
-      return response.ok({ avatarUrl: newUrl, message: 'Display avatar successfully changed.' })
+      const avatarUrl = await this.avatarService.getAvatarUrl(user)
+
+      return response.ok({ avatarUrl, message: 'Display avatar successfully changed.' })
     } catch (error) {
       return response.badRequest({ message: error.message })
     }
