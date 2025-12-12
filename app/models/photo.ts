@@ -14,10 +14,7 @@ export default class Photo extends BaseModel {
   declare storageKey: string
 
   @column()
-  declare url: string
-
-  @column()
-  declare thumbnailUrl: string | null
+  declare thumbnailStorageKey: string
 
   @column()
   declare originalFileName: string

@@ -4,6 +4,7 @@ import { MultipartFile } from '@adonisjs/core/bodyparser'
 import drive from '@adonisjs/drive/services/main'
 import HiddenGem from '#models/hidden_gem'
 import logger from '@adonisjs/core/services/logger'
+import Photo from '#models/photo'
 
 interface ProcessedImage {
   buffer: Buffer
@@ -20,15 +21,28 @@ interface ImagePaths {
   thumbKey: string
 }
 
+interface PhotoWithUrls {
+  id: number
+  storageKey: string
+  thumbnailStorageKey: string
+  url: string
+  thumbnailUrl: string
+  caption: string | null
+  isPrimary: boolean
+  fileSize: number
+  mimeType: string
+  width: number | null
+  height: number | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
 export default class ImageProcessingService {
   private readonly ALLOWED_SUBTYPES = ['jpeg', 'jpg', 'png', 'webp']
-  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB (will be validated per tier)
+  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024
   private readonly FULL_SIZE = 1200
   private readonly THUMB_SIZE = 400
 
-  /**
-   * Validate image file
-   */
   validateImage(file: MultipartFile): { isValid: boolean; error?: string } {
     if (!file) {
       return { isValid: false, error: 'No file provided' }
@@ -140,57 +154,61 @@ export default class ImageProcessingService {
       mimeType: string
     }
   }> {
-    // Generate storage keys
     const keys = this.generateStorageKeys(userId, gemId)
 
-    // Process full image
-    const full = await this.processImage(file)
+    const fullImage = await this.processImage(file)
 
-    // Process thumbnail
     const thumb = await this.generateThumbnail(file)
 
     return {
       fullKey: keys.fullKey,
       thumbKey: keys.thumbKey,
-      fullBuffer: full.buffer,
+      fullBuffer: fullImage.buffer,
       thumbBuffer: thumb.buffer,
       metadata: {
-        width: full.metadata.width,
-        height: full.metadata.height,
-        size: full.metadata.size,
+        width: fullImage.metadata.width,
+        height: fullImage.metadata.height,
+        size: fullImage.metadata.size,
         mimeType: 'image/webp',
       },
     }
   }
 
-  /**
-   * Delete ALL photos for a user's hidden gems.
-   * Called when a user deletes their account.
-   */
+  async getPhotoUrls(photos: Photo[]): Promise<PhotoWithUrls[]> {
+    const disk = drive.use()
+
+    return await Promise.all(
+      photos.map(async (photo) => ({
+        id: photo.id,
+        storageKey: photo.storageKey,
+        thumbnailStorageKey: photo.thumbnailStorageKey,
+        url: await disk.getSignedUrl(photo.storageKey, { expiresIn: 86400 }),
+        thumbnailUrl: await disk.getSignedUrl(photo.thumbnailStorageKey, { expiresIn: 86400 }),
+        caption: photo.caption,
+        isPrimary: photo.isPrimary,
+        fileSize: photo.fileSize,
+        mimeType: photo.mimeType,
+        width: photo.width,
+        height: photo.height,
+        createdAt: photo.createdAt.toISO(),
+        updatedAt: photo.updatedAt.toISO(),
+      }))
+    )
+  }
+
   async deleteAllUserPhotos(userId: number): Promise<void> {
     const disk = drive.use()
 
-    // 1. Fetch all gems and photos from DB before deleting the user
     const gems = await HiddenGem.query().where('userId', userId).preload('photos')
 
-    // 2. Flatten to get a list of all photos
     const allPhotos = gems.flatMap((gem) => gem.photos)
 
-    // 3. Delete from R2
-    // Using Promise.allSettled ensures that one failure doesn't stop the process
     await Promise.allSettled(
       allPhotos.map(async (photo) => {
         try {
-          // Delete Full Size
           await disk.delete(photo.storageKey)
-
-          // Delete Thumbnail
-          if (photo.thumbnailUrl) {
-            const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
-            await disk.delete(thumbKey)
-          }
+          await disk.delete(photo.thumbnailStorageKey)
         } catch (error) {
-          // Just log the error instead of throwing it so that account deletion proceeds
           logger.warn(
             { key: photo.storageKey, err: error },
             'Failed to delete gem photo during account destroy'

@@ -9,12 +9,30 @@ import ImageProcessingService from '#services/image_processing_service'
 import drive from '@adonisjs/drive/services/main'
 import logger from '@adonisjs/core/services/logger'
 
+interface FailedDeletionResults {
+  key: string
+  error: string
+}
+
 @inject()
 export default class HiddenGemsController {
   constructor(
     private tierService: TierService,
     private imageProcessingService: ImageProcessingService
   ) {}
+
+  // REASSIGN PRIMARY PHOTO
+  private async reassignPrimaryPhoto(gemId: number): Promise<void> {
+    const firstPhoto = await Photo.query()
+      .where('hiddenGemId', gemId)
+      .orderBy('createdAt', 'asc')
+      .first()
+
+    if (firstPhoto) {
+      firstPhoto.isPrimary = true
+      await firstPhoto.save()
+    }
+  }
 
   // LIST ALL HIDDEN GEMS
   async index({ request, response, auth }: HttpContext) {
@@ -26,7 +44,7 @@ export default class HiddenGemsController {
       const gems = await HiddenGem.query()
         .where('userId', user.id)
         .preload('photos', (gemsQuery) => {
-          gemsQuery.select(['id', 'storageKey', 'url', 'thumbnailUrl', 'caption', 'isPrimary'])
+          gemsQuery.select(['id', 'storageKey', 'thumbnailStorageKey', 'caption', 'isPrimary'])
           gemsQuery.orderBy('isPrimary', 'desc')
           gemsQuery.orderBy('createdAt', 'asc')
         })
@@ -34,8 +52,17 @@ export default class HiddenGemsController {
         .paginate(page, limit)
 
       const serialized = gems.serialize()
+      const gemsWithUrls = await Promise.all(
+        serialized.data.map(async (gem) => ({
+          ...gem,
+          photos: await this.imageProcessingService.getPhotoUrls(
+            gems.all().find((g) => g.id === gem.id)?.photos || []
+          ),
+        }))
+      )
+
       return response.ok({
-        data: serialized.data,
+        data: gemsWithUrls,
         meta: serialized.meta,
       })
     } catch (error) {
@@ -58,7 +85,12 @@ export default class HiddenGemsController {
         .preload('expenses')
         .firstOrFail()
 
-      return response.ok(gem)
+      const photosWithUrls = await this.imageProcessingService.getPhotoUrls(gem.photos)
+
+      return response.ok({
+        gem,
+        photos: photosWithUrls,
+      })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
         return response.notFound({
@@ -124,7 +156,7 @@ export default class HiddenGemsController {
         }
       }
 
-      const gem = await db.transaction(async (trx) => {
+      await db.transaction(async (trx) => {
         // 5. Create gem
         const newGem = await HiddenGem.create(
           {
@@ -132,8 +164,6 @@ export default class HiddenGemsController {
             name: data.name,
             location: data.location,
             description: data.description,
-            latitude: data.latitude,
-            longitude: data.longitude,
             isPublic: false,
           },
           { client: trx }
@@ -156,16 +186,11 @@ export default class HiddenGemsController {
             await disk.put(processed.fullKey, processed.fullBuffer)
             await disk.put(processed.thumbKey, processed.thumbBuffer)
 
-            // 6.3 Get URLs
-            const fullUrl = await disk.getUrl(processed.fullKey)
-            const thumbUrl = await disk.getUrl(processed.thumbKey)
-
-            // 6.4 Create photo record
+            // 6.3 Create photo record
             photoRecords.push({
               hiddenGemId: newGem.id,
               storageKey: processed.fullKey,
-              url: fullUrl,
-              thumbnailUrl: thumbUrl,
+              thumbnailStorageKey: processed.thumbKey,
               originalFileName: photo.clientName,
               caption: null,
               isPrimary: index === 0,
@@ -178,15 +203,11 @@ export default class HiddenGemsController {
 
           await Photo.createMany(photoRecords, { client: trx })
         }
-
-        return newGem
       })
 
-      const gemWithPhotos = await HiddenGem.query().where('id', gem.id).preload('photos').first()
-
+      // FE integration notes - redirect users to hidden gems list after this.
       return response.created({
         message: 'Hidden gem created successfully',
-        data: gemWithPhotos,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
@@ -214,7 +235,7 @@ export default class HiddenGemsController {
         .where('userId', user.id)
         .firstOrFail()
 
-      // Validate photo addition
+      //1. Validate photo addition against tier limits
       if (photos && photos.length > 0) {
         const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
         if (!photoCheck.canAdd) {
@@ -226,7 +247,7 @@ export default class HiddenGemsController {
           })
         }
 
-        // Validate each file
+        // 2. Validate each file size within limits
         for (const photo of photos) {
           const validation = this.imageProcessingService.validateImage(photo)
           if (!validation.isValid) {
@@ -255,8 +276,6 @@ export default class HiddenGemsController {
             name: data.name,
             location: data.location,
             description: data.description,
-            latitude: data.latitude,
-            longitude: data.longitude,
           })
           .save()
 
@@ -275,14 +294,10 @@ export default class HiddenGemsController {
             await disk.put(processed.fullKey, processed.fullBuffer)
             await disk.put(processed.thumbKey, processed.thumbBuffer)
 
-            const fullUrl = await disk.getUrl(processed.fullKey)
-            const thumbUrl = await disk.getUrl(processed.thumbKey)
-
             photoRecords.push({
               hiddenGemId: gem.id,
               storageKey: processed.fullKey,
-              url: fullUrl,
-              thumbnailUrl: thumbUrl,
+              thumbnailStorageKey: processed.thumbKey,
               originalFileName: photo.clientName,
               caption: null,
               isPrimary: false,
@@ -297,11 +312,9 @@ export default class HiddenGemsController {
         }
       })
 
-      const updatedGem = await HiddenGem.query().where('id', gem.id).preload('photos').first()
-
+      // FE integration notes - redirect users to hidden gems list after this.
       return response.ok({
         message: 'Hidden Gem updated successfully',
-        data: updatedGem,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -314,60 +327,6 @@ export default class HiddenGemsController {
         return response.badRequest({
           message: 'Validation failed',
           errors: error.messages,
-        })
-      }
-      throw error
-    }
-  }
-
-  // DELETE HIDDEN GEM
-  async destroy({ params, response, auth }: HttpContext) {
-    try {
-      const user = auth.getUserOrFail()
-      const disk = drive.use()
-
-      const gem = await HiddenGem.query()
-        .where('id', params.id)
-        .where('userId', user.id)
-        .preload('photos')
-        .firstOrFail()
-
-      // Delete all photos from R2
-      const deletionResults = {
-        successful: [] as string[],
-        failed: [] as { key: string; error: string }[],
-      }
-
-      for (const photo of gem.photos) {
-        try {
-          await disk.delete(photo.storageKey)
-          deletionResults.successful.push(photo.storageKey)
-
-          // Delete thumbnail if exists
-          if (photo.thumbnailUrl) {
-            const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
-            await disk.delete(thumbKey)
-          }
-        } catch (error) {
-          deletionResults.failed.push({
-            key: photo.storageKey,
-            error: error.message,
-          })
-        }
-      }
-
-      // Delete gem (cascade will delete photos from DB)
-      await gem.delete()
-
-      return response.ok({
-        message: 'Hidden gem deleted successfully',
-        photoCleanup: deletionResults,
-      })
-    } catch (error) {
-      if (error.code === 'E_ROW_NOT_FOUND') {
-        return response.notFound({
-          message: 'Hidden gem not found',
-          code: 'GEM_NOT_FOUND',
         })
       }
       throw error
@@ -395,7 +354,6 @@ export default class HiddenGemsController {
         .where('userId', user.id)
         .firstOrFail()
 
-      // Check tier limits
       const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
       if (!photoCheck.canAdd) {
         return response.forbidden({
@@ -406,7 +364,6 @@ export default class HiddenGemsController {
         })
       }
 
-      // Validate each file
       for (const photo of photos) {
         const validation = this.imageProcessingService.validateImage(photo)
         if (!validation.isValid) {
@@ -425,38 +382,38 @@ export default class HiddenGemsController {
         }
       }
 
-      const photoRecords = []
-      const disk = drive.use()
+      const newPhotos = await db.transaction(async (trx) => {
+        const photoRecords = []
+        const disk = drive.use()
 
-      for (const photo of photos) {
-        const processed = await this.imageProcessingService.processAndSave(photo, user.id, gem.id)
+        for (const photo of photos) {
+          const processed = await this.imageProcessingService.processAndSave(photo, user.id, gem.id)
 
-        await disk.put(processed.fullKey, processed.fullBuffer)
-        await disk.put(processed.thumbKey, processed.thumbBuffer)
+          await disk.put(processed.fullKey, processed.fullBuffer)
+          await disk.put(processed.thumbKey, processed.thumbBuffer)
 
-        const fullUrl = await disk.getUrl(processed.fullKey)
-        const thumbUrl = await disk.getUrl(processed.thumbKey)
+          photoRecords.push({
+            hiddenGemId: gem.id,
+            storageKey: processed.fullKey,
+            thumbnailStorageKey: processed.thumbKey,
+            originalFileName: photo.clientName,
+            caption: null,
+            isPrimary: false,
+            fileSize: processed.metadata.size,
+            mimeType: processed.metadata.mimeType,
+            width: processed.metadata.width,
+            height: processed.metadata.height,
+          })
+        }
 
-        photoRecords.push({
-          hiddenGemId: gem.id,
-          storageKey: processed.fullKey,
-          url: fullUrl,
-          thumbnailUrl: thumbUrl,
-          originalFileName: photo.clientName,
-          caption: null,
-          isPrimary: false,
-          fileSize: processed.metadata.size,
-          mimeType: processed.metadata.mimeType,
-          width: processed.metadata.width,
-          height: processed.metadata.height,
-        })
-      }
+        return await Photo.createMany(photoRecords, { client: trx })
+      })
 
-      const newPhotos = await Photo.createMany(photoRecords)
+      const photosWithUrls = await this.imageProcessingService.getPhotoUrls(newPhotos)
 
       return response.created({
         message: 'Photos added successfully',
-        data: newPhotos,
+        data: photosWithUrls,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -469,16 +426,54 @@ export default class HiddenGemsController {
     }
   }
 
-  // REASSIGN PRIMARY PHOTO
-  private async reassignPrimaryPhoto(gemId: number): Promise<void> {
-    const firstPhoto = await Photo.query()
-      .where('hiddenGemId', gemId)
-      .orderBy('createdAt', 'asc')
-      .first()
+  // DELETE HIDDEN GEM
+  async destroy({ params, response, auth }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const disk = drive.use()
 
-    if (firstPhoto) {
-      firstPhoto.isPrimary = true
-      await firstPhoto.save()
+      const gem = await HiddenGem.query()
+        .where('id', params.id)
+        .where('userId', user.id)
+        .preload('photos')
+        .firstOrFail()
+
+      // Delete all photos from R2
+      const deletionResults = {
+        successful: [] as string[],
+        failed: [] as FailedDeletionResults[],
+      }
+
+      for (const photo of gem.photos) {
+        try {
+          await disk.delete(photo.storageKey)
+
+          await disk.delete(photo.thumbnailStorageKey)
+
+          deletionResults.successful.push(photo.storageKey)
+        } catch (error) {
+          deletionResults.failed.push({
+            key: photo.storageKey,
+            error: error.message,
+          })
+        }
+      }
+
+      // Delete gem (cascade will delete photos from DB)
+      await gem.delete()
+
+      return response.ok({
+        message: 'Hidden gem deleted successfully',
+        photoCleanup: deletionResults,
+      })
+    } catch (error) {
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.notFound({
+          message: 'Hidden gem not found',
+          code: 'GEM_NOT_FOUND',
+        })
+      }
+      throw error
     }
   }
 
@@ -500,10 +495,8 @@ export default class HiddenGemsController {
       // Delete from R2
       try {
         await disk.delete(photo.storageKey)
-        if (photo.thumbnailUrl) {
-          const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
-          await disk.delete(thumbKey)
-        }
+
+        await disk.delete(photo.thumbnailStorageKey)
       } catch (error) {
         logger.error('R2 deletion failed', { storageKey: photo.storageKey, error: error.message })
       }
