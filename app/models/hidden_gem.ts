@@ -14,10 +14,10 @@ export default class HiddenGem extends BaseModel {
   declare userId: number
 
   @column()
-  declare name: string
+  declare name: string | null
 
   @column()
-  declare location: string
+  declare location: string | null
 
   @column()
   declare description: string | null

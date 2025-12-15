@@ -111,7 +111,7 @@ router
     router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
   })
   .prefix('api')
-  .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
+  .use(middleware.auth())
 
 /*
   |----------------------------------------------------------
@@ -129,7 +129,7 @@ router
     router.delete('/share-groups/:id', [ShareGroupsController, 'destroy'])
   })
   .prefix('/api')
-  .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
+  .use(middleware.auth())
 
 /*
   |----------------------------------------------------------
@@ -144,7 +144,7 @@ router
     router.get('/share-groups/:id/gems', [SharingController, 'showGroupGems'])
   })
   .prefix('/api')
-  .use([middleware.auth(), middleware.requestTimeout({ timeout: 10000 })])
+  .use(middleware.auth())
 
 /*
   |----------------------------------------------------------

@@ -51,7 +51,10 @@ export default class ImageProcessingService {
     const subtype = (file.subtype || '').toLowerCase()
 
     if (!this.ALLOWED_SUBTYPES.includes(subtype)) {
-      throw new Error(`Invalid file type (${subtype}). Only JPEG, PNG, and WebP are allowed.`)
+      return {
+        isValid: false,
+        error: `Invalid file type (${subtype}). Only JPEG, PNG, and WebP are allowed.`,
+      }
     }
 
     if (file.size && file.size > this.MAX_FILE_SIZE) {
