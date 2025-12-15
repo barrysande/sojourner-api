@@ -53,7 +53,7 @@ export default class GracePeriodService {
       for (const photo of gem.photos) {
         storageKeys.push(photo.storageKey)
 
-        if (photo.thumbnailUrl) {
+        if (photo.thumbnailStorageKey) {
           const thumbKey = photo.storageKey.replace('-full.webp', '-thumb.webp')
           storageKeys.push(thumbKey)
         }

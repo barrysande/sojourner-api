@@ -33,8 +33,6 @@ interface PhotoWithUrls {
   mimeType: string
   width: number | null
   height: number | null
-  createdAt: string | null
-  updatedAt: string | null
 }
 
 export default class ImageProcessingService {
@@ -193,8 +191,6 @@ export default class ImageProcessingService {
         mimeType: photo.mimeType,
         width: photo.width,
         height: photo.height,
-        createdAt: photo.createdAt.toISO(),
-        updatedAt: photo.updatedAt.toISO(),
       }))
     )
   }
