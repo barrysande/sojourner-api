@@ -23,12 +23,6 @@ export default class HiddenGem extends BaseModel {
   declare description: string | null
 
   @column()
-  declare latitude: number | null
-
-  @column()
-  declare longitude: number | null
-
-  @column()
   declare isPublic: boolean
 
   @column()
