@@ -84,17 +84,16 @@ export default class ExpensesController {
         .where('user_id', user.id)
         .firstOrFail()
 
-      const expense = await Expense.create({
+      await Expense.create({
         hiddenGemId: gem.id,
         description: data.description,
         amount: data.amount,
         currency: data.currency || 'KES',
-        category: data.category,
+        name: data.name,
       })
 
       return response.ok({
         message: 'Expense added successfully',
-        data: expense,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -126,17 +125,17 @@ export default class ExpensesController {
         })
         .firstOrFail()
 
-      expense
+      await expense
         .merge({
           description: data.description,
           amount: data.amount,
           currency: data.currency,
-          category: data.category,
+          name: data.name,
         })
         .save()
       return response.ok({
         message: 'Expense updated successfully',
-        data: expense,
+        // data: expense,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {

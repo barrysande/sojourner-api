@@ -5,6 +5,6 @@ export const expensesValidator = vine.compile(
     description: vine.string().minLength(1).maxLength(255),
     amount: vine.number().positive(),
     currency: vine.string().fixedLength(3),
-    category: vine.string().maxLength(100),
+    name: vine.string().maxLength(100),
   })
 )

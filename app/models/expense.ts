@@ -20,7 +20,7 @@ export default class Expense extends BaseModel {
   declare currency: string
 
   @column()
-  declare category: string | null
+  declare name: string
 
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime

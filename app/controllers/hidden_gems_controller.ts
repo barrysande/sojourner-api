@@ -224,7 +224,9 @@ export default class HiddenGemsController {
   async update({ params, response, request, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
+
       const data = await request.validateUsing(updateGemValidator)
+
       const photos = request.files('photos', {
         size: '10mb',
         extnames: ['jpg', 'jpeg', 'png', 'webp'],
@@ -270,7 +272,7 @@ export default class HiddenGemsController {
       await db.transaction(async (trx) => {
         gem.useTransaction(trx)
 
-        // Update gem details
+        // 3. Update gem details
         await gem
           .merge({
             name: data.name,
@@ -279,7 +281,7 @@ export default class HiddenGemsController {
           })
           .save()
 
-        // Process and upload new photos
+        // 4. Process and upload new photos
         if (photos && photos.length > 0) {
           const photoRecords = []
           const disk = drive.use()

@@ -18,6 +18,7 @@ export default class HiddenGem extends BaseModel {
 
   @column()
   declare location: string
+
   @column()
   declare description: string
 
