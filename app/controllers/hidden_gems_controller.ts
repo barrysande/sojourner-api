@@ -83,6 +83,7 @@ export default class HiddenGemsController {
           gemQuery.orderBy('createdAt', 'asc')
         })
         .preload('expenses')
+        .preload('postVisitNotes')
         .firstOrFail()
 
       const photosWithUrls = await this.imageProcessingService.getPhotoUrls(gem.photos)
@@ -278,6 +279,8 @@ export default class HiddenGemsController {
             name: data.name,
             location: data.location,
             description: data.description,
+            visited: data.visited ?? false,
+            rating: data.rating,
           })
           .save()
 

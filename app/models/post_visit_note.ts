@@ -13,12 +13,6 @@ export default class PostVisitNote extends BaseModel {
   @column()
   declare content: string
 
-  @column()
-  declare visited: boolean
-
-  @column()
-  declare rating: number | null
-
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 

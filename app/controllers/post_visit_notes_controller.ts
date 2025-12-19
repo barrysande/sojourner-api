@@ -18,7 +18,7 @@ export default class PostVisitNotesController {
         .orderBy('createdAt', 'desc')
 
       return response.ok({
-        data: notes,
+        notes,
         meta: {
           gemId: gem.id,
           gemName: gem.name,
@@ -71,8 +71,6 @@ export default class PostVisitNotesController {
       await PostVisitNote.create({
         hiddenGemId: gem.id,
         content: data.content,
-        visited: data.visited ?? false,
-        rating: data.rating,
       })
 
       return response.created({
@@ -110,8 +108,6 @@ export default class PostVisitNotesController {
       await note
         .merge({
           content: data.content,
-          visited: data.visited,
-          rating: data.rating,
         })
         .save()
 

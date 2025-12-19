@@ -344,9 +344,7 @@ export default class AuthController {
         })
         .save()
 
-      const avatarUrl = await this.avatarService.getAvatarUrl(user)
-
-      return response.ok({ avatarUrl, message: 'Display avatar successfully changed.' })
+      return response.ok({ message: 'Display avatar successfully changed.' })
     } catch (error) {
       return response.badRequest({ message: error.message })
     }

@@ -29,6 +29,12 @@ export default class HiddenGem extends BaseModel {
   @column()
   declare locked: boolean
 
+  @column()
+  declare visited: boolean
+
+  @column()
+  declare rating: number | null
+
   @column.dateTime({ autoCreate: true })
   declare createdAt: DateTime
 
