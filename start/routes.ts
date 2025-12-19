@@ -23,6 +23,7 @@ const IndividualSubscriptionsController = () =>
 const GroupSubscriptionsController = () => import('#controllers/group_subscriptions_controller')
 const ProductsSyncController = () => import('#controllers/products_sync_controller')
 const AdminAuthsController = () => import('#controllers/admin_auths_controller')
+const PostVisitNotesController = () => import('#controllers/post_visit_notes_controller')
 /*
   |----------------------------------------------------------
   | Users' Auth Routes
@@ -99,17 +100,25 @@ router
     router.post('/hidden-gems/:id/photos', [HiddenGemsController, 'addPhotos'])
     router.delete('/hidden-gems/:id/photos/:photoId', [HiddenGemsController, 'deletePhoto'])
 
-    /*
-  |----------------------------------------------------------
-  | Expenses Routes
-  |----------------------------------------------------------
-  */
     router.get('/hidden-gems/:gemId/expenses', [ExpensesController, 'index'])
     router.get('/hidden-gems/:gemId/expenses/:expensesId', [ExpensesController, 'show'])
     router.post('/hidden-gems/:gemId/expenses', [ExpensesController, 'store'])
     router.patch('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'update'])
     router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
+
+    router.get('/hidden-gems/:gemId/post-visit-notes', [PostVisitNotesController, 'index'])
+    router.get('/hidden-gems/:gemId/post-visit-notes/:noteId', [PostVisitNotesController, 'show'])
+    router.post('/hidden-gems/:gemId/post-visit-notes', [PostVisitNotesController, 'store'])
+    router.patch('/hidden-gems/:gemId/post-visit-notes/:noteId', [
+      PostVisitNotesController,
+      'update',
+    ])
+    router.delete('/hidden-gems/:gemId/post-visit-notes/:noteId', [
+      PostVisitNotesController,
+      'destroy',
+    ])
   })
+
   .prefix('api')
   .use(middleware.auth())
 

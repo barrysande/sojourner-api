@@ -4,6 +4,7 @@ import User from './user.js'
 import Expense from './expense.js'
 import Photo from './photo.js'
 import SharedGem from './shared_gem.js'
+import PostVisitNote from './post_visit_note.js'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 
 export default class HiddenGem extends BaseModel {
@@ -45,4 +46,7 @@ export default class HiddenGem extends BaseModel {
 
   @hasMany(() => SharedGem)
   declare sharedWith: HasMany<typeof SharedGem>
+
+  @hasMany(() => PostVisitNote)
+  declare postVisitNotes: HasMany<typeof PostVisitNote>
 }

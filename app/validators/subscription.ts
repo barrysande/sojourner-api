@@ -252,107 +252,91 @@ const COUNTRY_CODES = [
   'ZW',
 ] as const
 
-export const createIndividualSubscriptionValidator = vine.compile(
-  vine.object({
-    plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
-    product_id: vine.string().trim(),
-    quantity: vine.number().min(1),
-    customer: vine.object({
-      email: vine.string().trim().email(),
-      name: vine.string().trim().optional(),
-      phone_number: vine.string().trim().optional(),
-    }),
-    billing: vine.object({
-      street: vine.string().trim().minLength(1).maxLength(255),
-      city: vine.string().trim().minLength(1).maxLength(100),
-      state: vine.string().trim().minLength(1).maxLength(100),
-      zipcode: vine.string().trim().minLength(1).maxLength(20),
-      country: vine.enum(COUNTRY_CODES),
-    }),
-    metadata: vine.record(vine.any()).optional(),
-    return_url: vine.string().trim().url().optional(),
-    payment_link: vine.boolean().optional(),
-    trial_period_days: vine.number().min(0).optional(),
-  })
-)
+export const createIndividualSubscriptionValidator = vine.create({
+  plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
+  product_id: vine.string().trim(),
+  quantity: vine.number().min(1),
+  customer: vine.object({
+    email: vine.string().trim().email(),
+    name: vine.string().trim().optional(),
+    phone_number: vine.string().trim().optional(),
+  }),
+  billing: vine.object({
+    street: vine.string().trim().minLength(1).maxLength(255),
+    city: vine.string().trim().minLength(1).maxLength(100),
+    state: vine.string().trim().minLength(1).maxLength(100),
+    zipcode: vine.string().trim().minLength(1).maxLength(20),
+    country: vine.enum(COUNTRY_CODES),
+  }),
+  metadata: vine.record(vine.any()).optional(),
+  return_url: vine.string().trim().url().optional(),
+  payment_link: vine.boolean().optional(),
+  trial_period_days: vine.number().min(0).optional(),
+})
 
-export const changeIndividualPlanValidator = vine.compile(
-  vine.object({
-    plan_slug: vine.string().trim(),
-    quantity: vine.number().min(1),
-    proration_billing_mode: vine.literal('prorated_immediately'),
-  })
-)
+export const changeIndividualPlanValidator = vine.create({
+  plan_slug: vine.string().trim(),
+  quantity: vine.number().min(1),
+  proration_billing_mode: vine.literal('prorated_immediately'),
+})
 
-export const createGroupSubscriptionValidator = vine.compile(
-  vine.object({
-    plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
-    product_id: vine.string().trim(),
-    quantity: vine.number().min(1).max(100),
-    customer: vine.object({
-      email: vine.string().trim().email(),
-      name: vine.string().trim().optional(),
-      phone_number: vine.string().trim().optional(),
-    }),
-    billing: vine.object({
-      street: vine.string().trim().minLength(1).maxLength(255),
-      city: vine.string().trim().minLength(1).maxLength(100),
-      state: vine.string().trim().minLength(1).maxLength(100),
-      zipcode: vine.string().trim().minLength(1).maxLength(20),
-      country: vine.enum(COUNTRY_CODES),
-    }),
-    metadata: vine.record(vine.any()).optional(),
-    addons: vine
-      .array(
-        vine.object({
-          addon_id: vine.string().trim(),
-          quantity: vine.number().min(1),
-        })
-      )
-      .optional(),
-    return_url: vine.string().trim().url().optional(),
-    payment_link: vine.boolean().optional(),
-    trial_period_days: vine.number().min(0).optional(),
-  })
-)
+export const createGroupSubscriptionValidator = vine.create({
+  plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
+  product_id: vine.string().trim(),
+  quantity: vine.number().min(1).max(100),
+  customer: vine.object({
+    email: vine.string().trim().email(),
+    name: vine.string().trim().optional(),
+    phone_number: vine.string().trim().optional(),
+  }),
+  billing: vine.object({
+    street: vine.string().trim().minLength(1).maxLength(255),
+    city: vine.string().trim().minLength(1).maxLength(100),
+    state: vine.string().trim().minLength(1).maxLength(100),
+    zipcode: vine.string().trim().minLength(1).maxLength(20),
+    country: vine.enum(COUNTRY_CODES),
+  }),
+  metadata: vine.record(vine.any()).optional(),
+  addons: vine
+    .array(
+      vine.object({
+        addon_id: vine.string().trim(),
+        quantity: vine.number().min(1),
+      })
+    )
+    .optional(),
+  return_url: vine.string().trim().url().optional(),
+  payment_link: vine.boolean().optional(),
+  trial_period_days: vine.number().min(0).optional(),
+})
 
-export const joinGroupValidator = vine.compile(
-  vine.object({
-    invite_code: vine
-      .string()
-      .trim()
-      .regex(
-        /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/
-      ),
-  })
-)
+export const joinGroupValidator = vine.create({
+  invite_code: vine
+    .string()
+    .trim()
+    .regex(
+      /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/
+    ),
+})
 
-export const removeMemberValidator = vine.compile(
-  vine.object({
-    user_id_to_remove: vine.number().positive(),
-    group_subscription_id: vine.number().positive(),
-  })
-)
+export const removeMemberValidator = vine.create({
+  user_id_to_remove: vine.number().positive(),
+  group_subscription_id: vine.number().positive(),
+})
 
-export const changeSeatsValidator = vine.compile(
-  vine.object({
-    new_seat_count: vine.number().min(1).max(20),
-    plan_slug: vine.string(),
-    quantity: vine.number(),
-    proration_billing_mode: vine.enum(['prorated_immediately']),
-  })
-)
+export const changeSeatsValidator = vine.create({
+  new_seat_count: vine.number().min(1).max(20),
+  plan_slug: vine.string(),
+  quantity: vine.number(),
+  proration_billing_mode: vine.enum(['prorated_immediately']),
+})
 
-export const changeGroupPlanValidator = vine.compile(
-  vine.object({
-    plan_slug: vine.string().trim(),
-    quantity: vine.number().min(1).max(1),
-    proration_billing_mode: vine.literal('prorated_immediately'),
-  })
-)
+export const changeGroupPlanValidator = vine.create({
+  plan_slug: vine.string().trim(),
+  quantity: vine.number().min(1).max(1),
+  proration_billing_mode: vine.literal('prorated_immediately'),
+})
 
-export const regenerateInviteCodeValidator = vine.compile(
-  vine.object({
-    group_subscription_id: vine.number().positive(),
-  })
-)
+export const regenerateInviteCodeValidator = vine.create({
+  group_subscription_id: vine.number().positive(),
+})
