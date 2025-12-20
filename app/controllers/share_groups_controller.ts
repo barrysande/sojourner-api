@@ -24,8 +24,7 @@ export default class ShareGroupsController {
     private chatService: ChatService
   ) {}
 
-  //    GET /api/share-groups
-  //    GET USER'S SHARE GROUPS
+  // GET AND SHOW USER'S SHARE GROUPS
   async index({ auth, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -33,7 +32,7 @@ export default class ShareGroupsController {
 
       return response.ok({
         message: 'Share groups retrieved successfully',
-        shareGroups: shareGroups,
+        shareGroups,
       })
     } catch (error) {
       return response.internalServerError({
@@ -42,7 +41,6 @@ export default class ShareGroupsController {
     }
   }
 
-  //   POST /api/share-groups
   //   CREATE NEW SHARE GROUPS, CREATE CHAT ROOM & SEND NOTIFICATIONS
   async store({ auth, request, response }: HttpContext) {
     try {
@@ -92,22 +90,24 @@ export default class ShareGroupsController {
         logger.error('Failed to create chat room:', error)
       }
 
-      const inviteResults = await this.shareGroupService.inviteMembersToGroup(
-        shareGroup.id,
-        user.id,
-        inviteEmails
-      )
+      let inviteResults
+      if (inviteEmails.length > 0) {
+        inviteResults = await this.shareGroupService.inviteMembersToGroup(
+          shareGroup.id,
+          user.id,
+          inviteEmails
+        )
+      }
 
       return response.created({
         message: 'Share group created successfully',
-        shareGroup: shareGroup,
-        inviteResults: inviteResults,
+        shareGroup,
+        inviteResults,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
-          errors: error.messages,
         })
       }
 
@@ -118,15 +118,12 @@ export default class ShareGroupsController {
   }
 
   /**
-   * GET /api/share-groups/:id
    * Get specific share group details
    */
   async show({ auth, params, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
       const shareGroupId = params.id
-
-      // 1. check membership status 2. show group details
 
       const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
       if (!isMember) {
@@ -135,11 +132,11 @@ export default class ShareGroupsController {
         })
       }
 
-      const members = await this.shareGroupService.getGroupMembers(shareGroupId)
+      const shareGroup = await this.shareGroupService.getShareGroupWithDetails(shareGroupId)
 
       return response.ok({
         message: 'Share group details retrieved',
-        members: members,
+        shareGroup,
       })
     } catch (error) {
       return response.internalServerError({
@@ -149,7 +146,6 @@ export default class ShareGroupsController {
   }
 
   /**
-   * POST /api/share-groups/join
    * Join share group using invite code
    */
   async join({ request, response, auth }: HttpContext) {
@@ -216,13 +212,12 @@ export default class ShareGroupsController {
       }
       return response.ok({
         message: 'Successfully joined share group',
-        shareGroup: shareGroup,
+        shareGroup,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Invalid invite code format',
-          errors: error.messages,
         })
       }
 
@@ -233,7 +228,6 @@ export default class ShareGroupsController {
   }
 
   /**
-   * POST /api/share-groups/:id/invite
    * Invite additional members to existing group
    */
   async invite({ params, request, response, auth }: HttpContext) {
@@ -270,7 +264,7 @@ export default class ShareGroupsController {
 
       return response.ok({
         message: 'Invitations sent',
-        inviteResults: inviteResults,
+        inviteResults,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
@@ -289,7 +283,6 @@ export default class ShareGroupsController {
   }
 
   /**
-   * DELETE /api/share-groups/:id/leave
    * Leave share group
    */
   async leave({ auth, response, params }: HttpContext) {
@@ -339,7 +332,6 @@ export default class ShareGroupsController {
   }
 
   /**
-   * DELETE /api/share-groups/:id
    * Dissolve share group (creator only)
    */
   async destroy({ auth, params, response }: HttpContext) {

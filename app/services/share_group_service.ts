@@ -5,6 +5,12 @@ import Notification from '#models/notification'
 import { DateTime } from 'luxon'
 import app from '@adonisjs/core/services/app'
 
+interface InviteResult {
+  email: string
+  status: 'sent' | 'failed'
+  reason?: string
+}
+
 export default class ShareGroupService {
   generateUniqueInviteCode(): string {
     const timestamp = Date.now().toString(36).slice(-4)
@@ -56,6 +62,17 @@ export default class ShareGroupService {
       .first()
   }
 
+  async getShareGroupWithDetails(shareGroupId: number): Promise<ShareGroup> {
+    return await ShareGroup.query()
+      .where('id', shareGroupId)
+      .preload('members', (query) => {
+        query.where('status', 'active').preload('user', (userQuery) => {
+          userQuery.select('id', 'email', 'fullName')
+        })
+      })
+      .firstOrFail()
+  }
+
   async getUserShareGroups(userId: number): Promise<ShareGroup[]> {
     return await ShareGroup.query()
       .innerJoin('share_group_members', 'share_groups.id', 'share_group_members.share_group_id')
@@ -63,6 +80,11 @@ export default class ShareGroupService {
       .where('share_group_members.status', 'active')
       .where('share_groups.status', 'active')
       .select('share_groups.*')
+      .preload('members', (query) => {
+        query.where('status', 'active').preload('user', (userQuery) => {
+          userQuery.select('id', 'email', 'fullName')
+        })
+      })
       .distinct()
   }
 
@@ -90,9 +112,8 @@ export default class ShareGroupService {
     shareGroupId: number,
     inviterId: number,
     emails: string[]
-  ): Promise<{ sent: string[]; failed: string[] }> {
-    const sent: string[] = []
-    const failed: string[] = []
+  ): Promise<InviteResult[]> {
+    const results: InviteResult[] = []
 
     // 1. Batch fetch all users by email (single query) 2. Batch fetch existing memberships (single query) 3. Create lookup maps 4. Process each email using cached data 5. Check tier permissions- tier limits and membership status 6. Construct invitation. 7. Batch create them 8. Batch create memberships 9. Batch create notifications 10. send invitation code via email.
     const normalizedEmails = emails.map((email) => email.toLowerCase().trim())
@@ -115,7 +136,7 @@ export default class ShareGroupService {
       const user = usersByEmail.get(normalizedEmail)
 
       if (!user) {
-        failed.push(`${email}: User not found`)
+        results.push({ email, status: 'failed', reason: 'User not found' })
         continue
       }
 
@@ -123,17 +144,17 @@ export default class ShareGroupService {
 
       const tierLimits = tierService.getTierLimits(user.tier)
       if (!tierLimits.canShare) {
-        failed.push(`${email}: Upgrade to paid Individual Plan`)
+        results.push({ email, status: 'failed', reason: 'Upgrade to paid Individual Plan' })
         continue
       }
       const existingMembership = membershipsByUserId.get(user.id)
       if (existingMembership) {
         if (existingMembership.status === 'active') {
-          failed.push(`${email}: Already a member`)
+          results.push({ email, status: 'failed', reason: 'Already a member' })
           continue
         }
         if (existingMembership.status === 'pending') {
-          failed.push(`${email}: Already invited`)
+          results.push({ email, status: 'failed', reason: 'Already invited' })
           continue
         }
       }
@@ -146,7 +167,7 @@ export default class ShareGroupService {
         role: 'member' as const,
         invitedAt: DateTime.now(),
       })
-      sent.push(email)
+      results.push({ email, status: 'sent' })
     }
     if (validInvitations.length > 0) {
       await ShareGroupMember.createMany(validInvitations)
@@ -164,7 +185,7 @@ export default class ShareGroupService {
       await Notification.createMany(notificationData)
     }
 
-    return { sent, failed }
+    return results
   }
 
   async acceptGroupInvitation(

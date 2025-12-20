@@ -2,7 +2,7 @@ import vine from '@vinejs/vine'
 
 export const createShareGroupValidator = vine.create({
   name: vine.string().trim().minLength(2).maxLength(50),
-  inviteEmails: vine.array(vine.string().email().minLength(1).maxLength(9)),
+  inviteEmails: vine.array(vine.string().email()).maxLength(19),
 })
 
 export const joinShareGroupValidator = vine.create({
@@ -14,5 +14,5 @@ export const joinShareGroupValidator = vine.create({
 })
 
 export const inviteMembersValidator = vine.create({
-  emails: vine.array(vine.string().email()).minLength(1).maxLength(5),
+  emails: vine.array(vine.string().email()).maxLength(19),
 })
