@@ -25,14 +25,18 @@ export default class ShareGroupsController {
   ) {}
 
   // GET AND SHOW USER'S SHARE GROUPS
-  async index({ auth, response }: HttpContext) {
+  async index({ auth, request, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const shareGroups = await this.shareGroupService.getUserShareGroups(user.id)
+      const page = request.input('page', 1)
+      const perPage = request.input('perPage', 10)
+
+      const shareGroups = await this.shareGroupService.getUserShareGroups(user.id, page, perPage)
 
       return response.ok({
         message: 'Share groups retrieved successfully',
-        shareGroups,
+        shareGroups: shareGroups.all(),
+        meta: shareGroups.getMeta(),
       })
     } catch (error) {
       return response.internalServerError({

@@ -73,19 +73,18 @@ export default class ShareGroupService {
       .firstOrFail()
   }
 
-  async getUserShareGroups(userId: number): Promise<ShareGroup[]> {
+  async getUserShareGroups(userId: number, page: number = 1, perPage: number = 10) {
     return await ShareGroup.query()
       .innerJoin('share_group_members', 'share_groups.id', 'share_group_members.share_group_id')
       .where('share_group_members.user_id', userId)
       .where('share_group_members.status', 'active')
       .where('share_groups.status', 'active')
-      .select('share_groups.*')
       .preload('members', (query) => {
-        query.where('status', 'active').preload('user', (userQuery) => {
-          userQuery.select('id', 'email', 'fullName')
-        })
+        query.where('status', 'active')
       })
+      .select('share_groups.*')
       .distinct()
+      .paginate(page, perPage)
   }
 
   async createGroupMembership(data: {
