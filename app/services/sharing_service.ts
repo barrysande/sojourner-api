@@ -46,7 +46,7 @@ export default class SharingService {
     return gemToUnshare.length
   }
 
-  async getSharedGemsForUser(userId: number): Promise<HiddenGem[]> {
+  async getSharedGemsForUser(userId: number, page: number = 1, perPage: number = 10) {
     return await HiddenGem.query()
       .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gem_id')
       .innerJoin(
@@ -56,20 +56,22 @@ export default class SharingService {
       )
       .where('share_group_members.user_id', userId)
       .where('share_group_members.status', 'active')
-      .select('hidden_gems.*')
       .preload('owner')
       .preload('photos')
+      .select('hidden_gems.*')
       .distinct()
+      .paginate(page, perPage)
   }
 
-  async getSharedGemsInGroup(shareGroupId: number): Promise<HiddenGem[]> {
+  async getSharedGemsInGroup(shareGroupId: number, page: number = 1, perPage: number = 10) {
     return await HiddenGem.query()
       .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gem_id')
       .where('shared_gems.share_group_id', shareGroupId)
-      .select('hidden_gems.*')
       .preload('owner')
       .preload('photos')
+      .select('hidden_gems.*')
       .distinct()
+      .paginate(page, perPage)
   }
 
   async canUserAccessSharedGem(userId: number, sharedGemId: number): Promise<boolean> {
@@ -97,5 +99,33 @@ export default class SharingService {
       .distinct()
 
     return userIds.map((row) => row.userId)
+  }
+
+  async getSharedGroupsForGems(
+    gemIds: number[]
+  ): Promise<Record<number, Array<{ id: number; name: string }>>> {
+    const sharedGems = await SharedGem.query()
+      .whereIn('hidden_gem_id', gemIds)
+      .preload('shareGroup', (query) => {
+        query.select('id', 'name')
+      })
+      .select('hidden_gem_id', 'share_group_id')
+
+    const result: Record<number, Array<{ id: number; name: string }>> = {}
+
+    // Initialize all gem IDs with empty arrays
+    gemIds.forEach((id) => {
+      result[id] = []
+    })
+
+    // Populate with shared groups
+    sharedGems.forEach((sharedGem) => {
+      result[sharedGem.hiddenGemId].push({
+        id: sharedGem.shareGroup.id,
+        name: sharedGem.shareGroup.name,
+      })
+    })
+
+    return result
   }
 }

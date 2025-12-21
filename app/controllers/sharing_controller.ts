@@ -9,6 +9,7 @@ import SharedGem from '#models/shared_gem'
 import ChatService from '#services/chat_service'
 import logger from '@adonisjs/core/services/logger'
 import TierService from '#services/tier_service'
+import { sharedStatusValidator } from '#validators/sharing'
 
 @inject()
 export default class SharingController {
@@ -160,14 +161,20 @@ export default class SharingController {
    * GET /api/shared-gems
    * Get all gems shared with the authenticated user
    */
-  async index({ auth, response }: HttpContext) {
+  async index({ auth, response, request }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const sharedGems = await this.sharingService.getSharedGemsForUser(user.id)
+
+      const page = request.input('page', 1)
+
+      const perPage = request.input('perPage', 10)
+
+      const sharedGems = await this.sharingService.getSharedGemsForUser(user.id, page, perPage)
 
       return response.ok({
         message: 'Shared gems retrieved successfully',
-        sharedGems: sharedGems,
+        sharedGems: sharedGems.all(),
+        meta: sharedGems.getMeta(),
         count: sharedGems.length,
       })
     } catch (error) {
@@ -181,12 +188,16 @@ export default class SharingController {
    * GET /api/share-groups/:id/gems
    * Get gems shared in a specific group
    */
-  async showGroupGems({ auth, params, response }: HttpContext) {
+  async showGroupGems({ auth, params, response, request }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
       const shareGroupId = params.id
 
       // 1. check if authenticated user is a member of group 2. check if member, show groups
+
+      const page = request.input('page', 1)
+
+      const perPage = request.input('perPage', 10)
 
       const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
       if (!isMember) {
@@ -195,16 +206,57 @@ export default class SharingController {
         })
       }
 
-      const groupSharedGems = await this.sharingService.getSharedGemsInGroup(shareGroupId)
+      const groupSharedGems = await this.sharingService.getSharedGemsInGroup(
+        shareGroupId,
+        page,
+        perPage
+      )
 
       return response.ok({
         message: 'Group shared gems retrieved successfully',
-        sharedGems: groupSharedGems,
+        sharedGems: groupSharedGems.all(),
+        meta: groupSharedGems.getMeta(),
         count: groupSharedGems.length,
       })
     } catch (error) {
       return response.internalServerError({
         message: 'Failed to retrieve group shared gems',
+      })
+    }
+  }
+
+  /**
+   * POST /api/gems/shared-status
+   * Get share groups for multiple gems
+   */
+  async sharedStatus({ auth, request, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const { gemIds } = await request.validateUsing(sharedStatusValidator)
+
+      // Verify user owns these gems
+      const userGems = await HiddenGem.query()
+        .whereIn('id', gemIds)
+        .where('user_id', user.id)
+        .select('id')
+
+      const ownedGemIds = userGems.map((g) => g.id)
+
+      const sharedStatus = await this.sharingService.getSharedGroupsForGems(ownedGemIds)
+
+      return response.ok({
+        sharedStatus,
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Validation failed',
+          errors: error.messages,
+        })
+      }
+
+      return response.internalServerError({
+        message: 'Failed to retrieve shared status',
       })
     }
   }

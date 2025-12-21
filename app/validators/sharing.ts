@@ -8,3 +8,7 @@ export const shareGemsValidator = vine.create({
 export const unshareGemsValidator = vine.create({
   gemIds: vine.array(vine.number().positive()).minLength(1).maxLength(20),
 })
+
+export const sharedStatusValidator = vine.create({
+  gemIds: vine.array(vine.number().positive()),
+})

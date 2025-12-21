@@ -151,6 +151,7 @@ router
     router.delete('/share-groups/:id/gems', [SharingController, 'destroy'])
     router.get('/shared-gems', [SharingController, 'index'])
     router.get('/share-groups/:id/gems', [SharingController, 'showGroupGems'])
+    router.post('/gems/shared-status', [SharingController, 'sharedStatus'])
   })
   .prefix('/api')
   .use(middleware.auth())
