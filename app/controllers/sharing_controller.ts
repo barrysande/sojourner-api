@@ -89,13 +89,12 @@ export default class SharingController {
 
       return response.created({
         message: `Successfully shared ${gemIds.length} gem(s) with the group`,
-        sharedGems: result.sharedGems,
+        // sharedGems: result.sharedGems,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
-          errors: error.messages,
         })
       }
 
@@ -226,7 +225,6 @@ export default class SharingController {
   }
 
   /**
-   * POST /api/gems/shared-status
    * Get share groups for multiple gems
    */
   async sharedStatus({ auth, request, response }: HttpContext) {

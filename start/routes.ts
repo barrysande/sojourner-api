@@ -131,6 +131,7 @@ router
   .group(() => {
     router.get('/share-groups', [ShareGroupsController, 'index'])
     router.post('/share-groups', [ShareGroupsController, 'store'])
+    router.get('/share-groups/minimal', [ShareGroupsController, 'minimalShareGroups'])
     router.get('/share-groups/:id', [ShareGroupsController, 'show'])
     router.post('/share-groups/join', [ShareGroupsController, 'join'])
     router.post('/share-groups/:id/invite', [ShareGroupsController, 'invite'])
@@ -151,7 +152,7 @@ router
     router.delete('/share-groups/:id/gems', [SharingController, 'destroy'])
     router.get('/shared-gems', [SharingController, 'index'])
     router.get('/share-groups/:id/gems', [SharingController, 'showGroupGems'])
-    router.post('/gems/shared-status', [SharingController, 'sharedStatus'])
+    router.post('/shared-gems/shared-status', [SharingController, 'sharedStatus'])
   })
   .prefix('/api')
   .use(middleware.auth())

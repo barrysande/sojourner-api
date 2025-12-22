@@ -373,4 +373,21 @@ export default class ShareGroupsController {
       })
     }
   }
+
+  async minimalShareGroups({ auth, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+
+      const shareGroups = await this.shareGroupService.getUserShareGroupsMinimal(user.id)
+
+      return response.ok({
+        message: 'Minimal share groups retrieved successfully',
+        shareGroups,
+      })
+    } catch (error) {
+      return response.internalServerError({
+        message: 'Failed to retrieve share groups',
+      })
+    }
+  }
 }

@@ -253,4 +253,14 @@ export default class ShareGroupService {
       .where('share_group_id', shareGroupId)
       .first()
   }
+
+  async getUserShareGroupsMinimal(userId: number) {
+    return await ShareGroup.query()
+      .innerJoin('share_group_members', 'share_groups.id', 'share_group_members.share_group_id')
+      .where('share_group_members.user_id', userId)
+      .where('share_group_members.status', 'active')
+      .where('share_groups.status', 'active')
+      .select('share_groups.id', 'share_groups.name')
+      .distinct()
+  }
 }
