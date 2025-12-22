@@ -47,7 +47,7 @@ export default class SharingService {
   }
 
   async getSharedGemsForUser(userId: number, page: number = 1, perPage: number = 10) {
-    return await HiddenGem.query()
+    const gems = await HiddenGem.query()
       .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gem_id')
       .innerJoin(
         'share_group_members',
@@ -57,10 +57,15 @@ export default class SharingService {
       .where('share_group_members.user_id', userId)
       .where('share_group_members.status', 'active')
       .preload('owner')
-      .preload('photos')
+      .preload('photos', (query) => {
+        query.orderBy('isPrimary', 'desc')
+        query.orderBy('createdAt', 'asc')
+      })
       .select('hidden_gems.*')
       .distinct()
       .paginate(page, perPage)
+
+    return gems
   }
 
   async getSharedGemsInGroup(shareGroupId: number, page: number = 1, perPage: number = 10) {
@@ -74,8 +79,8 @@ export default class SharingService {
       .paginate(page, perPage)
   }
 
-  async canUserAccessSharedGem(userId: number, sharedGemId: number): Promise<boolean> {
-    const sharedGem = await SharedGem.query().where('id', sharedGemId).first()
+  async canUserAccessSharedGem(userId: number, hiddenGemId: number): Promise<boolean> {
+    const sharedGem = await SharedGem.query().where('hidden_gem_id', hiddenGemId).first()
 
     if (!sharedGem) {
       return false
@@ -127,5 +132,14 @@ export default class SharingService {
     })
 
     return result
+  }
+
+  async getSharedGemsInGroupMinimal(shareGroupId: number, page: number = 1, perPage: number = 10) {
+    return await HiddenGem.query()
+      .innerJoin('shared_gems', 'hidden_gems.id', 'shared_gems.hidden_gem_id')
+      .where('shared_gems.share_group_id', shareGroupId)
+      .select('hidden_gems.id', 'hidden_gems.name', 'hidden_gems.location')
+      .distinct()
+      .paginate(page, perPage)
   }
 }

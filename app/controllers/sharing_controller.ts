@@ -9,6 +9,7 @@ import SharedGem from '#models/shared_gem'
 import ChatService from '#services/chat_service'
 import logger from '@adonisjs/core/services/logger'
 import TierService from '#services/tier_service'
+import ImageProcessingService from '#services/image_processing_service'
 import { sharedStatusValidator } from '#validators/sharing'
 
 @inject()
@@ -18,7 +19,8 @@ export default class SharingController {
     protected shareGroupService: ShareGroupService,
     protected notificationService: NotificationService,
     protected chatService: ChatService,
-    protected tierService: TierService
+    protected tierService: TierService,
+    protected imageProcessingService: ImageProcessingService
   ) {}
 
   /**
@@ -163,17 +165,25 @@ export default class SharingController {
   async index({ auth, response, request }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-
       const page = request.input('page', 1)
-
       const perPage = request.input('perPage', 10)
 
       const sharedGems = await this.sharingService.getSharedGemsForUser(user.id, page, perPage)
 
+      const serialized = sharedGems.serialize()
+      const gemsWithUrls = await Promise.all(
+        serialized.data.map(async (gem) => ({
+          ...gem,
+          photos: await this.imageProcessingService.getPhotoUrls(
+            sharedGems.all().find((g) => g.id === gem.id)?.photos || []
+          ),
+        }))
+      )
+
       return response.ok({
         message: 'Shared gems retrieved successfully',
-        sharedGems: sharedGems.all(),
-        meta: sharedGems.getMeta(),
+        sharedGems: gemsWithUrls,
+        meta: serialized.meta,
         count: sharedGems.length,
       })
     } catch (error) {
@@ -224,6 +234,47 @@ export default class SharingController {
     }
   }
 
+  async showSharedGem({ auth, params, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const gemId = params.id
+
+      const hasAccess = await this.sharingService.canUserAccessSharedGem(user.id, gemId)
+      if (!hasAccess) {
+        return response.forbidden({
+          message: 'You do not have access to this shared gem',
+        })
+      }
+
+      const gem = await HiddenGem.query()
+        .where('id', gemId)
+        .preload('photos', (query) => {
+          query.orderBy('isPrimary', 'desc')
+          query.orderBy('createdAt', 'asc')
+        })
+        .preload('owner')
+        .preload('expenses')
+        .preload('postVisitNotes')
+        .firstOrFail()
+
+      const photosWithUrls = await this.imageProcessingService.getPhotoUrls(gem.photos)
+
+      return response.ok({
+        gem,
+        photos: photosWithUrls,
+      })
+    } catch (error) {
+      if (error.code === 'E_ROW_NOT_FOUND') {
+        return response.notFound({
+          message: 'Shared gem not found',
+        })
+      }
+      return response.internalServerError({
+        message: 'Failed to retrieve shared gem',
+      })
+    }
+  }
+
   /**
    * Get share groups for multiple gems
    */
@@ -255,6 +306,38 @@ export default class SharingController {
 
       return response.internalServerError({
         message: 'Failed to retrieve shared status',
+      })
+    }
+  }
+
+  async showGroupGemsMinimal({ auth, params, response, request }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+      const shareGroupId = params.id
+      const page = request.input('page', 1)
+      const perPage = request.input('perPage', 10)
+
+      const isMember = await this.shareGroupService.isUserGroupMember(user.id, shareGroupId)
+      if (!isMember) {
+        return response.forbidden({
+          message: 'You are not a member of this share group',
+        })
+      }
+
+      const groupSharedGems = await this.sharingService.getSharedGemsInGroupMinimal(
+        shareGroupId,
+        page,
+        perPage
+      )
+
+      return response.ok({
+        message: 'Group shared gems retrieved successfully',
+        sharedGems: groupSharedGems.all(),
+        meta: groupSharedGems.getMeta(),
+      })
+    } catch (error) {
+      return response.internalServerError({
+        message: 'Failed to retrieve group shared gems',
       })
     }
   }
