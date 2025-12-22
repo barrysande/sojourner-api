@@ -90,7 +90,7 @@ export default class SharingController {
       }
 
       return response.created({
-        message: `Successfully shared ${gemIds.length} gem(s) with the group`,
+        message: `Successfully shared ${gemIds.length} gem${gemIds.length > 1 ? 's' : ''} with the group`,
         // sharedGems: result.sharedGems,
       })
     } catch (error) {
@@ -142,7 +142,7 @@ export default class SharingController {
       }
 
       return response.ok({
-        message: `Successfully unshared ${deletedCount} gem(s) from the group`,
+        message: `Successfully unshared ${deletedCount} gem${deletedCount > 1 ? 's' : ''} from the group`,
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
