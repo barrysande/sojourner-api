@@ -114,74 +114,83 @@ export default class ShareGroupService {
   ): Promise<InviteResult[]> {
     const results: InviteResult[] = []
 
-    // 1. Batch fetch all users by email (single query) 2. Batch fetch existing memberships (single query) 3. Create lookup maps 4. Process each email using cached data 5. Check tier permissions- tier limits and membership status 6. Construct invitation. 7. Batch create them 8. Batch create memberships 9. Batch create notifications 10. send invitation code via email.
+    // Normalize emails
     const normalizedEmails = emails.map((email) => email.toLowerCase().trim())
+
+    // Fetch users in one query
     const users = await User.query().whereIn('email', normalizedEmails)
 
+    const usersByEmail = new Map(users.map((user) => [user.email, user]))
+
+    // Fetch existing memberships in one query
     const userIds = users.map((user) => user.id)
     const existingMemberships = await ShareGroupMember.query()
       .where('share_group_id', shareGroupId)
       .whereIn('user_id', userIds)
 
-    const usersByEmail = new Map(users.map((user) => [user.email, user]))
     const membershipsByUserId = new Map(
       existingMemberships.map((membership) => [membership.userId, membership])
     )
 
-    const validInvitations = []
+    const tierService = await app.container.make('tierService')
 
-    for (const email of emails) {
-      const normalizedEmail = email.toLowerCase().trim()
-      const user = usersByEmail.get(normalizedEmail)
+    for (const email of normalizedEmails) {
+      const user = usersByEmail.get(email)
 
       if (!user) {
         results.push({ email, status: 'failed', reason: 'User not found' })
         continue
       }
 
-      const tierService = await app.container.make('tierService')
-
       const tierLimits = tierService.getTierLimits(user.tier)
       if (!tierLimits.canShare) {
-        results.push({ email, status: 'failed', reason: 'Upgrade to paid Individual Plan' })
+        results.push({
+          email,
+          status: 'failed',
+          reason: 'Upgrade to paid Individual Plan',
+        })
         continue
       }
+
       const existingMembership = membershipsByUserId.get(user.id)
-      if (existingMembership) {
-        if (existingMembership.status === 'active') {
-          results.push({ email, status: 'failed', reason: 'Already a member' })
-          continue
-        }
-        if (existingMembership.status === 'pending') {
-          results.push({ email, status: 'failed', reason: 'Already invited' })
-          continue
-        }
+
+      // Active member → block
+      if (existingMembership?.status === 'active') {
+        results.push({ email, status: 'failed', reason: 'Already a member' })
+        continue
       }
 
-      validInvitations.push({
-        userId: user.id,
-        shareGroupId,
-        invitedBy: inviterId,
-        status: 'pending' as const,
-        role: 'member' as const,
-        invitedAt: DateTime.now(),
-      })
-      results.push({ email, status: 'sent' })
-    }
-    if (validInvitations.length > 0) {
-      await ShareGroupMember.createMany(validInvitations)
+      // Pending invite → block
+      if (existingMembership?.status === 'pending') {
+        results.push({ email, status: 'failed', reason: 'Already invited' })
+        continue
+      }
 
-      const notificationData = validInvitations.map((invitation) => ({
-        userId: invitation.userId,
-        type: 'share_group_invite' as const,
+      // Re-invite after leaving OR first invite
+      await ShareGroupMember.updateOrCreate(
+        {
+          userId: user.id,
+          shareGroupId,
+        },
+        {
+          status: 'pending',
+          invitedBy: inviterId,
+          role: 'member',
+          invitedAt: DateTime.now(),
+        }
+      )
+
+      await Notification.create({
+        userId: user.id,
+        type: 'share_group_invite',
         title: 'Share Group Invitation',
         message: `You've been invited to join a share group`,
         data: { shareGroupId, inviterId },
         isRead: false,
         sentAt: DateTime.now(),
-      }))
+      })
 
-      await Notification.createMany(notificationData)
+      results.push({ email, status: 'sent' })
     }
 
     return results

@@ -16,3 +16,8 @@ export const joinShareGroupValidator = vine.create({
 export const inviteMembersValidator = vine.create({
   emails: vine.array(vine.string().email()).maxLength(19),
 })
+
+export const acceptShareGroupInviteValidator = vine.create({
+  shareGroupId: vine.number().positive(),
+  userId: vine.number().positive(),
+})

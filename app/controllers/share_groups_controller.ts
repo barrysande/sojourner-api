@@ -8,6 +8,7 @@ import {
   createShareGroupValidator,
   joinShareGroupValidator,
   inviteMembersValidator,
+  acceptShareGroupInviteValidator,
 } from '#validators/share_groups'
 import logger from '@adonisjs/core/services/logger'
 import ShareGroup from '#models/share_group'
@@ -187,16 +188,12 @@ export default class ShareGroupsController {
 
           await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
 
-          try {
-            await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
-          } catch (error) {
-            logger.error('Failed to create join system message:', error)
-          }
+          await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
 
-          return response.ok({
-            message: 'Successfully joined share group',
-            shareGroup: shareGroup,
-          })
+          // return response.ok({
+          //   message: 'Successfully joined share group',
+          //   shareGroup: shareGroup,
+          // })
         }
       }
 
@@ -212,11 +209,8 @@ export default class ShareGroupsController {
 
       await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
 
-      try {
-        await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
-      } catch (error) {
-        logger.error('Failed to create join system message:', error)
-      }
+      await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
+
       return response.ok({
         message: 'Successfully joined share group',
         shareGroup,
@@ -243,6 +237,8 @@ export default class ShareGroupsController {
       const shareGroupId = params.id
       const { emails } = await request.validateUsing(inviteMembersValidator)
       // 1. can user manage group? 2.  process invitations. 3. Check Group Capacity Check 4. Create Notification.
+
+      console.log(emails)
 
       const canUserManageGroup = await this.shareGroupService.canUserManageGroup(
         user.id,
@@ -277,11 +273,10 @@ export default class ShareGroupsController {
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Validation failed',
-          errors: error.messages,
         })
       }
 
-      logger.error('Invitation process failed:', error)
+      logger.error('Invitation process failed:', error.messages)
 
       return response.internalServerError({
         message: 'Failed to send invitations',
@@ -390,6 +385,33 @@ export default class ShareGroupsController {
     } catch (error) {
       return response.internalServerError({
         message: 'Failed to retrieve share groups',
+      })
+    }
+  }
+
+  async acceptShareGroupInvitation({ auth, request, response }: HttpContext) {
+    try {
+      const user = auth.getUserOrFail()
+
+      const { userId, shareGroupId } = await request.validateUsing(acceptShareGroupInviteValidator)
+
+      await this.shareGroupService.acceptGroupInvitation(userId, shareGroupId)
+
+      await this.notificationService.createGroupJoinedNotification(shareGroupId, user.id)
+
+      await this.chatService.createGroupJoinedSystemMessage(shareGroupId, user.id)
+
+      return response.ok({
+        message: 'Successfully joined share group',
+      })
+    } catch (error) {
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Validation failed',
+        })
+      }
+      return response.internalServerError({
+        message: 'Failed to join group',
       })
     }
   }

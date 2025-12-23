@@ -80,19 +80,14 @@ export default class SharingService {
   }
 
   async canUserAccessSharedGem(userId: number, hiddenGemId: number): Promise<boolean> {
-    const sharedGem = await SharedGem.query().where('hidden_gem_id', hiddenGemId).first()
-
-    if (!sharedGem) {
-      return false
-    }
-
-    const isMember = await ShareGroupMember.query()
-      .where('user_id', userId)
-      .where('share_group_id', sharedGem.shareGroupId)
-      .where('status', 'active')
+    const hasAccess = await ShareGroupMember.query()
+      .innerJoin('shared_gems', 'share_group_members.share_group_id', 'shared_gems.share_group_id')
+      .where('shared_gems.hidden_gem_id', hiddenGemId)
+      .where('share_group_members.user_id', userId)
+      .where('share_group_members.status', 'active')
       .first()
 
-    return !!isMember
+    return !!hasAccess
   }
 
   async getUsersWithAccessToGem(gemId: number): Promise<number[]> {

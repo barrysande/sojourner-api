@@ -157,23 +157,20 @@ export default class NotificationService {
     return await Notification.createMany(notificationData)
   }
 
-  async getUserNotifications(
-    userId: number,
-    limit: number = 20,
-    offset: number = 0
-  ): Promise<Notification[]> {
+  async getUserNotifications(userId: number, page: number = 1, perPage: number = 20) {
     return await Notification.query()
       .where('user_id', userId)
       .orderBy('sent_at', 'desc')
-      .limit(limit)
-      .offset(offset)
+      .paginate(page, perPage)
   }
 
-  async markNotificationAsRead(notificationId: number): Promise<Notification> {
-    const notification = await Notification.findOrFail(notificationId)
-    notification.isRead = true
-    await notification.save()
-    return notification
+  async markNotificationsAsRead(notificationIds: number[]): Promise<number> {
+    const updated = await Notification.query()
+      .whereIn('id', notificationIds)
+      .where('is_read', false)
+      .update({ is_read: true })
+
+    return updated.length
   }
 
   async markAllNotificationsAsRead(userId: number): Promise<number> {

@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import NotificationService from '#services/notification_service'
-import { paginationValidator } from '#validators/notification'
+import { paginationValidator, markNotificationsValidator } from '#validators/notification'
 import Notification from '#models/notification'
 
 @inject()
@@ -15,31 +15,25 @@ export default class NotificationsController {
   async index({ auth, response, request }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const { page = 1, limit = 20 } = await request.validateUsing(paginationValidator)
-      const offset = (page - 1) * limit
+      const { page = 1, perPage = 20 } = await request.validateUsing(paginationValidator)
 
       const notifications = await this.notificationService.getUserNotifications(
         user.id,
-        limit,
-        offset
+        page,
+        perPage
       )
       const unreadCount = await this.notificationService.getUnreadNotificationCount(user.id)
 
       return response.ok({
         message: 'Notifications retrieved successfully',
-        notifications,
-        pagination: {
-          page,
-          limit,
-          hasMore: notifications.length === limit,
-        },
+        ...notifications.serialize(),
         unreadCount,
       })
     } catch (error) {
+      console.log('Notification error:', error)
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Invalid pagination parameters',
-          errors: error.messages,
         })
       }
 
@@ -81,31 +75,39 @@ export default class NotificationsController {
   }
 
   /**
-   * PUT /api/notifications/:id/read
+   * PUT /api/notifications/read
    * Mark specific notification as read
    */
-  async update({ params, response, auth }: HttpContext) {
+  async update({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const notificationId = params.id
+      const { notificationIds } = await request.validateUsing(markNotificationsValidator)
 
-      //   1. check if notification belongs to user trying to mark it as read. 2. Mark it as read
-      await Notification.query().where('id', notificationId).where('user_id', user.id).firstOrFail()
+      // Verify ownership
+      const notifications = await Notification.query()
+        .whereIn('id', notificationIds)
+        .where('user_id', user.id)
 
-      await this.notificationService.markNotificationAsRead(notificationId)
+      if (notifications.length !== notificationIds.length) {
+        return response.forbidden({
+          message: 'Some notifications do not belong to you',
+        })
+      }
+
+      const updatedCount = await this.notificationService.markNotificationsAsRead(notificationIds)
 
       return response.ok({
-        message: 'Notification marked as read',
+        message: `Marked ${updatedCount} notification(s) as read`,
       })
     } catch (error) {
-      if (error.code === 'E_ROW_NOT_FOUND') {
-        return response.notFound({
-          message: 'Notification not found',
+      if (error.code === 'E_VALIDATION_ERROR') {
+        return response.badRequest({
+          message: 'Invalid notification IDs',
         })
       }
 
       return response.internalServerError({
-        message: 'Failed to mark notification as read',
+        message: 'Failed to mark notifications as read',
       })
     }
   }
