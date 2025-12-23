@@ -194,16 +194,14 @@ export default class ShareGroupService {
     const membership = await ShareGroupMember.query()
       .where('user_id', userId)
       .where('share_group_id', shareGroupId)
-      .where('status', 'pending')
+      .whereIn('status', ['pending', 'left'])
       .first()
 
     if (!membership) {
       return null
     }
 
-    membership.status = 'active'
-    membership.joinedAt = DateTime.now()
-    await membership.save()
+    await membership.merge({ status: 'active', joinedAt: DateTime.now() }).save()
 
     return membership
   }
@@ -219,8 +217,7 @@ export default class ShareGroupService {
       return null
     }
 
-    membership.status = 'left'
-    await membership.save()
+    await membership.merge({ status: 'left' }).save()
 
     return membership
   }

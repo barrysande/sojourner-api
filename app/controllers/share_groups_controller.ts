@@ -179,7 +179,10 @@ export default class ShareGroupsController {
           return response.conflict({
             message: 'You are already a member of this group',
           })
-        } else if (existingMembership.status === 'pending') {
+        } else if (
+          existingMembership.status === 'pending' ||
+          existingMembership.status === 'left'
+        ) {
           await this.shareGroupService.acceptGroupInvitation(user.id, shareGroup.id)
 
           await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
