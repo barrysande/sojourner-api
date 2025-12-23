@@ -229,8 +229,7 @@ export default class ShareGroupService {
       return null
     }
 
-    shareGroup.status = 'dissolved'
-    await shareGroup.save()
+    await shareGroup.merge({ status: 'dissolved' }).save()
 
     return shareGroup
   }
