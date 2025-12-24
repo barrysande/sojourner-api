@@ -113,20 +113,6 @@ export default class GroupSubscriptionsController {
     return response.ok(result)
   }
 
-  async removeMember({ auth, request, response }: HttpContext) {
-    const user = auth.getUserOrFail()
-
-    const payload = await request.validateUsing(removeMemberValidator)
-
-    await this.groupSubscriptionService.removeMemberFromSubscriptionGroup(
-      payload.group_subscription_id,
-      payload.user_id_to_remove,
-      user.id
-    )
-
-    return response.ok({ message: 'Member removed successfully' })
-  }
-
   async cancel({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
 
@@ -191,6 +177,20 @@ export default class GroupSubscriptionsController {
     return response.ok(result)
   }
 
+  async removeMember({ auth, request, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    const payload = await request.validateUsing(removeMemberValidator)
+
+    await this.groupSubscriptionService.removeMemberFromSubscriptionGroup(
+      payload.group_subscription_id,
+      payload.user_id_to_remove,
+      user.id
+    )
+
+    return response.ok({ message: 'Member removed successfully' })
+  }
+
   async show({ auth, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
@@ -207,11 +207,11 @@ export default class GroupSubscriptionsController {
     try {
       const user = auth.getUserOrFail()
 
-      const result = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+      const context = await this.groupSubscriptionService.resolveGroupSubscriptionContext(user.id)
 
-      return response.ok(result)
+      return response.ok(context)
     } catch {
-      return response.badRequest({ message: 'Failed to load subscription' })
+      return response.notFound({ message: 'No active group subscription found' })
     }
   }
 

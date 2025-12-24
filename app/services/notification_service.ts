@@ -4,6 +4,8 @@ import ShareGroup from '#models/share_group'
 import { DateTime } from 'luxon'
 import HiddenGem from '#models/hidden_gem'
 import ShareGroupMember from '#models/share_group_member'
+import GroupSubscription from '#models/group_subscription'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 export default class NotificationService {
   async createShareGroupInviteNotification(
@@ -155,6 +157,70 @@ export default class NotificationService {
     }))
 
     return await Notification.createMany(notificationData)
+  }
+
+  async createSubscriptionJoinNotification(
+    groupSubscriptionId: number,
+    newUserId: number,
+    trx: TransactionClientContract
+  ): Promise<Notification> {
+    const newUser = await User.findOrFail(newUserId)
+
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('id', groupSubscriptionId)
+      .first()
+
+    const subscriptionOwner = await User.findOrFail(groupSubscription?.ownerUserId, { client: trx })
+
+    const notiification = await Notification.create(
+      {
+        userId: newUser.id,
+        type: 'group_joined',
+        title: 'Group Subscription Joined',
+        message: `Successfully joined ${subscriptionOwner.fullName}'s group subscription`,
+        data: {
+          newUserId: newUserId,
+          groupSubscriptionId: groupSubscriptionId,
+        },
+        isRead: false,
+        sentAt: DateTime.now(),
+      },
+      { client: trx }
+    )
+
+    return notiification
+  }
+
+  async createSubscriptionRemovedNotification(
+    groupSubscriptionId: number,
+    removedMemberId: number,
+    trx: TransactionClientContract
+  ): Promise<Notification> {
+    const newUser = await User.findOrFail(removedMemberId)
+
+    const groupSubscription = await GroupSubscription.query({ client: trx })
+      .where('id', groupSubscriptionId)
+      .first()
+
+    const subscriptionOwner = await User.findOrFail(groupSubscription?.ownerUserId, { client: trx })
+
+    const notiification = await Notification.create(
+      {
+        userId: newUser.id,
+        type: 'group_left',
+        title: 'Group Subscription Removal',
+        message: `Removed from ${subscriptionOwner.fullName}'s group subscription`,
+        data: {
+          removedMemberId: removedMemberId,
+          groupSubscriptionId: groupSubscriptionId,
+        },
+        isRead: false,
+        sentAt: DateTime.now(),
+      },
+      { client: trx }
+    )
+
+    return notiification
   }
 
   async getUserNotifications(userId: number, page: number = 1, perPage: number = 20) {

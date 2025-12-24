@@ -26,16 +26,25 @@ import SubscriptionConflictException from '#exceptions/subscription_conflict_exc
 import type { Infer } from '@vinejs/vine/types'
 import { Exception } from '@adonisjs/core/exceptions'
 import { Subscription } from 'dodopayments/resources/subscriptions.mjs'
+import NotificationService from './notification_service.js'
 
 type CreateGroupPayload = Infer<typeof createGroupSubscriptionValidator>
 type PlanType = 'monthly' | 'quarterly' | 'annual'
+
+type GroupSubscriptionRole = 'owner' | 'member'
+
+interface GroupSubscriptionContext {
+  subscription: GroupSubscription
+  role: GroupSubscriptionRole
+}
 
 @inject()
 export class GroupSubscriptionService {
   constructor(
     protected tierService: TierService,
     protected gracePeriodService: GracePeriodService,
-    protected dodoPaymentService: DodoPaymentService
+    protected dodoPaymentService: DodoPaymentService,
+    protected notificationService: NotificationService
   ) {}
 
   /**
@@ -179,7 +188,7 @@ export class GroupSubscriptionService {
         throw new ConflictException(canJoin.reason!)
       }
 
-      const groupSubscription = await GroupSubscription.query()
+      const groupSubscription = await GroupSubscription.query({ client: trx })
         .where('invite_code', inviteCode.toUpperCase())
         .where('status', 'active')
         .where('invite_code_expires_at', '>', DateTime.now().toSQL())
@@ -189,7 +198,6 @@ export class GroupSubscriptionService {
       const memberCount = await GroupSubscriptionMember.query({ client: trx })
         .where('group_subscription_id', groupSubscription.id)
         .where('status', 'active')
-        .forUpdate()
         .count('* as total')
 
       if (Number(memberCount[0].$extras.total) >= groupSubscription.totalSeats) {
@@ -217,10 +225,11 @@ export class GroupSubscriptionService {
         groupSubscriptionId: groupSubscription.id,
       })
 
-      logger.info('User joined group subscription', {
+      await this.notificationService.createSubscriptionJoinNotification(
+        groupSubscription.id,
         userId,
-        groupSubscriptionId: groupSubscription.id,
-      })
+        trx
+      )
 
       return groupSubscription
     })
@@ -283,11 +292,11 @@ export class GroupSubscriptionService {
         }
       )
 
-      logger.info('Member removed from group subscription', {
-        groupSubscriptionId,
-        removedUserId: userIdToRemove,
-        removedBy: removedByUserId,
-      })
+      await this.notificationService.createSubscriptionRemovedNotification(
+        groupSubscription.id,
+        userIdToRemove,
+        trx
+      )
     })
   }
 
@@ -560,6 +569,30 @@ export class GroupSubscriptionService {
       .first()
 
     return membership?.groupSubscription || null
+  }
+
+  /**
+   * Get group subscription for group subscription members
+   * Returns null if user doesn't own any active group subscription
+   * @params userId: number
+   */
+  async resolveGroupSubscriptionContext(userId: number): Promise<GroupSubscriptionContext> {
+    const subscription = await GroupSubscription.query()
+      .where('status', 'active')
+      .where('expires_at', '>', DateTime.now().toSQL())
+      .where((query) => {
+        query.where('owner_user_id', userId).orWhereHas('members', (memberQuery) => {
+          memberQuery.where('user_id', userId).where('status', 'active')
+        })
+      })
+      .preload('owner')
+      .preload('members', (q) => q.where('status', 'active'))
+      .firstOrFail()
+
+    const role: GroupSubscriptionRole =
+      Number(subscription.ownerUserId) === Number(userId) ? 'owner' : 'member'
+
+    return { subscription, role }
   }
 
   /**
