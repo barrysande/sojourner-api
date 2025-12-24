@@ -227,7 +227,6 @@ router
     router.get('/products/change-subscription', [ProductsSyncController, 'index'])
     router.get('/group/seats', [GroupSubscriptionsController, 'getSeatsInfo'])
   })
-
   .prefix('api/subscriptions')
   .use(middleware.auth())
 /*

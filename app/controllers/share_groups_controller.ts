@@ -158,54 +158,47 @@ export default class ShareGroupsController {
       const user = auth.getUserOrFail()
       const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
 
-      // 1. Find share group by invite code 2. Check tier permissions 3. Check group capacity 4. Check if user has an active membership - refuse if active, accept by calling acceptGroupInvitation which add the user to group 4. create notification 5. create system chat joined notification.
       const shareGroup = await this.shareGroupService.getShareGroupByInviteCode(inviteCode)
       if (!shareGroup) {
-        return response.badRequest({
-          message: 'Invalid invite code',
-        })
+        return response.badRequest({ message: 'Invalid invite code' })
       }
 
       const canJoin = await this.tierService.canJoinShareGroup(user.id)
       if (!canJoin.canJoin) {
-        return response.forbidden({
-          message: canJoin.message,
-        })
+        return response.forbidden({ message: canJoin.message })
       }
 
       const existingMembership = await this.shareGroupService.findMembership(user.id, shareGroup.id)
 
-      if (existingMembership) {
-        if (existingMembership.status === 'active') {
-          return response.conflict({
-            message: 'You are already a member of this group',
-          })
-        } else if (
-          existingMembership.status === 'pending' ||
-          existingMembership.status === 'left'
-        ) {
-          await this.shareGroupService.acceptGroupInvitation(user.id, shareGroup.id)
-
-          await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
-
-          await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
-
-          // return response.ok({
-          //   message: 'Successfully joined share group',
-          //   shareGroup: shareGroup,
-          // })
-        }
+      // Already active -> refuse
+      if (existingMembership?.status === 'active') {
+        return response.conflict({
+          message: 'You are already a member of this group',
+        })
       }
 
-      await this.shareGroupService.createGroupMembership({
-        shareGroupId: shareGroup.id,
-        userId: user.id,
-        invitedBy: shareGroup.createdBy,
-        status: 'active',
-        role: 'member',
-        invitedAt: DateTime.now(),
-        joinedAt: DateTime.now(),
-      })
+      // Pending invitation -> accept
+      if (existingMembership?.status === 'pending') {
+        await this.shareGroupService.acceptGroupInvitation(user.id, shareGroup.id)
+      }
+
+      // Previously left -> rejoin explicitly
+      if (existingMembership?.status === 'left') {
+        await this.shareGroupService.rejoinGroup(user.id, shareGroup.id)
+      }
+
+      // No membership -> create fresh active membership
+      if (!existingMembership) {
+        await this.shareGroupService.createGroupMembership({
+          shareGroupId: shareGroup.id,
+          userId: user.id,
+          invitedBy: shareGroup.createdBy,
+          status: 'active',
+          role: 'member',
+          invitedAt: DateTime.now(),
+          joinedAt: DateTime.now(),
+        })
+      }
 
       await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
 

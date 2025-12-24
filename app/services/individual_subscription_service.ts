@@ -159,12 +159,12 @@ export default class IndividualSubscriptionService {
     return dodoResponse
   }
 
-  async getIndividualSubscriptionDetails(userId: number): Promise<IndividualSubscription | null> {
+  async getIndividualSubscriptionDetails(userId: number): Promise<IndividualSubscription> {
     return await IndividualSubscription.query()
       .where('user_id', userId)
       .where('status', 'active')
       .where('expires_at', '>', DateTime.now().toSQL())
-      .first()
+      .firstOrFail()
   }
 
   /**

@@ -57,13 +57,19 @@ export default class IndividualSubscriptionsController {
   }
 
   async show({ auth, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    try {
+      const user = auth.getUserOrFail()
 
-    const result = await this.individualSubscriptionService.getIndividualSubscriptionDetails(
-      user.id
-    )
+      const result = await this.individualSubscriptionService.getIndividualSubscriptionDetails(
+        user.id
+      )
 
-    return response.ok(result)
+      return response.ok(result)
+    } catch {
+      return response.badRequest({
+        message: 'Failed to load subscription',
+      })
+    }
   }
 
   async getCustomerPortalLink({ auth, response }: HttpContext) {

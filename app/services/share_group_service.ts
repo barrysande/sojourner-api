@@ -203,14 +203,19 @@ export default class ShareGroupService {
     const membership = await ShareGroupMember.query()
       .where('user_id', userId)
       .where('share_group_id', shareGroupId)
-      .whereIn('status', ['pending', 'left'])
+      .where('status', 'pending')
       .first()
 
     if (!membership) {
       return null
     }
 
-    await membership.merge({ status: 'active', joinedAt: DateTime.now() }).save()
+    await membership
+      .merge({
+        status: 'active',
+        joinedAt: DateTime.now(),
+      })
+      .save()
 
     return membership
   }
@@ -267,5 +272,25 @@ export default class ShareGroupService {
       .where('share_groups.status', 'active')
       .select('share_groups.id', 'share_groups.name')
       .distinct()
+  }
+
+  async rejoinGroup(userId: number, shareGroupId: number): Promise<ShareGroupMember> {
+    const membership = await ShareGroupMember.query()
+      .where('user_id', userId)
+      .where('share_group_id', shareGroupId)
+      .firstOrFail()
+
+    if (membership.status !== 'left') {
+      throw new Error(`Invalid rejoin attempt from status "${membership.status}"`)
+    }
+
+    await membership
+      .merge({
+        status: 'active',
+        joinedAt: DateTime.now(),
+      })
+      .save()
+
+    return membership
   }
 }

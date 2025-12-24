@@ -114,7 +114,7 @@ export default class GroupSubscriptionsController {
   }
 
   async removeMember({ auth, request, response }: HttpContext) {
-    const user = await auth.getUserOrFail()
+    const user = auth.getUserOrFail()
 
     const payload = await request.validateUsing(removeMemberValidator)
 
@@ -165,10 +165,17 @@ export default class GroupSubscriptionsController {
   }
 
   async listMembers({ auth, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    try {
+      const user = await auth.getUserOrFail()
 
-    const members = await this.groupSubscriptionService.listGroupSubscriptionMembers(user.id)
-    return response.ok({ members })
+      const members = await this.groupSubscriptionService.listGroupSubscriptionMembers(user.id)
+
+      return response.ok({ members })
+    } catch (error) {
+      return response.internalServerError({
+        message: 'Failed to load members',
+      })
+    }
   }
 
   async join({ auth, request, response }: HttpContext) {
@@ -185,19 +192,27 @@ export default class GroupSubscriptionsController {
   }
 
   async show({ auth, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    try {
+      const user = auth.getUserOrFail()
 
-    const result = await this.groupSubscriptionService.getActiveGroupMembership(user.id)
+      const result = await this.groupSubscriptionService.getActiveGroupMembership(user.id)
 
-    return response.ok(result)
+      return response.ok(result)
+    } catch {
+      return response.badRequest({ message: 'Failed to load subscription' })
+    }
   }
 
   async getBillingDetails({ auth, response }: HttpContext) {
-    const user = auth.getUserOrFail()
+    try {
+      const user = auth.getUserOrFail()
 
-    const result = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
+      const result = await this.groupSubscriptionService.getOwnedGroupSubscription(user.id)
 
-    return response.ok(result)
+      return response.ok(result)
+    } catch {
+      return response.badRequest({ message: 'Failed to load subscription' })
+    }
   }
 
   async getCustomerPortalLink({ auth, response }: HttpContext) {

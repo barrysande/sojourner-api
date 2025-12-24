@@ -575,15 +575,7 @@ export class GroupSubscriptionService {
       .firstOrFail()
   }
 
-  async listGroupSubscriptionMembers(ownerUserId: number): Promise<
-    {
-      id: number
-      email: string
-      name: string
-      joined_at: string | null
-      is_owner: boolean
-    }[]
-  > {
+  async listGroupSubscriptionMembers(ownerUserId: number) {
     const groupSubscription = await GroupSubscription.query()
       .where('owner_user_id', ownerUserId)
       .where('status', 'active')
@@ -592,17 +584,19 @@ export class GroupSubscriptionService {
           userQuery.select('id', 'email', 'full_name')
         })
       })
-      .firstOrFail()
+      .first() // ← NOT firstOrFail
 
-    const members = groupSubscription.members.map((member) => ({
+    if (!groupSubscription) {
+      return []
+    }
+
+    return groupSubscription.members.map((member) => ({
       id: member.user.id,
       email: member.user.email,
       name: member.user.fullName,
-      joined_at: member.joinedAt.toISO(),
-      is_owner: member.userId === groupSubscription.ownerUserId ? true : false,
+      joined_at: member.joinedAt?.toISO() ?? null,
+      is_owner: member.userId === groupSubscription.ownerUserId,
     }))
-
-    return members
   }
 
   async handleSubscriptionActive(
