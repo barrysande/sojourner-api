@@ -150,32 +150,40 @@ export default class GracePeriodService {
   }
 
   /**
-   * Remove user from all share groups
+   * Remove user from excess sharegroups with tier limits being the source of truth.
    * Updates membership status to 'left'
    *
    * @param userId - User to remove from groups
    * @param trx - Database transaction
    * @returns Number of groups removed from
    */
-  private async removeFromAllShareGroups(
+  private async removeFromExcessShareGroups(
     userId: number,
     trx: TransactionClientContract
   ): Promise<number> {
+    const limits = this.tierService.getTierLimits('free')
+
+    const freeShareGroupLimits = limits.maxShareGroups
+
     const activeMemberships = await ShareGroupMember.query({ client: trx })
       .where('user_id', userId)
       .where('status', 'active')
       .forUpdate()
 
-    for (const membership of activeMemberships) {
+    const membershipsToRemove = activeMemberships.slice(freeShareGroupLimits)
+
+    for (const membership of membershipsToRemove) {
       await membership.useTransaction(trx).merge({ status: 'left' }).save()
     }
 
     logger.info('User removed from share groups', {
       userId,
-      groupCount: activeMemberships.length,
+      removedCount: membershipsToRemove.length,
+      retainedCount: Math.min(3, activeMemberships.length),
+      totalFound: activeMemberships.length,
     })
 
-    return activeMemberships.length
+    return membershipsToRemove.length
   }
 
   /**
@@ -299,7 +307,7 @@ export default class GracePeriodService {
     const lockedGems = await this.lockExcessGems(userId, trx)
 
     // 3. Remove user from share group(s)
-    const removeFromAllShareGroups = await this.removeFromAllShareGroups(userId, trx)
+    const removeFromExcessShareGroups = await this.removeFromExcessShareGroups(userId, trx)
 
     // 4. Resolve grace period
     const gracePeriod = await GracePeriod.query({ client: trx })
@@ -324,7 +332,7 @@ export default class GracePeriodService {
         gracePeriodType: gracePeriod?.type,
         deletedPhotos,
         lockedGems,
-        removeFromAllShareGroups,
+        removeFromExcessShareGroups,
       }
     )
 
@@ -332,7 +340,7 @@ export default class GracePeriodService {
       userId,
       deletedPhotos,
       lockedGems,
-      removeFromAllShareGroups,
+      removeFromExcessShareGroups,
     })
   }
 
