@@ -247,31 +247,27 @@ export class GroupSubscriptionService {
    * @param userId - User to remove
    */
   async removeMemberFromSubscriptionGroup(
-    groupSubscriptionId: number,
-    userIdToRemove: number,
-    removedByUserId: number
+    removedByUserId: number,
+    userIdToRemove: number
   ): Promise<void> {
     await db.transaction(async (trx) => {
       const groupSubscription = await GroupSubscription.query({ client: trx })
-        .where('id', groupSubscriptionId)
+        .where('ownerUserId', removedByUserId)
         .where('status', 'active')
         .forUpdate()
         .firstOrFail()
-
-      if (groupSubscription.ownerUserId !== removedByUserId) {
-        throw new ActionDeniedException('Only the owner can remove members from the group.')
-      }
 
       if (groupSubscription.ownerUserId === userIdToRemove) {
         throw new OwnerRemovalException()
       }
 
       const membership = await GroupSubscriptionMember.query({ client: trx })
-        .where('group_subscription_id', groupSubscriptionId)
+        .where('group_subscription_id', groupSubscription.id)
         .where('user_id', userIdToRemove)
         .where('status', 'active')
         .forUpdate()
         .firstOrFail()
+
       await membership.useTransaction(trx).merge({ status: 'removed' }).save()
 
       await this.gracePeriodService.startGracePeriod(
@@ -287,7 +283,7 @@ export class GroupSubscriptionService {
         'manual',
         trx,
         {
-          group_subscription_id: groupSubscriptionId,
+          group_subscription_id: groupSubscription.id,
           removed_by_user_id: removedByUserId,
           grace_period_days: 7,
         }
@@ -495,35 +491,36 @@ export class GroupSubscriptionService {
    * Old code becomes invalid, new code expires in 30 days
    * Try generating random code up to 10 times if it is unique, save and return it, if it is not throw an error.
    */
-  async regenerateInviteCode(
-    groupSubscriptionId: number,
+  async regenerateInviteCodeForOwner(
     requestingUserId: number
-  ): Promise<string> {
+  ): Promise<{ inviteCode: string; expiresAt: DateTime }> {
     return await db.transaction(async (trx) => {
       const groupSubscription = await GroupSubscription.query({ client: trx })
-        .where('id', groupSubscriptionId)
+        .where('ownerUserId', requestingUserId)
+        .where('status', 'active')
         .forUpdate()
         .firstOrFail()
 
-      if (groupSubscription.ownerUserId !== requestingUserId) {
-        throw new ActionDeniedException('Only the owner can regenerate the invite code')
-      }
-
       const newInviteCode = await this.generateInviteCode()
-      const newInviteCodeExpiresAt = DateTime.now().plus({ days: 30 })
+      const expiresAt = DateTime.now().plus({ days: 30 })
 
       await groupSubscription
         .useTransaction(trx)
-        .merge({ inviteCode: newInviteCode, inviteCodeExpiresAt: newInviteCodeExpiresAt })
+        .merge({
+          inviteCode: newInviteCode,
+          inviteCodeExpiresAt: expiresAt,
+        })
         .save()
 
       logger.info('Invite code regenerated', {
-        groupSubscriptionId,
-        newInviteCode,
+        groupSubscriptionId: groupSubscription.id,
         requestedBy: requestingUserId,
       })
 
-      return newInviteCode
+      return {
+        inviteCode: newInviteCode,
+        expiresAt,
+      }
     })
   }
 
@@ -615,22 +612,16 @@ export class GroupSubscriptionService {
       .where('status', 'active')
       .preload('members', (query) => {
         query.where('status', 'active').preload('user', (userQuery) => {
-          userQuery.select('id', 'email', 'full_name')
+          userQuery.select('id', 'full_name')
         })
       })
-      .first() // ← NOT firstOrFail
+      .first()
 
     if (!groupSubscription) {
       return []
     }
 
-    return groupSubscription.members.map((member) => ({
-      id: member.user.id,
-      email: member.user.email,
-      name: member.user.fullName,
-      joined_at: member.joinedAt?.toISO() ?? null,
-      is_owner: member.userId === groupSubscription.ownerUserId,
-    }))
+    return groupSubscription.members
   }
 
   async handleSubscriptionActive(

@@ -50,9 +50,13 @@ export default class ShareGroupsController {
   async store({ auth, request, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const { name, inviteEmails } = await request.validateUsing(createShareGroupValidator)
+      const { name, inviteEmails: rawInviteEmails } =
+        await request.validateUsing(createShareGroupValidator)
+
+      const inviteEmails = rawInviteEmails ?? []
 
       // 1. check if user can create share groups 2. check if number of to-be members is within tier limits 3. generate invite code 4. create share group 5. create group membership 6. Create Chat room 7. process the invitations
+
       const canCreate = await this.tierService.canCreateShareGroup(user.id)
 
       if (!canCreate.canCreate) {

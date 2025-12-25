@@ -321,7 +321,6 @@ export const joinGroupValidator = vine.create({
 
 export const removeMemberValidator = vine.create({
   user_id_to_remove: vine.number().positive(),
-  group_subscription_id: vine.number().positive(),
 })
 
 export const changeSeatsValidator = vine.create({

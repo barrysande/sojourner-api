@@ -1,13 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import { GroupSubscriptionService } from '#services/group_subscription_service'
-import { DateTime } from 'luxon'
 import {
   createGroupSubscriptionValidator,
   joinGroupValidator,
   removeMemberValidator,
   changeSeatsValidator,
-  regenerateInviteCodeValidator,
   changeGroupPlanValidator,
 } from '#validators/subscription'
 import { Exception } from '@adonisjs/core/exceptions'
@@ -134,19 +132,15 @@ export default class GroupSubscriptionsController {
     return response.ok(result)
   }
 
-  async regenerateInviteCode({ auth, request, response }: HttpContext) {
+  async regenerateInviteCode({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
 
-    const payload = await request.validateUsing(regenerateInviteCodeValidator)
-
-    const newInviteCode = await this.groupSubscriptionService.regenerateInviteCode(
-      payload.group_subscription_id,
-      user.id
-    )
+    const { inviteCode, expiresAt } =
+      await this.groupSubscriptionService.regenerateInviteCodeForOwner(user.id)
 
     return response.ok({
-      invite_code: newInviteCode,
-      expires_at: DateTime.now().plus({ days: 30 }).toISO(),
+      invite_code: inviteCode,
+      expires_at: expiresAt.toISO(),
     })
   }
 
@@ -183,9 +177,8 @@ export default class GroupSubscriptionsController {
     const payload = await request.validateUsing(removeMemberValidator)
 
     await this.groupSubscriptionService.removeMemberFromSubscriptionGroup(
-      payload.group_subscription_id,
-      payload.user_id_to_remove,
-      user.id
+      user.id,
+      payload.user_id_to_remove
     )
 
     return response.ok({ message: 'Member removed successfully' })
