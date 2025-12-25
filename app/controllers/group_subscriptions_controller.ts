@@ -152,7 +152,7 @@ export default class GroupSubscriptionsController {
 
   async listMembers({ auth, response }: HttpContext) {
     try {
-      const user = await auth.getUserOrFail()
+      const user = auth.getUserOrFail()
 
       const members = await this.groupSubscriptionService.listGroupSubscriptionMembers(user.id)
 

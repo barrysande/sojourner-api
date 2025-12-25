@@ -188,10 +188,6 @@ export class AlreadySubscribedToPlanError extends Exception {
 export class UserAlreadyInGroupException extends Exception {
   static status = 409
   static code = 'E_USER_ALREADY_IN_GROUP'
-
-  constructor() {
-    super('You are already an active member of this group.')
-  }
 }
 
 export class OwnerRemovalException extends Exception {

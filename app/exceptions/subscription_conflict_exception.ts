@@ -11,3 +11,8 @@ export default class SubscriptionConflictException extends Exception {
     })
   }
 }
+
+export class GroupSubscriptionFullException extends Exception {
+  static status = 409
+  static code = 'E_SUBSCRIPTION_FULL'
+}

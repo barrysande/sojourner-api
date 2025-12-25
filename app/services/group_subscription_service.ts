@@ -27,6 +27,7 @@ import type { Infer } from '@vinejs/vine/types'
 import { Exception } from '@adonisjs/core/exceptions'
 import { Subscription } from 'dodopayments/resources/subscriptions.mjs'
 import NotificationService from './notification_service.js'
+import { GroupSubscriptionFullException } from '#exceptions/subscription_conflict_exception'
 
 type CreateGroupPayload = Infer<typeof createGroupSubscriptionValidator>
 type PlanType = 'monthly' | 'quarterly' | 'annual'
@@ -201,7 +202,7 @@ export class GroupSubscriptionService {
         .count('* as total')
 
       if (Number(memberCount[0].$extras.total) >= groupSubscription.totalSeats) {
-        throw new Error('This group is full')
+        throw new GroupSubscriptionFullException('Seats fully occupied.')
       }
 
       try {
@@ -216,7 +217,7 @@ export class GroupSubscriptionService {
         )
       } catch (error) {
         if (error.code === '23505') {
-          throw new UserAlreadyInGroupException()
+          throw new UserAlreadyInGroupException('You are already an active member of this group.')
         }
         throw error
       }
