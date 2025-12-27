@@ -126,7 +126,7 @@ export default class TierService {
         canAdd: false,
         currentCount,
         limit: limits.maxPhotosPerGem,
-        message: `Photo limit reached. ${user.tier} tier allows maximum ${limits.maxPhotosPerGem} photos per gem.`,
+        message: `Photo limit reached, ${user.tier} tier allows maximum ${limits.maxPhotosPerGem} photos per gem.`,
       }
     }
     return {

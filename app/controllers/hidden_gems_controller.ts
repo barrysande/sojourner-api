@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
-import { fileUploadValidator, updateGemValidator } from '#validators/file_upload'
+import { createGemValidator, updateGemValidator } from '#validators/file_upload'
 import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
 import TierService from '#services/tier_service'
@@ -107,7 +107,7 @@ export default class HiddenGemsController {
   async store({ request, response, auth }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
-      const data = await request.validateUsing(fileUploadValidator)
+      const data = await request.validateUsing(createGemValidator)
       const photos = request.files('photos', {
         size: '10mb',
         extnames: ['jpg', 'jpeg', 'png', 'webp'],

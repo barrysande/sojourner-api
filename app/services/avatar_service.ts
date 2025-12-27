@@ -7,7 +7,7 @@ import User from '#models/user'
 
 export default class AvatarService {
   private readonly ALLOWED_SUBTYPES = ['jpeg', 'jpg', 'png', 'webp']
-  private readonly MAX_FILE_SIZE = 5 * 1024 * 1024
+  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024
   private readonly AVATAR_SIZE = 400
 
   /**
