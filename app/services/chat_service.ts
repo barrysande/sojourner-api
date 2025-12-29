@@ -11,7 +11,13 @@ export default class ChatService {
   private readonly MAX_MESSAGE_LENGTH = 2000
 
   async createChatRoomForGroup(shareGroupId: number): Promise<ChatRoom> {
-    return await ChatRoom.create({ shareGroupId, lastActivityAt: DateTime.now() })
+    const shareGroup = await ShareGroup.findOrFail(shareGroupId)
+
+    return await ChatRoom.create({
+      shareGroupId,
+      lastActivityAt: DateTime.now(),
+      roomName: `${shareGroup.name} Chat`,
+    })
   }
 
   async getChatRoomByGroupId(shareGroupId: number): Promise<ChatRoom | null> {
@@ -37,7 +43,7 @@ export default class ChatService {
         if (error.code === '23505') {
           chatRoom = await this.getChatRoomByGroupId(shareGroupId)
           if (!chatRoom) {
-            throw new Error('Failed to create or find chat room after race condition')
+            throw new Error('Failed to create or find chat room.')
           }
         } else {
           throw error
@@ -123,7 +129,7 @@ export default class ChatService {
       .preload('shareGroup')
       .orderBy('last_activity_at', 'desc')
 
-    return chatRooms.map((room) => room.toJSON())
+    return chatRooms
   }
 
   async createGroupJoinedSystemMessage(

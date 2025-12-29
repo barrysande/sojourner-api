@@ -4,6 +4,9 @@ import User from '#models/user'
 import Notification from '#models/notification'
 import { DateTime } from 'luxon'
 import app from '@adonisjs/core/services/app'
+import { inject } from '@adonisjs/core'
+import ChatService from './chat_service.js'
+import AvatarService from './avatar_service.js'
 
 interface InviteResult {
   email: string
@@ -11,7 +14,13 @@ interface InviteResult {
   reason?: string
 }
 
+@inject()
 export default class ShareGroupService {
+  constructor(
+    protected chatService: ChatService,
+    protected avatarService: AvatarService
+  ) {}
+
   generateUniqueInviteCode(): string {
     const timestamp = Date.now().toString(36).slice(-4)
     const random = Math.random().toString(36).slice(-4)
@@ -62,15 +71,25 @@ export default class ShareGroupService {
       .first()
   }
 
-  async getShareGroupWithDetails(shareGroupId: number): Promise<ShareGroup> {
-    return await ShareGroup.query()
+  async getShareGroupWithDetails(shareGroupId: number) {
+    const nonSerializedShareGroup = await ShareGroup.query()
       .where('id', shareGroupId)
       .preload('members', (query) => {
         query.where('status', 'active').preload('user', (userQuery) => {
-          userQuery.select('id', 'email', 'fullName')
+          userQuery.select('id', 'email', 'fullName', 'avatarKey', 'avatarUrl', 'avatarSource')
         })
       })
       .firstOrFail()
+
+    const shareGroup = nonSerializedShareGroup.serialize()
+
+    for (const member of shareGroup.members) {
+      if (member.user) {
+        member.user.generatedAvatarUrl = await this.avatarService.getAvatarUrl(member.user)
+      }
+    }
+
+    return shareGroup
   }
 
   async getUserShareGroups(userId: number, page: number = 1, perPage: number = 10) {
@@ -244,6 +263,8 @@ export default class ShareGroupService {
     }
 
     await shareGroup.merge({ status: 'dissolved' }).save()
+
+    await this.chatService.deleteChatRoom(shareGroupId)
 
     return shareGroup
   }

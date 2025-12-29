@@ -46,7 +46,7 @@ export default class ShareGroupsController {
     }
   }
 
-  //   CREATE NEW SHARE GROUPS, CREATE CHAT ROOM & SEND NOTIFICATIONS
+  //   CREATE NEW SHARE GROUP, CREATE CHAT ROOM & SEND NOTIFICATIONS
   async store({ auth, request, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()
