@@ -24,7 +24,7 @@ export default class ChatsController {
 
     const chatRoom = await this.chatService.createOrFindChatRoom(shareGroupId)
 
-    return response.ok({ chatRoom: chatRoom.toJSON() })
+    return response.ok({ chatRoom })
   }
 
   async getMessages({ auth, params, request, response }: HttpContext) {
