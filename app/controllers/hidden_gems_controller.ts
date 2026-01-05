@@ -6,15 +6,25 @@ import {
   updateGemValidator,
   addGemPhotosValidator,
 } from '#validators/hidden_gem'
+import db from '@adonisjs/lucid/services/db'
 import { inject } from '@adonisjs/core'
 import TierService from '#services/tier_service'
 import ImageProcessingService from '#services/image_processing_service'
 import drive from '@adonisjs/drive/services/main'
 import logger from '@adonisjs/core/services/logger'
+import TierLimitExceededException from '#exceptions/tier_limit_exceeded_exception'
 
-interface FailedDeletionResults {
-  key: string
-  error: string
+interface PhotoRecord {
+  hiddenGemId: number
+  storageKey: string
+  thumbnailStorageKey: string
+  originalFileName: string
+  caption: string | null
+  isPrimary: boolean
+  fileSize: number
+  mimeType: string
+  width: number
+  height: number
 }
 
 @inject()
@@ -109,10 +119,12 @@ export default class HiddenGemsController {
   // CREATE HIDDEN GEM WITH PHOTOS
   async store({ request, response, auth }: HttpContext) {
     const user = auth.getUserOrFail()
+
     const input = {
       ...request.all(),
       photos: request.files('photos'),
     }
+
     const payload = await createGemValidator.validate(input)
 
     const gemCheck = await this.tierService.canCreateGem(user.id)
@@ -151,23 +163,22 @@ export default class HiddenGemsController {
     })
 
     const uploadedKeys: string[] = []
-
     try {
-      const photoRecords = []
+      const photoRecords: PhotoRecord[] = await Promise.all(
+        payload.photos.map(async (photo) => {
+          const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
 
-      for (const [index, photo] of payload.photos.entries()) {
-        const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
+          uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
 
-        uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
-
-        photoRecords.push({
-          hiddenGemId: gem.id,
-          originalFileName: photo.clientName,
-          caption: null,
-          isPrimary: index === 0,
-          ...result,
+          return {
+            hiddenGemId: gem.id,
+            originalFileName: photo.clientName,
+            caption: null,
+            isPrimary: false,
+            ...result,
+          }
         })
-      }
+      )
 
       await Photo.createMany(photoRecords)
 
@@ -242,23 +253,40 @@ export default class HiddenGemsController {
     const uploadedKeys: string[] = []
 
     try {
-      const photoRecords = []
+      const photoRecords: PhotoRecord[] = await Promise.all(
+        payload.photos.map(async (photo) => {
+          const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
 
-      for (const photo of payload.photos) {
-        const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
+          uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
 
-        uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
-
-        photoRecords.push({
-          hiddenGemId: gem.id,
-          originalFileName: photo.clientName,
-          caption: null,
-          isPrimary: false,
-          ...result,
+          return {
+            hiddenGemId: gem.id,
+            originalFileName: photo.clientName,
+            caption: null,
+            isPrimary: false,
+            ...result,
+          }
         })
-      }
+      )
 
-      await Photo.createMany(photoRecords)
+      await db.transaction(async (trx) => {
+        await HiddenGem.query({ client: trx }).where('id', gem.id).forUpdate().firstOrFail()
+
+        const currentCountResult = await Photo.query({ client: trx })
+          .where('hiddenGemId', gem.id)
+          .count('* as total')
+
+        const currentTotal = Number(currentCountResult[0].$extras.total)
+        const limits = this.tierService.getTierLimits(user.tier)
+
+        if (currentTotal + photoRecords.length > limits.maxPhotosPerGem) {
+          throw new TierLimitExceededException(
+            `Upload failed. You have reached your limit of ${limits.maxPhotosPerGem} photos per gem.`
+          )
+        }
+
+        await Photo.createMany(photoRecords, { client: trx })
+      })
 
       return response.created({
         message: 'Photos added successfully',
@@ -267,6 +295,14 @@ export default class HiddenGemsController {
       if (uploadedKeys.length > 0) {
         this.imageProcessingService.deleteUploadedFiles(uploadedKeys)
       }
+
+      if (error.code === 'E_TIER_LIMIT_EXCEEDED') {
+        return response.forbidden({
+          message: `Upload failed. You have reached your limit of ${this.tierService.getTierLimits(user.tier).maxPhotosPerGem} photos per gem.`,
+          code: 'TIER_LIMIT_EXCEEDED',
+        })
+      }
+
       throw error
     }
   }
@@ -284,32 +320,18 @@ export default class HiddenGemsController {
         .firstOrFail()
 
       // Delete all photos from R2
-      const deletionResults = {
-        successful: [] as string[],
-        failed: [] as FailedDeletionResults[],
-      }
-
-      for (const photo of gem.photos) {
-        try {
-          await disk.delete(photo.storageKey)
-
-          await disk.delete(photo.thumbnailStorageKey)
-
-          deletionResults.successful.push(photo.storageKey)
-        } catch (error) {
-          deletionResults.failed.push({
-            key: photo.storageKey,
-            error: error.message,
-          })
-        }
-      }
+      await Promise.allSettled(
+        gem.photos.flatMap((photo) => [
+          disk.delete(photo.storageKey),
+          disk.delete(photo.thumbnailStorageKey),
+        ])
+      )
 
       // Delete gem (cascade will delete photos from DB)
       await gem.delete()
 
       return response.ok({
         message: 'Hidden gem deleted successfully',
-        photoCleanup: deletionResults,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
@@ -337,19 +359,17 @@ export default class HiddenGemsController {
 
       const wasPrimary = photo.isPrimary
 
-      // Delete from R2
       try {
-        await disk.delete(photo.storageKey)
-
-        await disk.delete(photo.thumbnailStorageKey)
+        await Promise.all([disk.delete(photo.storageKey), disk.delete(photo.thumbnailStorageKey)])
       } catch (error) {
-        logger.error('R2 deletion failed', { storageKey: photo.storageKey, error: error.message })
+        logger.error(
+          { err: error, key: photo.storageKey },
+          'R2 deletion failed during photo delete'
+        )
       }
 
-      // Delete from database
       await photo.delete()
 
-      // Reassign primary if needed
       if (wasPrimary) {
         await this.reassignPrimaryPhoto(params.id)
       }

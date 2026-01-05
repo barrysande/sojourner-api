@@ -106,20 +106,18 @@ export default class ImageProcessingService {
   async deleteAllUserPhotos(userId: number): Promise<void> {
     const disk = drive.use()
     const gems = await HiddenGem.query().where('userId', userId).preload('photos')
-    const allPhotos = gems.flatMap((gem) => gem.photos)
+    const allKeys = gems.flatMap((gem) =>
+      gem.photos.flatMap((p) => [p.storageKey, p.thumbnailStorageKey])
+    )
 
     await Promise.allSettled(
-      allPhotos.map(async (photo) => {
-        try {
-          await disk.delete(photo.storageKey)
-          await disk.delete(photo.thumbnailStorageKey)
-        } catch (error) {
-          logger.warn(
-            { key: photo.storageKey, err: error },
-            'Failed to delete gem photo during account destroy'
+      allKeys.map((key) =>
+        disk
+          .delete(key)
+          .catch((err) =>
+            logger.warn({ key, err }, 'Failed to delete photo during account destroy')
           )
-        }
-      })
+      )
     )
   }
 
