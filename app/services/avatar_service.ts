@@ -6,28 +6,7 @@ import logger from '@adonisjs/core/services/logger'
 import User from '#models/user'
 
 export default class AvatarService {
-  private readonly ALLOWED_SUBTYPES = ['jpeg', 'jpg', 'png', 'webp']
-  private readonly MAX_FILE_SIZE = 10 * 1024 * 1024
   private readonly AVATAR_SIZE = 400
-
-  /**
-   * Ensure file is valid before processing
-   */
-  private validateImage(file: MultipartFile): void {
-    if (!file) {
-      throw new Error('No file provided')
-    }
-
-    const subtype = (file.subtype || '').toLowerCase()
-
-    if (!this.ALLOWED_SUBTYPES.includes(subtype)) {
-      throw new Error(`Invalid file type (${subtype}). Only JPEG, PNG, and WebP are allowed.`)
-    }
-
-    if (file.size && file.size > this.MAX_FILE_SIZE) {
-      throw new Error(`File size exceeds maximum of ${this.MAX_FILE_SIZE / 1024 / 1024}MB`)
-    }
-  }
 
   /**
    * Resize to square, center crop, convert to WebP
@@ -95,8 +74,6 @@ export default class AvatarService {
    * Main entry point: Validates, Processes, Uploads, and cleans up old avatar
    */
   async updateAvatar(user: User, file: MultipartFile): Promise<string> {
-    this.validateImage(file)
-
     const processedBuffer = await this.processImage(file)
 
     const newKey = `avatars/${cuid()}.webp`

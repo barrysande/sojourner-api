@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import HiddenGem from '#models/hidden_gem'
 import Expense from '#models/expense'
-import { expensesValidator } from '#validators/expenses'
+import { expensesValidator } from '#validators/expense'
 
 export default class ExpensesController {
   // GET ALL EXPENSES FOR A SPECIFIC HIDDEN GEM

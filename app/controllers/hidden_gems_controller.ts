@@ -1,8 +1,11 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import Photo from '#models/photo'
 import HiddenGem from '#models/hidden_gem'
-import { createGemValidator, updateGemValidator } from '#validators/file_upload'
-import db from '@adonisjs/lucid/services/db'
+import {
+  createGemValidator,
+  updateGemValidator,
+  addGemPhotosValidator,
+} from '#validators/hidden_gem'
 import { inject } from '@adonisjs/core'
 import TierService from '#services/tier_service'
 import ImageProcessingService from '#services/image_processing_service'
@@ -105,327 +108,164 @@ export default class HiddenGemsController {
 
   // CREATE HIDDEN GEM WITH PHOTOS
   async store({ request, response, auth }: HttpContext) {
-    try {
-      const user = auth.getUserOrFail()
-      const data = await request.validateUsing(createGemValidator)
-      const photos = request.files('photos', {
-        size: '10mb',
-        extnames: ['jpg', 'jpeg', 'png', 'webp'],
-      })
+    const user = auth.getUserOrFail()
+    const input = {
+      ...request.all(),
+      photos: request.files('photos'),
+    }
+    const payload = await createGemValidator.validate(input)
 
-      // 1. Check if user can create more gems
-      const gemCheck = await this.tierService.canCreateGem(user.id)
-      if (!gemCheck.canCreate) {
-        return response.forbidden({
-          message: gemCheck.message,
-          current: gemCheck.currentCount,
-          limit: gemCheck.limit,
-          upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more gems'),
+    const gemCheck = await this.tierService.canCreateGem(user.id)
+    if (!gemCheck.canCreate) {
+      return response.forbidden({
+        message: gemCheck.message,
+        upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more gems'),
+      })
+    }
+
+    const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, payload.photos.length)
+    if (!photoCheck.canAdd) {
+      return response.forbidden({
+        message: photoCheck.message,
+        upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more photos per gem'),
+      })
+    }
+
+    for (const photo of payload.photos) {
+      const sizeValidation = this.tierService.validateFileSize(photo.size, user.tier)
+      if (!sizeValidation.isValid) {
+        return response.badRequest({
+          message: sizeValidation.error,
+          code: 'FILE_SIZE_EXCEEDED',
+          fileName: photo.clientName,
+        })
+      }
+    }
+
+    const gem = await HiddenGem.create({
+      userId: user.id,
+      name: payload.name,
+      location: payload.location,
+      description: payload.description,
+      isPublic: false,
+    })
+
+    const uploadedKeys: string[] = []
+
+    try {
+      const photoRecords = []
+
+      for (const [index, photo] of payload.photos.entries()) {
+        const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
+
+        uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
+
+        photoRecords.push({
+          hiddenGemId: gem.id,
+          originalFileName: photo.clientName,
+          caption: null,
+          isPrimary: index === 0,
+          ...result,
         })
       }
 
-      // 2. Validate photo count against tier limits
-      if (photos && photos.length > 0) {
-        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, 0, photos.length)
-        if (!photoCheck.canAdd) {
-          return response.forbidden({
-            message: photoCheck.message,
-            attempted: photos.length,
-            limit: photoCheck.limit,
-            upgradeMessage: this.tierService.getUpgrageMessage(user.tier, 'more photos per gem'),
-          })
-        }
+      await Photo.createMany(photoRecords)
 
-        // 3. Validate each file
-        for (const photo of photos) {
-          const validation = this.imageProcessingService.validateImage(photo)
-          if (!validation.isValid) {
-            return response.badRequest({
-              message: validation.error,
-              code: 'INVALID_IMAGE',
-            })
-          }
-
-          // 4. Validate file size per tier
-          const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
-          if (!sizeValidation.isValid) {
-            return response.badRequest({
-              message: sizeValidation.error,
-              code: 'FILE_SIZE_EXCEEDED',
-            })
-          }
-        }
-      }
-
-      await db.transaction(async (trx) => {
-        // 5. Create gem
-        const newGem = await HiddenGem.create(
-          {
-            userId: user.id,
-            name: data.name,
-            location: data.location,
-            description: data.description,
-            isPublic: false,
-          },
-          { client: trx }
-        )
-
-        // 6. Process and upload photos
-        if (photos && photos.length > 0) {
-          const photoRecords = []
-          const disk = drive.use()
-
-          for (const [index, photo] of photos.entries()) {
-            // 6.1 Process image
-            const processed = await this.imageProcessingService.processAndSave(
-              photo,
-              user.id,
-              newGem.id
-            )
-
-            // 6.2 Upload to R2 using Drive
-            await disk.put(processed.fullKey, processed.fullBuffer)
-            await disk.put(processed.thumbKey, processed.thumbBuffer)
-
-            // 6.3 Create photo record
-            photoRecords.push({
-              hiddenGemId: newGem.id,
-              storageKey: processed.fullKey,
-              thumbnailStorageKey: processed.thumbKey,
-              originalFileName: photo.clientName,
-              caption: null,
-              isPrimary: index === 0,
-              fileSize: processed.metadata.size,
-              mimeType: processed.metadata.mimeType,
-              width: processed.metadata.width,
-              height: processed.metadata.height,
-            })
-          }
-
-          await Photo.createMany(photoRecords, { client: trx })
-        }
-      })
-
-      // FE integration notes - redirect users to hidden gems list after this.
       return response.created({
         message: 'Hidden gem created successfully',
       })
     } catch (error) {
-      if (error.code === 'E_VALIDATION_ERROR') {
-        return response.badRequest({
-          message: 'Validation failed',
-          errors: error.messages,
-        })
+      await gem.delete()
+
+      if (uploadedKeys.length > 0) {
+        this.imageProcessingService.deleteUploadedFiles(uploadedKeys)
       }
+
       throw error
     }
   }
 
-  // UPDATE HIDDEN GEM
+  // UPDATE HIDDEN GEM DETAILS
   async update({ params, response, request, auth }: HttpContext) {
-    try {
-      const user = auth.getUserOrFail()
+    const user = auth.getUserOrFail()
+    const payload = await request.validateUsing(updateGemValidator)
 
-      const data = await request.validateUsing(updateGemValidator)
+    const gem = await HiddenGem.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
 
-      const photos = request.files('photos', {
-        size: '10mb',
-        extnames: ['jpg', 'jpeg', 'png', 'webp'],
-      })
+    await gem.merge(payload).save()
 
-      const gem = await HiddenGem.query()
-        .where('id', params.id)
-        .where('userId', user.id)
-        .firstOrFail()
-
-      //1. Validate photo addition against tier limits
-      if (photos && photos.length > 0) {
-        const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
-        if (!photoCheck.canAdd) {
-          return response.forbidden({
-            message: photoCheck.message,
-            current: photoCheck.currentCount,
-            limit: photoCheck.limit,
-            attempted: photos.length,
-          })
-        }
-
-        // 2. Validate each file size within limits
-        for (const photo of photos) {
-          const validation = this.imageProcessingService.validateImage(photo)
-          if (!validation.isValid) {
-            return response.badRequest({
-              message: validation.error,
-              code: 'INVALID_IMAGE',
-            })
-          }
-
-          const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
-          if (!sizeValidation.isValid) {
-            return response.badRequest({
-              message: sizeValidation.error,
-              code: 'FILE_SIZE_EXCEEDED',
-            })
-          }
-        }
-      }
-
-      await db.transaction(async (trx) => {
-        gem.useTransaction(trx)
-
-        // 3. Update gem details
-        await gem
-          .merge({
-            name: data.name,
-            location: data.location,
-            description: data.description,
-            visited: data.visited ?? false,
-            rating: data.rating,
-          })
-          .save()
-
-        // 4. Process and upload new photos
-        if (photos && photos.length > 0) {
-          const photoRecords = []
-          const disk = drive.use()
-
-          for (const photo of photos) {
-            const processed = await this.imageProcessingService.processAndSave(
-              photo,
-              user.id,
-              gem.id
-            )
-
-            await disk.put(processed.fullKey, processed.fullBuffer)
-            await disk.put(processed.thumbKey, processed.thumbBuffer)
-
-            photoRecords.push({
-              hiddenGemId: gem.id,
-              storageKey: processed.fullKey,
-              thumbnailStorageKey: processed.thumbKey,
-              originalFileName: photo.clientName,
-              caption: null,
-              isPrimary: false,
-              fileSize: processed.metadata.size,
-              mimeType: processed.metadata.mimeType,
-              width: processed.metadata.width,
-              height: processed.metadata.height,
-            })
-          }
-
-          await Photo.createMany(photoRecords, { client: trx })
-        }
-      })
-
-      // FE integration notes - redirect users to hidden gems list after this.
-      return response.ok({
-        message: 'Hidden Gem updated successfully',
-      })
-    } catch (error) {
-      if (error.code === 'E_ROW_NOT_FOUND') {
-        return response.notFound({
-          message: 'Hidden gem not found',
-          code: 'GEM_NOT_FOUND',
-        })
-      }
-      if (error.code === 'E_VALIDATION_ERROR') {
-        return response.badRequest({
-          message: 'Validation failed',
-          errors: error.messages,
-        })
-      }
-      throw error
-    }
+    return response.ok({ message: 'Hidden Gem updated successfully' })
   }
 
   // ADD PHOTOS TO EXISTING GEM
-  async addPhotos({ params, auth, request, response }: HttpContext) {
-    try {
-      const user = auth.getUserOrFail()
-      const photos = request.files('photos', {
-        size: '10mb',
-        extnames: ['jpg', 'jpeg', 'png', 'webp'],
-      })
+  async addPhotos({ params, response, request, auth }: HttpContext) {
+    const user = auth.getUserOrFail()
 
-      if (!photos || photos.length === 0) {
+    const input = {
+      ...request.all(),
+      photos: request.files('photos'),
+    }
+
+    const payload = await addGemPhotosValidator.validate(input)
+
+    const gem = await HiddenGem.query()
+      .where('id', params.id)
+      .where('userId', user.id)
+      .firstOrFail()
+
+    const photoCheck = await this.tierService.canAddPhotosToGem(
+      user.id,
+      gem.id,
+      payload.photos.length
+    )
+
+    if (!photoCheck.canAdd) {
+      return response.forbidden({
+        message: photoCheck.message,
+      })
+    }
+
+    for (const photo of payload.photos) {
+      const sizeValidation = this.tierService.validateFileSize(photo.size, user.tier)
+      if (!sizeValidation.isValid) {
         return response.badRequest({
-          message: 'No photos provided!',
-          code: 'NO_PHOTOS_PROVIDED',
+          message: sizeValidation.error,
+          code: 'FILE_SIZE_EXCEEDED',
+          fileName: photo.clientName,
+        })
+      }
+    }
+
+    const uploadedKeys: string[] = []
+
+    try {
+      const photoRecords = []
+
+      for (const photo of payload.photos) {
+        const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
+
+        uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
+
+        photoRecords.push({
+          hiddenGemId: gem.id,
+          originalFileName: photo.clientName,
+          caption: null,
+          isPrimary: false,
+          ...result,
         })
       }
 
-      const gem = await HiddenGem.query()
-        .where('id', params.id)
-        .where('userId', user.id)
-        .firstOrFail()
-
-      const photoCheck = await this.tierService.canAddPhotosToGem(user.id, gem.id, photos.length)
-      if (!photoCheck.canAdd) {
-        return response.forbidden({
-          message: photoCheck.message,
-          current: photoCheck.currentCount,
-          limit: photoCheck.limit,
-          attempted: photos.length,
-        })
-      }
-
-      for (const photo of photos) {
-        const validation = this.imageProcessingService.validateImage(photo)
-        if (!validation.isValid) {
-          return response.badRequest({
-            message: validation.error,
-            code: 'INVALID_IMAGE',
-          })
-        }
-
-        const sizeValidation = this.tierService.validateFileSize(photo.size!, user.tier)
-        if (!sizeValidation.isValid) {
-          return response.badRequest({
-            message: sizeValidation.error,
-            code: 'FILE_SIZE_EXCEEDED',
-          })
-        }
-      }
-
-      const newPhotos = await db.transaction(async (trx) => {
-        const photoRecords = []
-        const disk = drive.use()
-
-        for (const photo of photos) {
-          const processed = await this.imageProcessingService.processAndSave(photo, user.id, gem.id)
-
-          await disk.put(processed.fullKey, processed.fullBuffer)
-          await disk.put(processed.thumbKey, processed.thumbBuffer)
-
-          photoRecords.push({
-            hiddenGemId: gem.id,
-            storageKey: processed.fullKey,
-            thumbnailStorageKey: processed.thumbKey,
-            originalFileName: photo.clientName,
-            caption: null,
-            isPrimary: false,
-            fileSize: processed.metadata.size,
-            mimeType: processed.metadata.mimeType,
-            width: processed.metadata.width,
-            height: processed.metadata.height,
-          })
-        }
-
-        return await Photo.createMany(photoRecords, { client: trx })
-      })
-
-      const photosWithUrls = await this.imageProcessingService.getPhotoUrls(newPhotos)
+      await Photo.createMany(photoRecords)
 
       return response.created({
         message: 'Photos added successfully',
-        data: photosWithUrls,
       })
     } catch (error) {
-      if (error.code === 'E_ROW_NOT_FOUND') {
-        return response.notFound({
-          message: 'Hidden gem not found',
-          code: 'GEM_NOT_FOUND',
-        })
+      if (uploadedKeys.length > 0) {
+        this.imageProcessingService.deleteUploadedFiles(uploadedKeys)
       }
       throw error
     }

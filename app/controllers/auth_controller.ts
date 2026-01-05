@@ -8,6 +8,7 @@ import {
   resetPasswordValidator,
   verifyEmailTokenValidator,
 } from '#validators/auth'
+import { updateAvatarValidator } from '#validators/avatar'
 import { errors as authErrors } from '@adonisjs/auth'
 import hash from '@adonisjs/core/services/hash'
 import logger from '@adonisjs/core/services/logger'
@@ -322,18 +323,10 @@ export default class AuthController {
 
   async updateAvatar({ request, auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
-    const file = request.file('avatar')
-
-    if (!file) {
-      return response.badRequest('No avatar file uploaded')
-    }
-
-    if (file.hasErrors) {
-      return response.badRequest(file.errors[0].message)
-    }
+    const { avatar } = await request.validateUsing(updateAvatarValidator)
 
     try {
-      const newKey = await this.avatarService.updateAvatar(user, file)
+      const newKey = await this.avatarService.updateAvatar(user, avatar)
 
       await user
         .merge({
