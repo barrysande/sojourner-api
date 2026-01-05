@@ -15,7 +15,13 @@ export default class HttpExceptionHandler extends ExceptionHandler {
    * The method is used for handling errors and returning
    * response to the client
    */
-  async handle(error: unknown, ctx: HttpContext) {
+  async handle(error: any, ctx: HttpContext) {
+    if (error.status === 413) {
+      return ctx.response.badRequest({
+        message: 'Photos exceed limit. Try fewer photos at a time.',
+      })
+    }
+
     if (error instanceof ConflictException) {
       return ctx.response.conflict({
         message: error.message,

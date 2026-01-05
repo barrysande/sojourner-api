@@ -34,19 +34,6 @@ export default class HiddenGemsController {
     private imageProcessingService: ImageProcessingService
   ) {}
 
-  // REASSIGN PRIMARY PHOTO
-  private async reassignPrimaryPhoto(gemId: number): Promise<void> {
-    const firstPhoto = await Photo.query()
-      .where('hiddenGemId', gemId)
-      .orderBy('createdAt', 'asc')
-      .first()
-
-    if (firstPhoto) {
-      firstPhoto.isPrimary = true
-      await firstPhoto.save()
-    }
-  }
-
   // LIST ALL HIDDEN GEMS
   async index({ request, response, auth }: HttpContext) {
     try {
@@ -319,7 +306,6 @@ export default class HiddenGemsController {
         .preload('photos')
         .firstOrFail()
 
-      // Delete all photos from R2
       await Promise.allSettled(
         gem.photos.flatMap((photo) => [
           disk.delete(photo.storageKey),
@@ -327,7 +313,6 @@ export default class HiddenGemsController {
         ])
       )
 
-      // Delete gem (cascade will delete photos from DB)
       await gem.delete()
 
       return response.ok({
@@ -350,6 +335,7 @@ export default class HiddenGemsController {
       const user = auth.getUserOrFail()
       const disk = drive.use()
 
+      // 1. Fetch only the data we need (don't preload the whole world)
       const photo = await Photo.query()
         .where('id', params.photoId)
         .whereHas('hiddenGem', (query) => {
@@ -357,33 +343,40 @@ export default class HiddenGemsController {
         })
         .firstOrFail()
 
-      const wasPrimary = photo.isPrimary
+      const { isPrimary, storageKey, thumbnailStorageKey } = photo
 
-      try {
-        await Promise.all([disk.delete(photo.storageKey), disk.delete(photo.thumbnailStorageKey)])
-      } catch (error) {
-        logger.error(
-          { err: error, key: photo.storageKey },
-          'R2 deletion failed during photo delete'
-        )
-      }
+      const r2Promise = Promise.all([
+        disk.delete(storageKey),
+        disk.delete(thumbnailStorageKey),
+      ]).catch((err) => logger.error({ err }, 'R2 Cleanup failed'))
 
-      await photo.delete()
+      await db.transaction(async (trx) => {
+        photo.useTransaction(trx)
+        await photo.delete()
 
-      if (wasPrimary) {
-        await this.reassignPrimaryPhoto(params.id)
-      }
+        if (isPrimary) {
+          const nextPhoto = await Photo.query({ client: trx })
+            .select('id')
+            .where('hiddenGemId', params.id)
+            .orderBy('id', 'asc')
+            .first()
 
-      return response.ok({
-        message: 'Photo deleted successfully',
+          if (nextPhoto) {
+            await Photo.query({ client: trx })
+              .where('id', nextPhoto.id)
+              .update({ is_primary: true })
+          }
+        }
       })
+
+      await r2Promise
+
+      return response.ok({ message: 'Photo deleted successfully' })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
-        return response.notFound({
-          message: 'Photo not found',
-          code: 'PHOTO_NOT_FOUND',
-        })
+        return response.notFound({ message: 'Photo not found' })
       }
+
       throw error
     }
   }
