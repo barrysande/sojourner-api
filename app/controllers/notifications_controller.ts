@@ -30,7 +30,6 @@ export default class NotificationsController {
         unreadCount,
       })
     } catch (error) {
-      console.log('Notification error:', error)
       if (error.code === 'E_VALIDATION_ERROR') {
         return response.badRequest({
           message: 'Invalid pagination parameters',

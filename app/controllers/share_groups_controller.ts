@@ -235,8 +235,6 @@ export default class ShareGroupsController {
       const { emails } = await request.validateUsing(inviteMembersValidator)
       // 1. can user manage group? 2.  process invitations. 3. Check Group Capacity Check 4. Create Notification.
 
-      console.log(emails)
-
       const canUserManageGroup = await this.shareGroupService.canUserManageGroup(
         user.id,
         shareGroupId

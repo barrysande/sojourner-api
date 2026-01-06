@@ -3,28 +3,34 @@ import SocialAuthentication from '#models/social_authentication'
 import User from '#models/user'
 import db from '@adonisjs/lucid/services/db'
 import env from '#start/env'
+import app from '@adonisjs/core/services/app'
 import { DateTime } from 'luxon'
 
 export default class SocialAuthsController {
   async redirect({ ally }: HttpContext) {
-    return ally.use('google').redirect()
+    return ally.use('google').stateless().redirect()
   }
 
   async handleCallback({ ally, auth, response }: HttpContext) {
     const google = ally.use('google')
-    const frontendDashboard = env.get('FRONTEND_URL') + '/dashboard'
+    const frontendRedirect = app.inProduction
+      ? `${env.get('FRONTEND_URL')}/dashboard`
+      : `${env.get('FRONTEND_URL')}/auth/sso/callback`
 
     if (google.accessDenied()) {
       // User cancelled the login
-      return response.redirect(`${frontendDashboard}?error=auth_cancelled`)
+
+      return response.redirect(`${frontendRedirect}?error=auth_cancelled`)
     }
     if (google.stateMisMatch()) {
       // CSRF attack or expired state
-      return response.redirect(`${frontendDashboard}?error=invalid_state`)
+
+      return response.redirect(`${frontendRedirect}?error=invalid_state`)
     }
     if (google.hasError()) {
       // Any other error from Google
-      return response.redirect(`${frontendDashboard}?error=${google.getError() || 'unknown'}`)
+
+      return response.redirect(`${frontendRedirect}?error=${google.getError() || 'unknown'}`)
     }
 
     const googleUser = await google.user()
@@ -37,7 +43,7 @@ export default class SocialAuthsController {
 
     if (socialAuth) {
       await auth.use('web').login(socialAuth.user)
-      return response.redirect(frontendDashboard)
+      return response.redirect(frontendRedirect)
     }
 
     try {
@@ -88,9 +94,9 @@ export default class SocialAuthsController {
         return userToLogin
       })
       await auth.use('web').login(user)
-      return response.redirect(frontendDashboard)
+      return response.redirect(frontendRedirect)
     } catch (error) {
-      return response.status(500).redirect(`${frontendDashboard}?error=account_creation_failed`)
+      return response.status(500).redirect(`${frontendRedirect}?error=account_creation_failed`)
     }
   }
 }
