@@ -15,7 +15,7 @@ export function setupWebsocketsHandlers(io: Server) {
   io.on('connection', async (socket: ExtendedSocket) => {
     // 1. REGISTER LISTENERS IMMEDIATELY
     socket.on('join_room', async (data: { shareGroupId: number }, callback?) => {
-      // Security: Check auth status via socket.data.user
+      // Check auth status via socket.data.user
       const user = socket.data.user
 
       if (!user) {
@@ -86,7 +86,7 @@ export function setupWebsocketsHandlers(io: Server) {
 
         io.to(roomName).emit('new_message', chatMessage.toJSON())
 
-        // --- Typing Logic Cleanup ---
+        // Typing Logic Cleanup
         const typingKey = `${data.roomId}_${user.id}`
         if (typingTimeouts.has(typingKey)) {
           clearTimeout(typingTimeouts.get(typingKey)!)
@@ -104,7 +104,6 @@ export function setupWebsocketsHandlers(io: Server) {
             typingUsers.delete(data.roomId)
           }
         }
-        // -----------------------------
 
         // Acknowledge success
         if (callback) callback({ success: true, messageId: chatMessage.id })
@@ -218,9 +217,7 @@ export function setupWebsocketsHandlers(io: Server) {
       })
     })
 
-    // ==================================================================
     // 2. PERFORM AUTHENTICATION (Async)
-    // ==================================================================
     try {
       await socket.context.auth.authenticateUsing(['web'])
 
@@ -235,7 +232,7 @@ export function setupWebsocketsHandlers(io: Server) {
       socket.data.user = user
       logger.info(`User ${user.fullName} (ID: ${user.id}) connected via Socket`)
 
-      // --- CRITICAL: Notify Client they are ready ---
+      // notify client they are authenticated
       socket.emit('authenticated', { userId: user.id })
 
       if (!userConnections.has(user.id)) {
@@ -243,7 +240,7 @@ export function setupWebsocketsHandlers(io: Server) {
       }
       userConnections.get(user.id)!.add(socket.id)
     } catch (error) {
-      // Auth failed (invalid session, etc)
+      // Auth failed, invalid session, disconnect.
       socket.disconnect(true)
     }
   })
