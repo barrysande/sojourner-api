@@ -25,7 +25,7 @@ const sessionConfig = defineConfig({
   cookie: {
     path: '/',
     httpOnly: true,
-    secure: false,
+    secure: app.inProduction,
     sameSite: 'lax',
 
     // change in prod to correct domain - store in env

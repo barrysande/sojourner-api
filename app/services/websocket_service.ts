@@ -15,7 +15,7 @@ export function setupWebsocketsHandlers(io: Server) {
   io.on('connection', async (socket: ExtendedSocket) => {
     // 1. REGISTER LISTENERS IMMEDIATELY
     socket.on('join_room', async (data: { shareGroupId: number }, callback?) => {
-      // Security: Check auth status via socket.data.user (set in step 2)
+      // Security: Check auth status via socket.data.user
       const user = socket.data.user
 
       if (!user) {
