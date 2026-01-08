@@ -2,9 +2,8 @@ import type { HttpContext } from '@adonisjs/core/http'
 import SocialAuthentication from '#models/social_authentication'
 import User from '#models/user'
 import db from '@adonisjs/lucid/services/db'
-import env from '#start/env'
-import app from '@adonisjs/core/services/app'
 import { DateTime } from 'luxon'
+import env from '#start/env'
 
 export default class SocialAuthsController {
   async redirect({ ally }: HttpContext) {
@@ -13,24 +12,20 @@ export default class SocialAuthsController {
 
   async handleCallback({ ally, auth, response }: HttpContext) {
     const google = ally.use('google')
-    const frontendRedirect = app.inProduction
-      ? `${env.get('FRONTEND_URL')}/dashboard`
-      : `${env.get('FRONTEND_URL')}/auth/sso/callback`
+
+    // Always redirect to dashboard (path only)
+    const redirectPath = env.get('FRONTEND_URL') + '/dashboard'
 
     if (google.accessDenied()) {
-      // User cancelled the login
-
-      return response.redirect(`${frontendRedirect}?error=auth_cancelled`)
+      return response.redirect(`${redirectPath}?error=auth_cancelled`)
     }
+
     if (google.stateMisMatch()) {
-      // CSRF attack or expired state
-
-      return response.redirect(`${frontendRedirect}?error=invalid_state`)
+      return response.redirect(`${redirectPath}?error=invalid_state`)
     }
-    if (google.hasError()) {
-      // Any other error from Google
 
-      return response.redirect(`${frontendRedirect}?error=${google.getError() || 'unknown'}`)
+    if (google.hasError()) {
+      return response.redirect(`${redirectPath}?error=${google.getError() || 'unknown'}`)
     }
 
     const googleUser = await google.user()
@@ -43,18 +38,20 @@ export default class SocialAuthsController {
 
     if (socialAuth) {
       await auth.use('web').login(socialAuth.user)
-      return response.redirect(frontendRedirect)
+      return response.redirect(redirectPath)
     }
 
     try {
       const user = await db.transaction(async (trx) => {
         let userToLogin: User
+
         const existingUser = await User.query({ client: trx })
           .where('email', googleUser.email)
           .first()
 
         if (existingUser) {
           userToLogin = existingUser
+
           if (!userToLogin.avatarUrl && googleUser.avatarUrl) {
             userToLogin.avatarUrl = googleUser.avatarUrl
             userToLogin.avatarSource = 'social'
@@ -93,10 +90,11 @@ export default class SocialAuthsController {
 
         return userToLogin
       })
+
       await auth.use('web').login(user)
-      return response.redirect(frontendRedirect)
-    } catch (error) {
-      return response.status(500).redirect(`${frontendRedirect}?error=account_creation_failed`)
+      return response.redirect(redirectPath)
+    } catch {
+      return response.status(500).redirect(`${redirectPath}?error=account_creation_failed`)
     }
   }
 }

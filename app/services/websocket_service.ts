@@ -3,7 +3,6 @@ import type { ExtendedSocket } from '../../types/socket.js'
 import ChatService from './chat_service.js'
 import app from '@adonisjs/core/services/app'
 import SocketHttpContextMiddleware from '#middleware/socket/socket_http_context_middleware'
-import SocketAuthMiddleware from '#middleware/socket/socket_auth_middleware'
 import logger from '@adonisjs/core/services/logger'
 
 const userConnections = new Map<number, Set<string>>()
@@ -12,22 +11,21 @@ const typingTimeouts = new Map<string, NodeJS.Timeout>()
 
 export function setupWebsocketsHandlers(io: Server) {
   io.use(SocketHttpContextMiddleware)
-  io.use(SocketAuthMiddleware({ guards: ['web'] }))
 
-  io.on('connection', (socket: ExtendedSocket) => {
-    const user = socket.context.auth.getUserOrFail()
-    logger.info(`User ${user.fullName} (ID: ${user.id}) connected`)
-
-    if (!userConnections.has(user.id)) {
-      userConnections.set(user.id, new Set())
-    }
-
-    userConnections.get(user.id)!.add(socket.id)
-
+  io.on('connection', async (socket: ExtendedSocket) => {
+    // 1. REGISTER LISTENERS IMMEDIATELY
     socket.on('join_room', async (data: { shareGroupId: number }, callback?) => {
+      // Security: Check auth status via socket.data.user (set in step 2)
+      const user = socket.data.user
+
+      if (!user) {
+        socket.emit('error', { message: 'Authentication pending. Please try again.' })
+        if (callback) callback({ success: false, error: 'Auth pending' })
+        return
+      }
+
       try {
         const chatService = await app.container.make(ChatService)
-
         const hasAccess = await chatService.validateChatAccess(user.id, data.shareGroupId)
 
         if (!hasAccess) {
@@ -42,6 +40,7 @@ export function setupWebsocketsHandlers(io: Server) {
 
         const history = await chatService.getChatHistory(chatRoom.id, 1, 30)
 
+        // Return data to the specific user
         socket.emit('room_joined', {
           roomId: chatRoom.id,
           shareGroupId: data.shareGroupId,
@@ -50,6 +49,7 @@ export function setupWebsocketsHandlers(io: Server) {
           meta: history.meta,
         })
 
+        // Notify others in the room
         socket.to(roomName).emit('user_joined', {
           user: {
             id: user.id,
@@ -60,13 +60,16 @@ export function setupWebsocketsHandlers(io: Server) {
         // Acknowledge success
         if (callback) callback({ success: true, roomId: chatRoom.id })
       } catch (error) {
-        logger.error('Join room error:', error)
+        logger.error({ err: error }, 'Join room error')
         socket.emit('error', { message: 'Failed to join chat room' })
         if (callback) callback({ success: false, error: 'Failed to join chat room' })
       }
     })
 
     socket.on('send_message', async (data: { roomId: number; message: string }, callback?) => {
+      const user = socket.data.user
+      if (!user) return
+
       try {
         if (!data.message?.trim()) {
           socket.emit('error', { message: 'Message cannot be empty' })
@@ -83,13 +86,13 @@ export function setupWebsocketsHandlers(io: Server) {
 
         io.to(roomName).emit('new_message', chatMessage.toJSON())
 
+        // --- Typing Logic Cleanup ---
         const typingKey = `${data.roomId}_${user.id}`
         if (typingTimeouts.has(typingKey)) {
           clearTimeout(typingTimeouts.get(typingKey)!)
           typingTimeouts.delete(typingKey)
         }
 
-        // Remove user from typing users and notify others
         const typing = typingUsers.get(data.roomId)
         if (typing && typing.has(user.id)) {
           typing.delete(user.id)
@@ -101,17 +104,21 @@ export function setupWebsocketsHandlers(io: Server) {
             typingUsers.delete(data.roomId)
           }
         }
+        // -----------------------------
 
         // Acknowledge success
         if (callback) callback({ success: true, messageId: chatMessage.id })
       } catch (error) {
-        logger.error('Send message error:', error)
+        logger.error({ err: error }, 'Send message error')
         socket.emit('error', { message: 'Failed to send message' })
         if (callback) callback({ success: false, error: 'Failed to send message' })
       }
     })
 
     socket.on('typing_start', async (data: { roomId: number }) => {
+      const user = socket.data.user
+      if (!user) return
+
       const typingKey = `${data.roomId}_${user.id}`
 
       if (typingTimeouts.has(typingKey)) {
@@ -149,6 +156,9 @@ export function setupWebsocketsHandlers(io: Server) {
     })
 
     socket.on('typing_stop', async (data: { roomId: number }) => {
+      const user = socket.data.user
+      if (!user) return
+
       const typingKey = `${data.roomId}_${user.id}`
 
       if (typingTimeouts.has(typingKey)) {
@@ -172,6 +182,9 @@ export function setupWebsocketsHandlers(io: Server) {
     })
 
     socket.on('disconnect', () => {
+      const user = socket.data.user
+      if (!user) return // If auth failed, user is undefined, nothing to clean up
+
       logger.info(`User ${user.fullName} (ID: ${user.id}) disconnected`)
 
       const connections = userConnections.get(user.id)
@@ -204,6 +217,35 @@ export function setupWebsocketsHandlers(io: Server) {
         }
       })
     })
+
+    // ==================================================================
+    // 2. PERFORM AUTHENTICATION (Async)
+    // ==================================================================
+    try {
+      await socket.context.auth.authenticateUsing(['web'])
+
+      const user = socket.context.auth.user
+
+      if (!user) {
+        socket.disconnect(true)
+        return
+      }
+
+      // Success! Hydrate socket.data.user so listeners can proceed
+      socket.data.user = user
+      logger.info(`User ${user.fullName} (ID: ${user.id}) connected via Socket`)
+
+      // --- CRITICAL: Notify Client they are ready ---
+      socket.emit('authenticated', { userId: user.id })
+
+      if (!userConnections.has(user.id)) {
+        userConnections.set(user.id, new Set())
+      }
+      userConnections.get(user.id)!.add(socket.id)
+    } catch (error) {
+      // Auth failed (invalid session, etc)
+      socket.disconnect(true)
+    }
   })
 }
 

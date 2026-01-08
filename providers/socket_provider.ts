@@ -6,6 +6,10 @@ export default class SocketProvider {
   constructor(protected app: ApplicationService) {}
 
   async ready() {
+    if (this.app.getEnvironment() === 'console') {
+      return
+    }
+
     await socket.boot()
 
     const { setupWebsocketsHandlers } = await import('#services/websocket_service')
@@ -14,10 +18,12 @@ export default class SocketProvider {
   }
 
   async shutdown() {
-    if (socket.io) {
-      socket.io.close(() => {
-        logger.info('Socket.io server stopped')
-      })
+    if (this.app.getEnvironment() !== 'console' && socket.io) {
+      try {
+        socket.io.close(() => {
+          logger.info('Socket.io server stopped')
+        })
+      } catch (error) {}
     }
   }
 }

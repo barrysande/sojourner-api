@@ -30,15 +30,11 @@ export default class ChatMessage extends BaseModel {
   @column()
   declare messageType: MessageType
 
-  @column({
-    serialize: (value: string | null) => (value ? JSON.parse(value) : null),
-    prepare: (value: any) => (value ? JSON.stringify(value) : null),
-  })
+  @column()
   declare metadata: SystemMessageMetadata | null
 
   @column.dateTime({
     autoCreate: true,
-    serialize: (value: DateTime) => value.toISO(),
   })
   declare createdAt: DateTime
 
