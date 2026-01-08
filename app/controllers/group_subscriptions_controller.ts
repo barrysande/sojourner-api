@@ -20,7 +20,29 @@ export default class GroupSubscriptionsController {
 
     const payload = await request.validateUsing(createGroupSubscriptionValidator)
 
-    const result = await this.groupSubscriptionService.createGroupSubscription(user.id, payload)
+    const plan = await Plan.query().where('slug', payload.slug).firstOrFail()
+
+    const planType = plan.slug.replace('group-', '') as 'monthly' | 'quarterly' | 'annual'
+
+    const desluggedPayload = {
+      plan_type: planType,
+      product_id: plan.productId,
+      quantity: payload.quantity,
+      customer: payload.customer,
+      billing: payload.billing,
+      metadata: payload.metadata,
+      addons: [
+        {
+          addon_id: plan.addonId,
+          quantity: payload.addons[0].quantity,
+        },
+      ],
+    }
+
+    const result = await this.groupSubscriptionService.createGroupSubscription(
+      user.id,
+      desluggedPayload
+    )
 
     return response.created(result)
   }

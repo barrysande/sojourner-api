@@ -9,7 +9,7 @@ import { customAlphabet } from 'nanoid'
 import TierService from './tier_service.js'
 import GracePeriodService from './grace_period_service.js'
 import DodoPaymentService from './dodo_payment_service.js'
-import { createGroupSubscriptionValidator } from '#validators/subscription'
+import { createGroupSubPayloadValidator } from '#validators/subscription'
 import type {
   CreateGroupSubscriptionParams,
   ChangeGroupSubscriptionPlanParams,
@@ -29,7 +29,7 @@ import { Subscription } from 'dodopayments/resources/subscriptions.mjs'
 import NotificationService from './notification_service.js'
 import { GroupSubscriptionFullException } from '#exceptions/subscription_conflict_exception'
 
-type CreateGroupPayload = Infer<typeof createGroupSubscriptionValidator>
+type CreateGroupPayload = Infer<typeof createGroupSubPayloadValidator>
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 
 type GroupSubscriptionRole = 'owner' | 'member'

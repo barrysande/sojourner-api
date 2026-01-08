@@ -254,6 +254,28 @@ const COUNTRY_CODES = [
 
 export const createIndividualSubscriptionValidator = vine.create({
   plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
+  slug: vine.string().trim(),
+  quantity: vine.number().min(1),
+  customer: vine.object({
+    email: vine.string().trim().email(),
+    name: vine.string().trim().optional(),
+    phone_number: vine.string().trim().optional(),
+  }),
+  billing: vine.object({
+    street: vine.string().trim().minLength(1).maxLength(255),
+    city: vine.string().trim().minLength(1).maxLength(100),
+    state: vine.string().trim().minLength(1).maxLength(100),
+    zipcode: vine.string().trim().minLength(1).maxLength(20),
+    country: vine.enum(COUNTRY_CODES),
+  }),
+  metadata: vine.record(vine.any()).optional(),
+  return_url: vine.string().trim().url().optional(),
+  payment_link: vine.boolean().optional(),
+  trial_period_days: vine.number().min(0).optional(),
+})
+
+export const createIndivSubPaylodValidator = vine.create({
+  plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
   product_id: vine.string().trim(),
   quantity: vine.number().min(1),
   customer: vine.object({
@@ -282,6 +304,33 @@ export const changeIndividualPlanValidator = vine.create({
 
 export const createGroupSubscriptionValidator = vine.create({
   plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
+  slug: vine.string().trim(),
+  quantity: vine.number().min(1).max(100),
+  customer: vine.object({
+    email: vine.string().trim().email(),
+    name: vine.string().trim().optional(),
+    phone_number: vine.string().trim().optional(),
+  }),
+  billing: vine.object({
+    street: vine.string().trim().minLength(1).maxLength(255),
+    city: vine.string().trim().minLength(1).maxLength(100),
+    state: vine.string().trim().minLength(1).maxLength(100),
+    zipcode: vine.string().trim().minLength(1).maxLength(20),
+    country: vine.enum(COUNTRY_CODES),
+  }),
+  metadata: vine.record(vine.any()).optional(),
+  addons: vine.array(
+    vine.object({
+      quantity: vine.number().min(1),
+    })
+  ),
+  return_url: vine.string().trim().url().optional(),
+  payment_link: vine.boolean().optional(),
+  trial_period_days: vine.number().min(0).optional(),
+})
+
+export const createGroupSubPayloadValidator = vine.create({
+  plan_type: vine.enum(['monthly', 'quarterly', 'annual']),
   product_id: vine.string().trim(),
   quantity: vine.number().min(1).max(100),
   customer: vine.object({
@@ -297,14 +346,12 @@ export const createGroupSubscriptionValidator = vine.create({
     country: vine.enum(COUNTRY_CODES),
   }),
   metadata: vine.record(vine.any()).optional(),
-  addons: vine
-    .array(
-      vine.object({
-        addon_id: vine.string().trim(),
-        quantity: vine.number().min(1),
-      })
-    )
-    .optional(),
+  addons: vine.array(
+    vine.object({
+      addon_id: vine.string().trim(),
+      quantity: vine.number().min(1),
+    })
+  ),
   return_url: vine.string().trim().url().optional(),
   payment_link: vine.boolean().optional(),
   trial_period_days: vine.number().min(0).optional(),

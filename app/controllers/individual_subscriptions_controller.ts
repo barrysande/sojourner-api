@@ -15,9 +15,21 @@ export default class IndividualSubscriptionsController {
     const user = auth.getUserOrFail()
     const payload = await request.validateUsing(createIndividualSubscriptionValidator)
 
+    const plan = await Plan.query().where('slug', payload.slug).firstOrFail()
+
+    const planType = plan.slug.replace('individual-', '') as 'monthly' | 'quarterly' | 'annual'
+
+    const desluggedPayload = {
+      plan_type: planType,
+      product_id: plan.productId,
+      quantity: payload.quantity,
+      customer: payload.customer,
+      billing: payload.billing,
+    }
+
     const result = await this.individualSubscriptionService.createIndividualSubscription(
       user.id,
-      payload
+      desluggedPayload
     )
 
     return response.created(result)

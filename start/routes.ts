@@ -24,6 +24,7 @@ const GroupSubscriptionsController = () => import('#controllers/group_subscripti
 const ProductsSyncController = () => import('#controllers/products_sync_controller')
 const AdminAuthsController = () => import('#controllers/admin_auths_controller')
 const PostVisitNotesController = () => import('#controllers/post_visit_notes_controller')
+const PlansController = () => import('#controllers/plans_controller')
 /*
   |----------------------------------------------------------
   | Users' Auth Routes
@@ -235,6 +236,13 @@ router
   |----------------------------------------------------------
   */
 router.post('/webhooks/dodo', [WebhooksController, 'handle'])
+
+/*
+  |----------------------------------------------------------
+  | Sluggified Plans Details
+  |----------------------------------------------------------
+  */
+router.get('/slugified-plans', [PlansController, 'index']).prefix('/api/subscriptions')
 
 /*
   |----------------------------------------------------------

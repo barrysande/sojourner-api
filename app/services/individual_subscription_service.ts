@@ -14,11 +14,11 @@ import type { Subscription } from 'dodopayments/resources/subscriptions.mjs'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import User from '#models/user'
 import SubscriptionConflictException from '#exceptions/subscription_conflict_exception'
-import { createIndividualSubscriptionValidator } from '#validators/subscription'
+import { createIndivSubPaylodValidator } from '#validators/subscription'
 import type { Infer } from '@vinejs/vine/types'
 import { Exception } from '@adonisjs/core/exceptions'
 
-type CreateSubPayload = Infer<typeof createIndividualSubscriptionValidator>
+type CreateSubPayload = Infer<typeof createIndivSubPaylodValidator>
 
 type PlanType = 'monthly' | 'quarterly' | 'annual'
 
