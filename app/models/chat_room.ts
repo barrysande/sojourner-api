@@ -14,21 +14,17 @@ export default class ChatRoom extends BaseModel {
   @column()
   declare roomName: string | null
 
-  @column.dateTime({
-    serialize: (value: DateTime) => value.toISO(),
-  })
+  @column.dateTime({})
   declare lastActivityAt: DateTime
 
   @column.dateTime({
     autoCreate: true,
-    serialize: (value: DateTime) => value.toISO(),
   })
   declare createdAt: DateTime
 
   @column.dateTime({
     autoCreate: true,
     autoUpdate: true,
-    serialize: (value: DateTime) => value.toISO(),
   })
   declare updatedAt: DateTime
 
