@@ -25,6 +25,7 @@ const ProductsSyncController = () => import('#controllers/products_sync_controll
 const AdminAuthsController = () => import('#controllers/admin_auths_controller')
 const PostVisitNotesController = () => import('#controllers/post_visit_notes_controller')
 const PlansController = () => import('#controllers/plans_controller')
+const GemPhotosController = () => import('#controllers/gem_photos_controller')
 /*
   |----------------------------------------------------------
   | Users' Auth Routes
@@ -98,11 +99,11 @@ router
     router.post('/hidden-gems', [HiddenGemsController, 'store'])
     router.patch('/hidden-gems/:id', [HiddenGemsController, 'update'])
     router.delete('/hidden-gems/:id', [HiddenGemsController, 'destroy'])
-    router.post('/hidden-gems/:id/photos', [HiddenGemsController, 'addPhotos'])
-    router.delete('/hidden-gems/:id/photos/:photoId', [HiddenGemsController, 'deletePhoto'])
+    router.post('/hidden-gems/:gemId/photos', [GemPhotosController, 'store'])
+    router.delete('/hidden-gems/:gemId/photos/:photoId', [GemPhotosController, 'destroy'])
 
     router.get('/hidden-gems/:gemId/expenses', [ExpensesController, 'index'])
-    router.get('/hidden-gems/:gemId/expenses/:expensesId', [ExpensesController, 'show'])
+    router.get('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'show'])
     router.post('/hidden-gems/:gemId/expenses', [ExpensesController, 'store'])
     router.patch('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'update'])
     router.delete('/hidden-gems/:gemId/expenses/:expenseId', [ExpensesController, 'destroy'])
