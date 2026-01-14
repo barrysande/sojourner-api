@@ -93,10 +93,10 @@ export default class NotificationsController {
         })
       }
 
-      const updatedCount = await this.notificationService.markNotificationsAsRead(notificationIds)
+      await this.notificationService.markNotificationsAsRead(notificationIds)
 
       return response.ok({
-        message: `Marked ${updatedCount} notification(s) as read`,
+        message: 'Marked notification(s) as read',
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
@@ -119,11 +119,10 @@ export default class NotificationsController {
     try {
       const user = auth.getUserOrFail()
 
-      //   no need for notification ownership because the notification service method markAllNotificationsAsRead does it
-      const updatedCount = await this.notificationService.markAllNotificationsAsRead(user.id)
+      await this.notificationService.markAllNotificationsAsRead(user.id)
 
       return response.ok({
-        message: `Marked ${updatedCount} notification(s) as read`,
+        message: 'Marked notifications as read',
       })
     } catch (error) {
       return response.internalServerError({

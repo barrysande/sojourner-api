@@ -94,4 +94,13 @@ export default await Env.create(new URL('../', import.meta.url), {
   R2_BUCKET: Env.schema.string(),
   R2_ENDPOINT: Env.schema.string(),
   R2_CDN_URL: Env.schema.string(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for Redis
+  |----------------------------------------------------------
+  */
+  REDIS_HOST: Env.schema.string(),
+  REDIS_PORT: Env.schema.number(),
+  REDIS_PASSWORD: Env.schema.string(),
 })

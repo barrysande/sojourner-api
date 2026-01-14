@@ -9,6 +9,8 @@ import ShareGroupMember from '#models/share_group_member'
 import TierService from '#services/tier_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import drive from '@adonisjs/drive/services/main'
+import Notification from '#models/notification'
+import db from '@adonisjs/lucid/services/db'
 
 type GracePeriodType = 'payment_failure' | 'group_removal'
 type UserTier = 'free' | 'individual_paid' | 'group_paid'
@@ -233,6 +235,16 @@ export default class GracePeriodService {
       { client: trx }
     )
 
+    await Notification.create({
+      userId,
+      type: 'grace_period',
+      title: 'Grace Period Started',
+      message:
+        'Payment failed and or subscription failed. You can access paid features for 3 days. Then you will be degraded to free tier.',
+      sentAt: DateTime.now(),
+      isRead: false,
+    })
+
     logger.info('Grace period started', {
       userId,
       gracePeriodId: gracePeriod.id,
@@ -346,40 +358,69 @@ export default class GracePeriodService {
 
   /**
    * Check for expired grace periods and trigger degradation
-   *
-   * TODO: Create a cron job (hourly) to trigger this method
-   *
-   * @returns Number of users degraded
+   * * Recommended: Run this Cron every 5-15 minutes.
+   * We process a limited batch each time to prevent timeouts/memory issues.
    */
-  async checkExpiredGracePeriods(trx: TransactionClientContract): Promise<number> {
-    const expiredGracePeriods = await GracePeriod.query({ client: trx })
+  async checkExpiredGracePeriods(): Promise<number> {
+    const expiredGracePeriods = await GracePeriod.query()
       .where('resolved', false)
       .where('expires_at', '<=', DateTime.now().toSQL())
-      .forUpdate()
       .preload('user')
+      .limit(5)
 
-    logger.info('Checking expired grace periods', {
+    if (expiredGracePeriods.length === 0) {
+      return 0
+    }
+
+    logger.info('Processing batch of expired grace periods', {
       count: expiredGracePeriods.length,
     })
 
     let degradedCount = 0
 
     for (const gracePeriod of expiredGracePeriods) {
-      try {
-        await this.degradeUserToFree(gracePeriod.userId, trx)
-        degradedCount++
-      } catch (error) {
-        logger.error('Failed to degrade user after grace period expiry', {
-          userId: gracePeriod.userId,
-          gracePeriodId: gracePeriod.id,
-          error: error.message,
-        })
-      }
+      await db.transaction(async (trx) => {
+        try {
+          const lockedPeriod = await GracePeriod.query({ client: trx })
+            .where('id', gracePeriod.id)
+            .where('resolved', false)
+            .forUpdate()
+            .first()
+
+          if (!lockedPeriod) {
+            return
+          }
+
+          await this.degradeUserToFree(lockedPeriod.userId, trx)
+
+          lockedPeriod.resolved = true
+          await lockedPeriod.save()
+
+          await Notification.create(
+            {
+              userId: lockedPeriod.userId,
+              type: 'grace_period',
+              title: 'Grace Period Ended',
+              message: 'Payment failed. You have been degraded to free tier.',
+              sentAt: DateTime.now(),
+              isRead: false,
+            },
+            { client: trx }
+          )
+
+          degradedCount++
+        } catch (error) {
+          logger.error('Failed to degrade user', {
+            userId: gracePeriod.userId,
+            gracePeriodId: gracePeriod.id,
+            error: error.message,
+          })
+        }
+      })
     }
 
-    logger.info('Expired grace periods processed', {
-      total: expiredGracePeriods.length,
-      degraded: degradedCount,
+    logger.info('Batch processing complete', {
+      processed: degradedCount,
       failed: expiredGracePeriods.length - degradedCount,
     })
 
@@ -407,8 +448,7 @@ export default class GracePeriodService {
 
     for (const gracePeriod of gracePeriods) {
       try {
-        // TODO: Send actual email notification
-        // await mail.send(new GracePeriodWarningMail(gracePeriod.user, gracePeriod))
+        // TODO: Create Notification.
 
         logger.info('Grace period warning sent (placeholder)', {
           userId: gracePeriod.userId,

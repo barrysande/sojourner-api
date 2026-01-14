@@ -15,7 +15,7 @@ import { Exception } from '@adonisjs/core/exceptions'
 import Job from '#models/job'
 
 export default class EmailVerificationService {
-  private RESEND_WAIT_SECONDS = 60
+  private RESEND_WAIT_SECONDS = 3600
 
   private async deleteExistingToken(userId: number, trx: TransactionClientContract): Promise<void> {
     await EmailVerificationToken.query({ client: trx }).where('user_id', userId).delete()
@@ -61,7 +61,7 @@ export default class EmailVerificationService {
 
       const emailVerificationUrl = this.buildVerificationUrl(user.email, plainToken)
 
-      await mail.sendLater(new EmailVerificationMail(user, emailVerificationUrl)) // should I really use sendLater or just send since I'm using a database-backed queue?
+      await mail.sendLater(new EmailVerificationMail(user, emailVerificationUrl))
 
       logger.info('Verification email sent', {
         userId: user.id,
@@ -118,14 +118,13 @@ export default class EmailVerificationService {
     return user
   }
 
-  //TODO: Schedule Clean up used tokens - command method to clean up used tokens.
   async cleanupExpiredTokens(): Promise<number> {
     const result = await EmailVerificationToken.query()
       .where('expires_at', '<', DateTime.now().toSQL())
       .orWhereNotNull('used_at')
       .delete()
 
-    const deletedCount = result[0].$extras?.affected || 0
+    const deletedCount = Number(result[0].$extras)
 
     logger.info('Cleaned up e xpired password reset tokens', {
       count: deletedCount,
@@ -144,10 +143,10 @@ export default class EmailVerificationService {
       const secondsSinceLast = Math.abs(existingToken.createdAt.diffNow('seconds').seconds)
 
       if (secondsSinceLast < this.RESEND_WAIT_SECONDS) {
-        throw new Exception(
-          `Please wait ${this.RESEND_WAIT_SECONDS - Math.floor(secondsSinceLast)} seconds before resending.`,
-          { status: 429, code: 'E_TOO_MANY_REQUESTS' }
-        )
+        throw new Exception('Check email or try later.', {
+          status: 429,
+          code: 'E_TOO_MANY_REQUESTS',
+        })
       }
     }
 

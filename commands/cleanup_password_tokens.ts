@@ -11,7 +11,7 @@ export default class CleanupPasswordTokens extends BaseCommand {
   }
 
   async run() {
-    const passwordResetService = new PasswordResetService()
+    const passwordResetService = await this.app.container.make(PasswordResetService)
 
     const deletedCount = await passwordResetService.cleanupExpiredTokens()
     this.logger.info(`Deleted ${deletedCount} expired password reset tokens`)

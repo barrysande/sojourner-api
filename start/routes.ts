@@ -8,6 +8,7 @@ import {
 } from './limiter.js'
 import AutoSwagger from 'adonis-autoswagger'
 import swagger from '#config/swagger'
+import transmit from '@adonisjs/transmit/services/main'
 
 const AuthController = () => import('#controllers/auth_controller')
 const SocialAuthsController = () => import('#controllers/social_auths_controller')
@@ -240,10 +241,21 @@ router.post('/webhooks/dodo', [WebhooksController, 'handle'])
 
 /*
   |----------------------------------------------------------
-  | Sluggified Plans Details
+  | Sluggified Plans Details Routes
   |----------------------------------------------------------
   */
 router.get('/slugified-plans', [PlansController, 'index']).prefix('/api/subscriptions')
+
+/*
+  |----------------------------------------------------------
+  | Transmit Routes
+  |----------------------------------------------------------
+  */
+transmit.registerRoutes((route) => {
+  if (route.getPattern() === '__transmit/events') {
+    route.use(middleware.auth())
+  }
+})
 
 /*
   |----------------------------------------------------------

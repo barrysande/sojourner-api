@@ -381,8 +381,6 @@ export class GroupSubscriptionService {
       params
     )
 
-    // TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
-
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
       oldSeats: groupSubscription.totalSeats,
@@ -435,8 +433,6 @@ export class GroupSubscriptionService {
       groupSubscription.dodoSubscriptionId!,
       params
     )
-
-    //TODO in worker: Update totalSeats to new seat count on subscription.plan_changed
 
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
@@ -866,8 +862,15 @@ export class GroupSubscriptionService {
       .where('status', 'active')
 
     await Promise.all(
-      members.map((member) =>
-        this.tierService.updateUserTier(
+      members.map(async (member) => {
+        await this.gracePeriodService.startGracePeriod(
+          member.userId,
+          'payment_failure',
+          'group_paid',
+          trx
+        )
+
+        await this.tierService.updateUserTier(
           member.userId,
           'Group subscription expired',
           'webhook',
@@ -876,7 +879,7 @@ export class GroupSubscriptionService {
             group_subscription_id: groupSubscription.id,
           }
         )
-      )
+      })
     )
 
     return owner

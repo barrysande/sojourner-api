@@ -1,7 +1,8 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, belongsTo } from '@adonisjs/lucid/orm'
+import { BaseModel, column, belongsTo, afterCreate } from '@adonisjs/lucid/orm'
 import type { BelongsTo } from '@adonisjs/lucid/types/relations'
 import User from './user.js'
+import transmit from '@adonisjs/transmit/services/main'
 
 type NotificationType =
   | 'share_group_invite'
@@ -9,6 +10,7 @@ type NotificationType =
   | 'group_joined'
   | 'group_left'
   | 'group_dissolved'
+  | 'grace_period'
 
 export default class Notification extends BaseModel {
   @column({ isPrimary: true })
@@ -43,4 +45,14 @@ export default class Notification extends BaseModel {
 
   @belongsTo(() => User)
   declare user: BelongsTo<typeof User>
+
+  // Hook to transmit notifications to a particular user
+  @afterCreate()
+  static async broadcastNotification(notification: Notification) {
+    const channel = `users/${notification.userId}/notifications`
+
+    const message = notification.serialize()
+
+    transmit.broadcast(channel, message)
+  }
 }

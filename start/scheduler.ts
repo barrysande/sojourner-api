@@ -4,9 +4,17 @@ import CleanupPasswordTokens from '../commands/cleanup_password_tokens.js'
 import ProcessWebhooks from '../commands/process_webhooks.js'
 import db from '@adonisjs/lucid/services/db'
 import { DateTime } from 'luxon'
+import ExpiredGracePeriods from '../commands/expired_grace_periods.js'
+import CleanExpiredTokens from '../commands/clean_expired_tokens.js'
+
+scheduler.command(ExpiredGracePeriods).everyFifteenMinutes().withoutOverlapping()
+
+scheduler.command(CleanExpiredTokens).quarterly().withoutOverlapping()
 
 scheduler.command(ProcessJobs).everyFiveSeconds().withoutOverlapping()
+
 scheduler.command(ProcessWebhooks).everyFiveSeconds().withoutOverlapping()
+
 scheduler.command(CleanupPasswordTokens).quarterly().withoutOverlapping()
 
 scheduler
@@ -21,7 +29,3 @@ scheduler
   })
   .quarterly()
   .withoutOverlapping()
-
-// TODO
-// 1. Create a scheduler for cleaning email verification records - quarterly.
-// 2. Create a scheduler for cleaning password reset records - quarterly.
