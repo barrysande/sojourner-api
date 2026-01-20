@@ -133,7 +133,7 @@ export default class HiddenGemsController {
     const uploadedKeys: string[] = []
     try {
       const photoRecords: PhotoRecord[] = await Promise.all(
-        payload.photos.map(async (photo) => {
+        payload.photos.map(async (photo, index) => {
           const result = await this.imageProcessingService.processAndUpload(photo, user.id, gem.id)
 
           uploadedKeys.push(result.storageKey, result.thumbnailStorageKey)
@@ -142,7 +142,7 @@ export default class HiddenGemsController {
             hiddenGemId: gem.id,
             originalFileName: photo.clientName,
             caption: null,
-            isPrimary: false,
+            isPrimary: index === 0,
             ...result,
           }
         })

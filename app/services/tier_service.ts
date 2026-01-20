@@ -155,7 +155,7 @@ export default class TierService {
     if (currentCount >= limits.maxShareGroups) {
       return {
         canCreate: false,
-        message: `Share group limit reached. ${user.tier} tier allows maximum ${limits.maxShareGroups} groups. Upgrade to create more.`,
+        message: `Share group limit reached, ${user.tier} tier allows maximum ${limits.maxShareGroups} groups. Upgrade to create more.`,
       }
     }
     return {

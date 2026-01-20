@@ -5,7 +5,6 @@ import GracePeriod from '#models/grace_period'
 import User from '#models/user'
 import HiddenGem from '#models/hidden_gem'
 import Photo from '#models/photo'
-import ShareGroupMember from '#models/share_group_member'
 import TierService from '#services/tier_service'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 import drive from '@adonisjs/drive/services/main'
@@ -152,43 +151,6 @@ export default class GracePeriodService {
   }
 
   /**
-   * Remove user from excess sharegroups with tier limits being the source of truth.
-   * Updates membership status to 'left'
-   *
-   * @param userId - User to remove from groups
-   * @param trx - Database transaction
-   * @returns Number of groups removed from
-   */
-  private async removeFromExcessShareGroups(
-    userId: number,
-    trx: TransactionClientContract
-  ): Promise<number> {
-    const limits = this.tierService.getTierLimits('free')
-
-    const freeShareGroupLimits = limits.maxShareGroups
-
-    const activeMemberships = await ShareGroupMember.query({ client: trx })
-      .where('user_id', userId)
-      .where('status', 'active')
-      .forUpdate()
-
-    const membershipsToRemove = activeMemberships.slice(freeShareGroupLimits)
-
-    for (const membership of membershipsToRemove) {
-      await membership.useTransaction(trx).merge({ status: 'left' }).save()
-    }
-
-    logger.info('User removed from share groups', {
-      userId,
-      removedCount: membershipsToRemove.length,
-      retainedCount: Math.min(3, activeMemberships.length),
-      totalFound: activeMemberships.length,
-    })
-
-    return membershipsToRemove.length
-  }
-
-  /**
    * Start a grace period for a user
    * Only one active grace period allowed per user
    *
@@ -318,10 +280,7 @@ export default class GracePeriodService {
     // 2. Lock gems over free tier limit (keep first 3)
     const lockedGems = await this.lockExcessGems(userId, trx)
 
-    // 3. Remove user from share group(s)
-    const removeFromExcessShareGroups = await this.removeFromExcessShareGroups(userId, trx)
-
-    // 4. Resolve grace period
+    // 3. Resolve grace period
     const gracePeriod = await GracePeriod.query({ client: trx })
       .where('user_id', userId)
       .where('resolved', false)
@@ -333,7 +292,7 @@ export default class GracePeriodService {
       await gracePeriod.save()
     }
 
-    // 5. Update user tier to free
+    // 4. Update user tier to free
     await this.tierService.updateUserTier(
       userId,
       'Grace period expired - degraded to free tier',
@@ -344,7 +303,6 @@ export default class GracePeriodService {
         gracePeriodType: gracePeriod?.type,
         deletedPhotos,
         lockedGems,
-        removeFromExcessShareGroups,
       }
     )
 
@@ -352,7 +310,6 @@ export default class GracePeriodService {
       userId,
       deletedPhotos,
       lockedGems,
-      removeFromExcessShareGroups,
     })
   }
 
