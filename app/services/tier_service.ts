@@ -148,6 +148,7 @@ export default class TierService {
 
     const currentGroupsCount = await ShareGroup.query()
       .where('created_by', userId)
+      .where('status', 'active')
       .count('* as total')
 
     const currentCount = Number(currentGroupsCount[0].$extras.total)
