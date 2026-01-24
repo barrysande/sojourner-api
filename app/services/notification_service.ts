@@ -172,7 +172,7 @@ export default class NotificationService {
 
     const subscriptionOwner = await User.findOrFail(groupSubscription?.ownerUserId, { client: trx })
 
-    const notiification = await Notification.create(
+    const notification = await Notification.create(
       {
         userId: newUser.id,
         type: 'group_joined',
@@ -188,7 +188,7 @@ export default class NotificationService {
       { client: trx }
     )
 
-    return notiification
+    return notification
   }
 
   async createSubscriptionRemovedNotification(

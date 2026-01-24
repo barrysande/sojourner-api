@@ -23,7 +23,11 @@ export default class ChatService {
   async getChatRoomByGroupId(shareGroupId: number): Promise<ChatRoom | null> {
     return await ChatRoom.query()
       .where('share_group_id', shareGroupId)
-      .preload('shareGroup')
+      .preload('shareGroup', (shareGroupQuery) => {
+        shareGroupQuery.preload('members', (membersQuery) => {
+          membersQuery.preload('user')
+        })
+      })
       .first()
   }
 

@@ -244,11 +244,13 @@ export default class IndividualSubscriptionService {
    */
   async handleSubscriptionRenewed(
     userId: number,
+    dodoSubscriptionId: string,
     newExpiresAt: string,
     trx: TransactionClientContract
   ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
@@ -290,12 +292,14 @@ export default class IndividualSubscriptionService {
    */
   async handleSubscriptionPlanChanged(
     userId: number,
+    dodoSubscriptionId: string,
     newPlanType: PlanType,
     newExpiresAt: string,
     trx: TransactionClientContract
   ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
@@ -329,9 +333,14 @@ export default class IndividualSubscriptionService {
    *
    * @param trx TransactionClientContract
    */
-  async handleSubscriptionCancelled(userId: number, trx: TransactionClientContract): Promise<User> {
+  async handleSubscriptionCancelled(
+    userId: number,
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
@@ -371,9 +380,14 @@ export default class IndividualSubscriptionService {
    *
    * @param trx TransactionClientContract
    */
-  async handleSubscriptionExpired(userId: number, trx: TransactionClientContract): Promise<User> {
+  async handleSubscriptionExpired(
+    userId: number,
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()
@@ -419,9 +433,14 @@ export default class IndividualSubscriptionService {
    *
    * @param trx TransactionClientContract
    */
-  async handleSubscriptionFailed(userId: number, trx: TransactionClientContract): Promise<User> {
+  async handleSubscriptionFailed(
+    userId: number,
+    dodoSubscriptionId: string,
+    trx: TransactionClientContract
+  ): Promise<User> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('user')
       .forUpdate()
       .firstOrFail()

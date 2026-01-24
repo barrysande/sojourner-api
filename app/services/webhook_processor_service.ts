@@ -159,6 +159,7 @@ export default class WebhookService {
         }
         return this.individualSubscriptionService.handleSubscriptionRenewed(
           userId,
+          dodoSubId,
           newExpiresAt,
           trx
         )
@@ -195,7 +196,11 @@ export default class WebhookService {
         if (!userId) {
           throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
         }
-        return this.individualSubscriptionService.handleSubscriptionCancelled(userId, trx)
+        return this.individualSubscriptionService.handleSubscriptionCancelled(
+          userId,
+          dodoSubId,
+          trx
+        )
       } else if (subType === 'group') {
         if (!ownerUserId) {
           throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
@@ -228,7 +233,7 @@ export default class WebhookService {
         if (!userId) {
           throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
         }
-        return this.individualSubscriptionService.handleSubscriptionExpired(userId, trx)
+        return this.individualSubscriptionService.handleSubscriptionExpired(userId, dodoSubId, trx)
       } else if (subType === 'group') {
         if (!ownerUserId) {
           throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
@@ -257,7 +262,7 @@ export default class WebhookService {
         if (!userId) {
           throw new Exception(`Missing metadata.userId for ${dodoSubId}`)
         }
-        return this.individualSubscriptionService.handleSubscriptionFailed(userId, trx)
+        return this.individualSubscriptionService.handleSubscriptionFailed(userId, dodoSubId, trx)
       } else if (subType === 'group') {
         if (!ownerUserId) {
           throw new Exception(`Missing metadata.ownerUserId for ${dodoSubId}`)
@@ -294,6 +299,7 @@ export default class WebhookService {
         }
         return this.individualSubscriptionService.handleSubscriptionPlanChanged(
           userId,
+          dodoSubId,
           planType,
           payload.expires_at!,
           trx

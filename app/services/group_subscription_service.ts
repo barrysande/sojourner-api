@@ -675,16 +675,12 @@ export class GroupSubscriptionService {
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
-
-    // Populate dodoSubscriptionId if missing (handles out-of-order webhooks)
-    if (!groupSubscription.dodoSubscriptionId) {
-      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
-    }
 
     await groupSubscription
       .useTransaction(trx)
@@ -717,16 +713,12 @@ export class GroupSubscriptionService {
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
-
-    // Populate dodoSubscriptionId if missing
-    if (!groupSubscription.dodoSubscriptionId) {
-      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
-    }
 
     await groupSubscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
 
@@ -759,16 +751,12 @@ export class GroupSubscriptionService {
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
-
-    // Populate dodoSubscriptionId if missing
-    if (!groupSubscription.dodoSubscriptionId) {
-      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
-    }
 
     await groupSubscription.useTransaction(trx).merge({ status: 'on_hold' }).save()
 
@@ -810,16 +798,12 @@ export class GroupSubscriptionService {
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
-
-    // Populate dodoSubscriptionId if missing
-    if (!groupSubscription.dodoSubscriptionId) {
-      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
-    }
 
     await groupSubscription
       .useTransaction(trx)
@@ -844,16 +828,12 @@ export class GroupSubscriptionService {
   ): Promise<User> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
+      .where('dodo_subscription_id', dodoSubscriptionId)
       .preload('owner')
       .forUpdate()
       .firstOrFail()
 
     const owner = groupSubscription.owner
-
-    // Populate dodoSubscriptionId if missing
-    if (!groupSubscription.dodoSubscriptionId) {
-      groupSubscription.dodoSubscriptionId = dodoSubscriptionId
-    }
 
     await groupSubscription.useTransaction(trx).merge({ status: 'expired' }).save()
 
