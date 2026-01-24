@@ -458,7 +458,7 @@ export class GroupSubscriptionService {
       .where('status', 'active')
       .firstOrFail()
 
-    if (groupSubscription.ownerUserId !== ownerUserId) {
+    if (Number(groupSubscription.ownerUserId) !== ownerUserId) {
       throw new ActionDeniedException('Only the owner can cancel the subscription')
     }
 
@@ -572,7 +572,8 @@ export class GroupSubscriptionService {
    */
   async resolveGroupSubscriptionContext(userId: number): Promise<GroupSubscriptionContext> {
     const subscription = await GroupSubscription.query()
-      .where('status', 'active')
+      //Future me: Here I allow 'cancelled' and 'active' statuses if the time hasn't run out yet so that FE gets it.
+      .whereIn('status', ['active', 'cancelled'])
       .where('expires_at', '>', DateTime.now().toSQL())
       .where((query) => {
         query.where('owner_user_id', userId).orWhereHas('members', (memberQuery) => {
@@ -597,7 +598,7 @@ export class GroupSubscriptionService {
   async getOwnedGroupSubscription(userId: number): Promise<GroupSubscription> {
     return await GroupSubscription.query()
       .where('owner_user_id', userId)
-      .where('status', 'active')
+      .whereIn('status', ['active', 'cancelled'])
       .where('expires_at', '>', DateTime.now().toSQL())
       .firstOrFail()
   }
@@ -605,7 +606,7 @@ export class GroupSubscriptionService {
   async listGroupSubscriptionMembers(ownerUserId: number) {
     const groupSubscription = await GroupSubscription.query()
       .where('owner_user_id', ownerUserId)
-      .where('status', 'active')
+      .whereIn('status', ['active', 'cancelled'])
       .preload('members', (query) => {
         query.where('status', 'active').preload('user', (userQuery) => {
           userQuery.select('id', 'full_name')
@@ -843,6 +844,8 @@ export class GroupSubscriptionService {
 
     await Promise.all(
       members.map(async (member) => {
+        await member.useTransaction(trx).merge({ status: 'removed' }).save()
+
         await this.gracePeriodService.startGracePeriod(
           member.userId,
           'payment_failure',

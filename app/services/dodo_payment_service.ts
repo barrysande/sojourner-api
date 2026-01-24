@@ -356,7 +356,7 @@ export default class DodoPaymentService {
     try {
       const subscription = await IndividualSubscription.query()
         .where('user_id', userId)
-        .whereIn('status', ['active', 'on_hold'])
+        .whereIn('status', ['active', 'on_hold', 'cancelled'])
         .firstOrFail()
 
       if (!subscription.dodoCustomerId) {
@@ -380,12 +380,21 @@ export default class DodoPaymentService {
   }
 
   async getGroupCustomerPortalLink(userId: number): Promise<{ link: string }> {
-    try {
-      const subscription = await GroupSubscription.query()
-        .where('owner_user_id', userId)
-        .whereIn('status', ['active', 'on_hold'])
-        .firstOrFail()
+    let subscription
 
+    try {
+      subscription = await GroupSubscription.query()
+        .where('owner_user_id', userId)
+        .whereIn('status', ['active', 'on_hold', 'cancelled'])
+        .firstOrFail()
+    } catch (error) {
+      throw new Exception('Only the group owner can access the billing portal.', {
+        status: 403,
+        code: 'E_ACTION_DENIED',
+      })
+    }
+
+    try {
       if (!subscription.dodoCustomerId) {
         throw new Exception('Customer ID not found. Please contact support.')
       }

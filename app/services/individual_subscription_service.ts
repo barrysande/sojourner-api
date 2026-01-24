@@ -154,7 +154,7 @@ export default class IndividualSubscriptionService {
       true
     )
 
-    await subscription.merge({ cancelAtNextBillingDate: true }).save()
+    await subscription.merge({ status: 'cancelled', cancelAtNextBillingDate: true }).save()
 
     return dodoResponse
   }
@@ -162,7 +162,7 @@ export default class IndividualSubscriptionService {
   async getIndividualSubscriptionDetails(userId: number): Promise<IndividualSubscription> {
     return await IndividualSubscription.query()
       .where('user_id', userId)
-      .where('status', 'active')
+      .whereIn('status', ['active', 'cancelled'])
       .where('expires_at', '>', DateTime.now().toSQL())
       .firstOrFail()
   }
