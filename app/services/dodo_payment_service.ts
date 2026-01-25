@@ -324,10 +324,47 @@ export default class DodoPaymentService {
     try {
       const subscription = await this.client.subscriptions.update(subscriptionId, {
         cancel_at_next_billing_date: cancelAtPeriodEnd,
-        status: 'cancelled',
       })
 
       logger.info('Subscription cancelled', { subscriptionId, cancelAtPeriodEnd })
+      return {
+        addons: subscription.addons,
+        subscription_id: subscription.subscription_id,
+        product_id: subscription.product_id,
+        quantity: subscription.quantity,
+        status: subscription.status,
+        recurring_pre_tax_amount: subscription.recurring_pre_tax_amount,
+        next_billing_date: subscription.next_billing_date,
+        previous_billing_date: subscription.previous_billing_date,
+        created_at: subscription.created_at,
+        cancel_at_next_billing_date: subscription.cancel_at_next_billing_date,
+        cancelled_at: subscription.cancelled_at,
+        customer: {
+          customer_id: subscription.customer.customer_id,
+          email: subscription.customer.email,
+          name: subscription.customer.name,
+        },
+        billing: subscription.billing,
+        metadata: subscription.metadata,
+      }
+    } catch (error) {
+      this.handleDodoApiError(error)
+    }
+  }
+
+  async restoreSubscription(
+    dodoSubscriptionId: string,
+    cancelAtPeriodEnd: boolean = false
+  ): Promise<Partial<Subscription>> {
+    try {
+      const subscription = await this.client.subscriptions.update(dodoSubscriptionId, {
+        cancel_at_next_billing_date: cancelAtPeriodEnd,
+      })
+
+      logger.info('Subscription restored after cancellation', {
+        dodoSubscriptionId,
+        cancelAtPeriodEnd,
+      })
       return {
         addons: subscription.addons,
         subscription_id: subscription.subscription_id,

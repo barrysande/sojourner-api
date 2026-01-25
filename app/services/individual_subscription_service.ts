@@ -164,6 +164,26 @@ export default class IndividualSubscriptionService {
     return dodoResponse
   }
 
+  async restoreIndividualSubscription(userId: number): Promise<Partial<Subscription>> {
+    const subscription = await IndividualSubscription.query()
+      .where('user_id', userId)
+      .where('status', 'cancelled')
+      .firstOrFail()
+
+    if (!subscription.dodoSubscriptionId) {
+      throw new ActionDeniedException('No active subscription.')
+    }
+
+    const dodoResponse = await this.dodoPaymentService.restoreSubscription(
+      subscription.dodoSubscriptionId,
+      false
+    )
+
+    await subscription.merge({ status: 'active', cancelAtNextBillingDate: false }).save()
+
+    return dodoResponse
+  }
+
   async getIndividualSubscriptionDetails(userId: number): Promise<IndividualSubscription> {
     return await IndividualSubscription.query()
       .where('user_id', userId)

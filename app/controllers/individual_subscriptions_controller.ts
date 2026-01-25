@@ -68,6 +68,14 @@ export default class IndividualSubscriptionsController {
     return response.ok(result)
   }
 
+  async restore({ auth, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+
+    await this.individualSubscriptionService.restoreIndividualSubscription(user.id)
+
+    return response.ok({ message: 'Successfully restored subscription.' })
+  }
+
   async show({ auth, response }: HttpContext) {
     try {
       const user = auth.getUserOrFail()

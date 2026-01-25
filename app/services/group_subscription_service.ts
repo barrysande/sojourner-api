@@ -449,21 +449,17 @@ export class GroupSubscriptionService {
    * All members keep access until expiry
    * Grace periods start when subscription expires
    */
-  async cancelGroupSubscription(
-    groupSubscriptionId: number,
-    ownerUserId: number
-  ): Promise<Partial<Subscription>> {
+  async cancelGroupSubscription(ownerUserId: number): Promise<Partial<Subscription>> {
     const groupSubscription = await GroupSubscription.query()
-      .where('id', groupSubscriptionId)
+      .where('owner_user_id', ownerUserId)
       .where('status', 'active')
       .firstOrFail()
 
-    if (Number(groupSubscription.ownerUserId) !== ownerUserId) {
-      throw new ActionDeniedException('Only the owner can cancel the subscription')
+    if (!groupSubscription.dodoSubscriptionId) {
+      throw new ActionDeniedException('Missing active subscription details')
     }
-
     const dodoResponse = await this.dodoPaymentService.cancelSubscription(
-      groupSubscription.dodoSubscriptionId!,
+      groupSubscription.dodoSubscriptionId,
       true
     )
 
@@ -475,10 +471,42 @@ export class GroupSubscriptionService {
       .save()
 
     logger.info('Group subscription cancelled', {
-      groupSubscriptionId,
+      groupSubscriptionId: groupSubscription.id,
       ownerUserId,
       expiresAt: groupSubscription.expiresAt?.toISO(),
     })
+
+    return dodoResponse
+  }
+
+  async restoreGroupSubscription(ownerUserId: number): Promise<Partial<Subscription>> {
+    const groupSubscription = await GroupSubscription.query()
+      .where('owner_user_id', ownerUserId)
+      .where('status', 'cancelled')
+      .firstOrFail()
+
+    if (!groupSubscription.dodoSubscriptionId) {
+      throw new ActionDeniedException('Missing subscription details')
+    }
+
+    const dodoResponse = await this.dodoPaymentService.restoreSubscription(
+      groupSubscription.dodoSubscriptionId,
+      false
+    )
+
+    await groupSubscription
+      .merge({
+        status: 'active',
+        cancelAtNextBillingDate: false,
+      })
+      .save()
+
+    logger.info('Group subscription restored', {
+      groupSubscriptionId: groupSubscription.id,
+      ownerUserId,
+      expiresAt: groupSubscription.expiresAt?.toISO(),
+    })
+
     return dodoResponse
   }
 

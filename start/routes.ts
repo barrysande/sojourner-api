@@ -205,7 +205,8 @@ router
   .group(() => {
     router.post('/individual', [IndividualSubscriptionsController, 'create'])
     router.patch('/individual/plan', [IndividualSubscriptionsController, 'changePlan'])
-    router.patch('/individual', [IndividualSubscriptionsController, 'cancel'])
+    router.patch('/individual/cancel', [IndividualSubscriptionsController, 'cancel'])
+    router.patch('/individual/restore', [IndividualSubscriptionsController, 'restore'])
     router.get('/individual', [IndividualSubscriptionsController, 'show'])
     router.get('/individual/customer-portal', [
       IndividualSubscriptionsController,
@@ -218,6 +219,7 @@ router
     router.patch('/group/plan', [GroupSubscriptionsController, 'changePlan'])
     router.delete('/group/members', [GroupSubscriptionsController, 'removeMember'])
     router.patch('/group/cancel', [GroupSubscriptionsController, 'cancel'])
+    router.patch('/group/restore', [GroupSubscriptionsController, 'restore'])
     router.post('/group/invite-code/regenerate', [
       GroupSubscriptionsController,
       'regenerateInviteCode',
