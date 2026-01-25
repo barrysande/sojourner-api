@@ -135,9 +135,9 @@ export default class GroupSubscriptionsController {
   async cancel({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
 
-    const result = await this.groupSubscriptionService.cancelGroupSubscription(user.id)
+    await this.groupSubscriptionService.cancelGroupSubscription(user.id)
 
-    return response.ok(result)
+    return response.ok({ message: 'Subscription cancelled successfully.' })
   }
 
   async restore({ auth, response }: HttpContext) {
@@ -145,7 +145,7 @@ export default class GroupSubscriptionsController {
 
     await this.groupSubscriptionService.restoreGroupSubscription(user.id)
 
-    return response.ok({ message: 'Successfully restored subscription' })
+    return response.ok({ message: 'Successfully restored subscription.' })
   }
 
   async regenerateInviteCode({ auth, response }: HttpContext) {

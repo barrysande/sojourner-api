@@ -63,9 +63,9 @@ export default class IndividualSubscriptionsController {
   async cancel({ auth, response }: HttpContext) {
     const user = auth.getUserOrFail()
 
-    const result = await this.individualSubscriptionService.cancelIndividualSubscription(user.id)
+    await this.individualSubscriptionService.cancelIndividualSubscription(user.id)
 
-    return response.ok(result)
+    return response.ok({ message: 'Subscription cancelled successfully.' })
   }
 
   async restore({ auth, response }: HttpContext) {
