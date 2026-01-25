@@ -17,6 +17,7 @@ import SubscriptionConflictException from '#exceptions/subscription_conflict_exc
 import { createIndivSubPaylodValidator } from '#validators/subscription'
 import type { Infer } from '@vinejs/vine/types'
 import { Exception } from '@adonisjs/core/exceptions'
+import { ActionDeniedException } from '#exceptions/payment_errors_exception'
 
 type CreateSubPayload = Infer<typeof createIndivSubPaylodValidator>
 
@@ -149,8 +150,12 @@ export default class IndividualSubscriptionService {
       .where('status', 'active')
       .firstOrFail()
 
+    if (!subscription.dodoSubscriptionId) {
+      throw new ActionDeniedException('No active subscription.')
+    }
+
     const dodoResponse = await this.dodoPaymentService.cancelSubscription(
-      subscription.dodoSubscriptionId!,
+      subscription.dodoSubscriptionId,
       true
     )
 
@@ -347,7 +352,10 @@ export default class IndividualSubscriptionService {
 
     const user = subscription.user
 
-    await subscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
+    await subscription
+      .useTransaction(trx)
+      .merge({ status: 'cancelled', cancelAtNextBillingDate: true })
+      .save()
 
     await this.tierService.updateUserTier(
       subscription.userId,

@@ -324,6 +324,7 @@ export default class DodoPaymentService {
     try {
       const subscription = await this.client.subscriptions.update(subscriptionId, {
         cancel_at_next_billing_date: cancelAtPeriodEnd,
+        status: 'cancelled',
       })
 
       logger.info('Subscription cancelled', { subscriptionId, cancelAtPeriodEnd })

@@ -8,7 +8,8 @@ import app from '@adonisjs/core/services/app'
 import Job, { type WebhookJobPayload } from '#models/job'
 import WebhookService from '#services/webhook_processor_service'
 import db from '@adonisjs/lucid/services/db'
-import User from '#models/user'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
+// import User from '#models/user'
 
 const MAX_JOB_ATTEMPTS = 3
 const RETRY_DELAYS = [0, 60, 300]
@@ -28,34 +29,50 @@ export default class ProcessWebhooks extends BaseCommand {
 
     await this.recoverStuckWebhooks()
 
-    const job = await Job.query()
-      .where((query) => {
-        query.where('status', 'pending').orWhere((subQuery) => {
-          subQuery.where('status', 'failed').where('attempts', '<', MAX_JOB_ATTEMPTS)
+    const trx = await db.transaction()
+
+    try {
+      const job = await Job.query({ client: trx })
+        .where((query) => {
+          query.where('status', 'pending').orWhere((subQuery) => {
+            subQuery.where('status', 'failed').where('attempts', '<', MAX_JOB_ATTEMPTS)
+          })
         })
-      })
-      .where((query) => {
-        query.whereNull('scheduled_for').orWhere('scheduled_for', '<=', DateTime.now().toSQL())
-      })
-      .where('queue_name', 'webhooks')
-      .orderBy('priority', 'asc')
-      .orderBy('scheduled_for', 'asc')
-      .orderBy('created_at', 'asc')
-      .forUpdate()
-      .skipLocked()
-      .limit(1)
-      .first()
+        .where((query) => {
+          query.whereNull('scheduled_for').orWhere('scheduled_for', '<=', DateTime.now().toSQL())
+        })
+        .where('queue_name', 'webhooks')
+        .orderBy('priority', 'asc')
+        .orderBy('scheduled_for', 'asc')
+        .orderBy('created_at', 'asc')
+        .forUpdate()
+        .skipLocked()
+        .limit(1)
+        .first()
 
-    if (!job) {
-      this.logger.info('No pending webhook jobs found.')
-      return
+      if (!job) {
+        this.logger.info('No pending webhook jobs found.')
+
+        await trx.commit()
+        return
+      }
+
+      const maxAttempts = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
+
+      await this.processJob(job, maxAttempts, trx)
+
+      await trx.commit()
+    } catch (error) {
+      await trx.rollback()
+      this.logger.error('Critical error in webhook worker loop')
     }
-
-    const maxAttempts = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
-    await this.processJob(job, maxAttempts)
   }
 
-  private async processJob(job: Job, maxAttempts: number): Promise<void> {
+  private async processJob(
+    job: Job,
+    maxAttempts: number,
+    trx: TransactionClientContract
+  ): Promise<void> {
     const jobLogger = logger.child({
       jobId: job.id,
       attempt: job.attempts + 1,
@@ -63,53 +80,48 @@ export default class ProcessWebhooks extends BaseCommand {
     })
 
     try {
-      await db.transaction(async (trx) => {
-        await job.useTransaction(trx).merge({ status: 'processing' }).save()
+      await job.useTransaction(trx).merge({ status: 'processing' }).save()
 
-        const payload = job.payload as WebhookJobPayload
-        const webhookEvent = await WebhookEvent.findOrFail(payload.eventId, { client: trx })
+      const payload = job.payload as WebhookJobPayload
+      const webhookEvent = await WebhookEvent.findOrFail(payload.eventId, { client: trx })
 
-        const webhookService = await app.container.make(WebhookService)
-        await webhookService.processWebhookEvent(webhookEvent)
+      const webhookService = await app.container.make(WebhookService)
+      const processedUser = await webhookService.processWebhookEvent(webhookEvent, trx)
 
-        const userEmail = webhookEvent.payload.customer.email
-        if (!userEmail) {
-          throw new Error(`WebhookEvent ${webhookEvent.id} payload has no customer.email`)
-        }
+      await webhookEvent
+        .useTransaction(trx)
+        .merge({
+          status: 'completed',
+          processedAt: DateTime.now(),
+          attempts: webhookEvent.attempts + 1,
+        })
+        .save()
 
-        const user = await User.findByOrFail('email', userEmail, { client: trx })
-
-        await webhookEvent
-          .useTransaction(trx)
-          .merge({
-            status: 'completed',
-            processedAt: DateTime.now(),
-            attempts: webhookEvent.attempts + 1,
-          })
-          .save()
-
-        if (user) {
-          jobLogger.info('Enqueuing payment receipt for user', { userId: user.id })
-          await Job.create(
-            {
-              queueName: 'emails',
-              payload: {
-                userId: user.id,
-                emailType: 'subscription_confirmation',
-                metadata: { eventName: webhookEvent.eventType },
-              },
-              status: 'pending',
-              priority: 1,
+      if (processedUser) {
+        jobLogger.info('Enqueuing payment receipt for user', { userId: processedUser.id })
+        await Job.create(
+          {
+            queueName: 'emails',
+            payload: {
+              userId: processedUser.id,
+              emailType: 'subscription_confirmation',
+              metadata: { eventName: webhookEvent.eventType },
             },
-            { client: trx }
-          )
-        }
+            status: 'pending',
+            priority: 1,
+          },
+          { client: trx }
+        )
+      } else {
+        jobLogger.info(
+          'Event processed but no user returned (likely an ignored event type). Job complete.'
+        )
+      }
 
-        await job
-          .useTransaction(trx)
-          .merge({ status: 'completed', lastError: null, attempts: job.attempts + 1 })
-          .save()
-      })
+      await job
+        .useTransaction(trx)
+        .merge({ status: 'completed', lastError: null, attempts: job.attempts + 1 })
+        .save()
 
       jobLogger.info('Webhook job processed successfully')
     } catch (error) {
@@ -126,6 +138,7 @@ export default class ProcessWebhooks extends BaseCommand {
         : null
 
       await job
+        .useTransaction(trx)
         .merge({
           status: 'failed',
           attempts: nextAttemptCount,
@@ -136,9 +149,10 @@ export default class ProcessWebhooks extends BaseCommand {
 
       try {
         const payload = job.payload as WebhookJobPayload
-        const webhookEvent = await WebhookEvent.find(payload.eventId)
+        const webhookEvent = await WebhookEvent.find(payload.eventId, { client: trx })
         if (webhookEvent) {
           await webhookEvent
+            .useTransaction(trx)
             .merge({
               status: 'failed',
               attempts: nextAttemptCount,

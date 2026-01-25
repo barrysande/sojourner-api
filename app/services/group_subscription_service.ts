@@ -759,7 +759,7 @@ export class GroupSubscriptionService {
 
     const owner = groupSubscription.owner
 
-    await groupSubscription.useTransaction(trx).merge({ status: 'on_hold' }).save()
+    await groupSubscription.useTransaction(trx).merge({ status: 'failed' }).save()
 
     const members = await GroupSubscriptionMember.query({ client: trx })
       .where('group_subscription_id', groupSubscription.id)
