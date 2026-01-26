@@ -221,6 +221,8 @@ export class GroupSubscriptionService {
         throw error
       }
 
+      await this.gracePeriodService.clearGracePeriod(userId, trx)
+
       await this.tierService.updateUserTier(userId, 'Joined group subscription', 'join', trx, {
         groupSubscriptionId: groupSubscription.id,
       })
