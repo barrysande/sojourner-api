@@ -369,7 +369,7 @@ export default class TierService {
   }> {
     const individualSubscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
-      .where('status', 'active')
+      .whereIn('status', ['active', 'cancelled'])
       .where('expires_at', '>', DateTime.now().toSQL())
       .first()
 
@@ -377,13 +377,15 @@ export default class TierService {
       .where('user_id', userId)
       .where('status', 'active')
       .whereHas('groupSubscription', (query) => {
-        query.where('status', 'active').where('expires_at', '>', DateTime.now().toSQL())
+        query
+          .whereIn('status', ['active', 'cancelled'])
+          .where('expires_at', '>', DateTime.now().toSQL())
       })
       .first()
 
     const ownedGroupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', userId)
-      .where('status', 'active')
+      .whereIn('status', ['active', 'cancelled'])
       .where('expires_at', '>', DateTime.now().toSQL())
       .first()
 
@@ -391,7 +393,7 @@ export default class TierService {
       return {
         hasConflict: true,
         conflictType: 'has_individual',
-        message: `Cannot join or create group subscription while you have an active individual subscription. Cancel your individual subscription (expires ${individualSubscription.expiresAt.toFormat('LLL dd, yyyy')}) first.`,
+        message: `Cannot join or create group subscription while you have an active individual subscription. Let it expire (expires ${individualSubscription.expiresAt.toFormat('LLL dd, yyyy')}) first.`,
         details: {
           individualSubscriptionId: individualSubscription.dodoSubscriptionId,
           individualExpiresAt: individualSubscription.expiresAt.toISO(),
@@ -404,7 +406,7 @@ export default class TierService {
       return {
         hasConflict: true,
         conflictType: 'has_group_membership',
-        message: `Cannot subscribe to individual plan while you're a member of a group subscription. Leave the group first.`,
+        message: `Cannot subscribe to individual plan while you're a member of a group subscription. Ask the owner to remove you first.`,
         details: {
           groupMembershipId: groupSubscriptionMembership.id,
           groupSubscriptionId: groupSubscriptionMembership.groupSubscriptionId,
@@ -487,16 +489,13 @@ export default class TierService {
   }> {
     const conflict = await this.detectTierConflict(userId, trx)
 
-    if (
-      conflict.hasConflict &&
-      (conflict.conflictType === 'has_group_membership' ||
-        conflict.conflictType === 'has_group_ownership')
-    ) {
+    if (conflict.hasConflict) {
       return {
         canSubscribe: false,
         reason: conflict.message,
       }
     }
+
     return {
       canSubscribe: true,
     }

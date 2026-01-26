@@ -34,7 +34,7 @@ export default class WebhookService {
     }
 
     if (!dodoCustomerId) {
-      throw new Exception(`Missing customer_id for ${dodoSubId}`)
+      throw new Exception('Missing some information')
     }
 
     const subType = payload.metadata?.subscription_type

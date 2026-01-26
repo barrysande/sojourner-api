@@ -4,7 +4,6 @@ import logger from '@adonisjs/core/services/logger'
 import db from '@adonisjs/lucid/services/db'
 import GroupSubscription from '#models/group_subscription'
 import GroupSubscriptionMember from '#models/group_subscription_member'
-import User from '#models/user'
 import { customAlphabet } from 'nanoid'
 import TierService from './tier_service.js'
 import GracePeriodService from './grace_period_service.js'
@@ -253,7 +252,7 @@ export class GroupSubscriptionService {
     await db.transaction(async (trx) => {
       const groupSubscription = await GroupSubscription.query({ client: trx })
         .where('ownerUserId', removedByUserId)
-        .where('status', 'active')
+        .whereIn('status', ['active', 'cancelled'])
         .forUpdate()
         .firstOrFail()
 
@@ -362,24 +361,32 @@ export class GroupSubscriptionService {
     requestingUserId: number,
     params: ChangeGroupSubscriptionPlanParams
   ): Promise<string> {
-    const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
+    const groupSubscription = await GroupSubscription.query()
+      .where('id', groupSubscriptionId)
+      .where('owner_user_id', requestingUserId)
+      .where('status', 'active')
+      .firstOrFail()
 
-    if (Number(groupSubscription.ownerUserId) !== requestingUserId) {
-      throw new ActionDeniedException('You must be a group owner to add seats.')
-    }
+    const newSeatCount = params.addons[0].quantity
 
-    if (params.addons[0].quantity <= groupSubscription.totalSeats) {
+    if (newSeatCount <= groupSubscription.totalSeats) {
       throw new ActionDeniedException('New seat count must be greater than current seats')
     }
 
-    if (params.addons[0].quantity > 20) {
+    if (newSeatCount > 20) {
       throw new ActionDeniedException('Maximum seats is 20.')
     }
 
+    if (!groupSubscription.dodoSubscriptionId) {
+      throw new ActionDeniedException('No susbscription found')
+    }
+
     const result = await this.dodoPaymentService.changeGroupSubscriptionSeats(
-      groupSubscription.dodoSubscriptionId!,
+      groupSubscription.dodoSubscriptionId,
       params
     )
+
+    await groupSubscription.merge({ totalSeats: newSeatCount }).save()
 
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
@@ -400,19 +407,19 @@ export class GroupSubscriptionService {
     requestingUserId: number,
     params: ChangeGroupSubscriptionPlanParams
   ): Promise<string> {
-    const groupSubscription = await GroupSubscription.findOrFail(groupSubscriptionId)
+    const groupSubscription = await GroupSubscription.query()
+      .where('id', groupSubscriptionId)
+      .where('owner_user_id', requestingUserId)
+      .where('status', 'active')
+      .firstOrFail()
 
-    if (Number(groupSubscription.ownerUserId) !== requestingUserId) {
-      throw new ActionDeniedException('You must be a group owner to add seats.')
+    const newSeatCount = params.addons[0].quantity
+
+    if (newSeatCount >= groupSubscription.totalSeats) {
+      throw new ActionDeniedException('New seat count must be less than current seats')
     }
 
-    if (params.addons[0].quantity >= groupSubscription.totalSeats) {
-      throw new ActionDeniedException(
-        `New seat count (${params.addons[0].quantity}) must be less than current seats (${groupSubscription.totalSeats})`
-      )
-    }
-
-    if (params.addons[0].quantity < 1) {
+    if (newSeatCount < 1) {
       throw new ActionDeniedException('Minimum 1 seat required (for owner)')
     }
 
@@ -429,10 +436,12 @@ export class GroupSubscriptionService {
       )
     }
 
-    const dodoResponse = await this.dodoPaymentService.changeGroupSubscriptionSeats(
+    const result = await this.dodoPaymentService.changeGroupSubscriptionSeats(
       groupSubscription.dodoSubscriptionId!,
       params
     )
+
+    await groupSubscription.merge({ totalSeats: newSeatCount }).save()
 
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
@@ -441,7 +450,7 @@ export class GroupSubscriptionService {
       requestedBy: requestingUserId,
     })
 
-    return dodoResponse
+    return result
   }
 
   /**
@@ -655,15 +664,12 @@ export class GroupSubscriptionService {
     dodoCustomerId: string,
     expiresAt: string,
     trx: TransactionClientContract
-  ): Promise<User> {
+  ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
       .whereNull('dodoSubscriptionId')
-      .preload('owner')
       .forUpdate()
       .firstOrFail()
-
-    const owner = groupSubscription.owner
 
     await groupSubscription
       .useTransaction(trx)
@@ -692,8 +698,6 @@ export class GroupSubscriptionService {
         )
       })
     )
-
-    return owner
   }
 
   async handleSubscriptionRenewed(
@@ -701,15 +705,12 @@ export class GroupSubscriptionService {
     dodoSubscriptionId: string,
     newExpiresAt: string,
     trx: TransactionClientContract
-  ): Promise<User> {
+  ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
       .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('owner')
       .forUpdate()
       .firstOrFail()
-
-    const owner = groupSubscription.owner
 
     await groupSubscription
       .useTransaction(trx)
@@ -731,23 +732,18 @@ export class GroupSubscriptionService {
         )
       )
     )
-
-    return owner
   }
 
   async handleSubscriptionCancelled(
     ownerUserId: number,
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<User> {
+  ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
       .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('owner')
       .forUpdate()
       .firstOrFail()
-
-    const owner = groupSubscription.owner
 
     await groupSubscription.useTransaction(trx).merge({ status: 'cancelled' }).save()
 
@@ -769,23 +765,18 @@ export class GroupSubscriptionService {
         )
       )
     )
-
-    return owner
   }
 
   async handleSubscriptionFailed(
     ownerUserId: number,
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<User> {
+  ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
       .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('owner')
       .forUpdate()
       .firstOrFail()
-
-    const owner = groupSubscription.owner
 
     await groupSubscription.useTransaction(trx).merge({ status: 'failed' }).save()
 
@@ -814,8 +805,6 @@ export class GroupSubscriptionService {
         )
       })
     )
-
-    return owner
   }
 
   async handleSubscriptionPlanChanged(
@@ -824,15 +813,12 @@ export class GroupSubscriptionService {
     newQuantity: number,
     newPlanType: PlanType,
     trx: TransactionClientContract
-  ): Promise<User> {
+  ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
       .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('owner')
       .forUpdate()
       .firstOrFail()
-
-    const owner = groupSubscription.owner
 
     await groupSubscription
       .useTransaction(trx)
@@ -846,23 +832,18 @@ export class GroupSubscriptionService {
       trx,
       { group_subscription_id: groupSubscription.id }
     )
-
-    return owner
   }
 
   async handleSubscriptionExpired(
     ownerUserId: number,
     dodoSubscriptionId: string,
     trx: TransactionClientContract
-  ): Promise<User> {
+  ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
       .where('dodo_subscription_id', dodoSubscriptionId)
-      .preload('owner')
       .forUpdate()
       .firstOrFail()
-
-    const owner = groupSubscription.owner
 
     await groupSubscription.useTransaction(trx).merge({ status: 'expired' }).save()
 
@@ -892,8 +873,6 @@ export class GroupSubscriptionService {
         )
       })
     )
-
-    return owner
   }
 
   async getCustomerPortalLink(userId: number): Promise<{ link: string }> {
