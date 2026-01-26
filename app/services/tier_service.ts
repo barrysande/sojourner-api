@@ -243,7 +243,9 @@ export default class TierService {
       .where('user_id', userId)
       .where('status', 'active')
       .whereHas('groupSubscription', (query) => {
-        query.where('status', 'active').where('expires_at', '>', DateTime.now().toSQL())
+        query
+          .whereIn('status', ['active', 'cancelled'])
+          .where('expires_at', '>', DateTime.now().toSQL())
       })
       .preload('groupSubscription')
       .first()
@@ -258,7 +260,7 @@ export default class TierService {
 
     const individualSubscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
-      .where('status', 'active')
+      .whereIn('status', ['active', 'cancelled'])
       .where('expires_at', '>', DateTime.now().toSQL())
       .first()
 

@@ -190,7 +190,7 @@ export class GroupSubscriptionService {
 
       const groupSubscription = await GroupSubscription.query({ client: trx })
         .where('invite_code', inviteCode.toUpperCase())
-        .where('status', 'active')
+        .whereIn('status', ['active', 'cancelled'])
         .where('invite_code_expires_at', '>', DateTime.now().toSQL())
         .forUpdate()
         .firstOrFail()
@@ -595,7 +595,9 @@ export class GroupSubscriptionService {
       .where('user_id', userId)
       .where('status', 'active')
       .whereHas('groupSubscription', (query) => {
-        query.where('status', 'active').where('expires_at', '>', DateTime.now().toSQL())
+        query
+          .whereIn('status', ['active', 'cancelled'])
+          .where('expires_at', '>', DateTime.now().toSQL())
       })
       .preload('groupSubscription')
       .orderBy('joined_at', 'desc')
@@ -620,7 +622,9 @@ export class GroupSubscriptionService {
         })
       })
       .preload('owner')
-      .preload('members', (q) => q.where('status', 'active'))
+      .preload('members', (q) => {
+        q.where('status', 'active').preload('user', (u) => u.select('id', 'full_name'))
+      })
       .firstOrFail()
 
     const role: GroupSubscriptionRole =
