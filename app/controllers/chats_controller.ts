@@ -28,7 +28,7 @@ export default class ChatsController {
 
     const chatRoom = await this.chatService.createOrFindChatRoom(shareGroupId)
 
-    return response.ok({ chatRoom })
+    return response.ok(chatRoom)
   }
 
   async getMessages({ auth, params, request, response }: HttpContext) {
@@ -54,7 +54,7 @@ export default class ChatsController {
 
     const history = await this.chatService.getChatHistory(roomId, page, limit)
 
-    return response.ok({ history })
+    return response.ok(history)
   }
 
   async getUserRooms({ auth, request, response }: HttpContext) {
