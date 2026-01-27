@@ -7,48 +7,25 @@ import TierService from '#services/tier_service'
 import ImageProcessingService from '#services/image_processing_service'
 import drive from '@adonisjs/drive/services/main'
 import { PhotoRecord } from '../../types/hidden_gems.js'
+import { HiddenGemService } from '#services/hidden_gem_service'
 
 @inject()
 export default class HiddenGemsController {
   constructor(
-    private tierService: TierService,
-    private imageProcessingService: ImageProcessingService
+    protected tierService: TierService,
+    protected imageProcessingService: ImageProcessingService,
+    protected hiddenGemService: HiddenGemService
   ) {}
 
   // LIST ALL HIDDEN GEMS
   async index({ request, response, auth }: HttpContext) {
-    try {
-      const user = auth.getUserOrFail()
-      const page = request.input('page', 1)
-      const limit = request.input('limit', 20)
+    const user = auth.getUserOrFail()
+    const page = request.input('page', 1)
+    const limit = request.input('limit', 20)
 
-      const gems = await HiddenGem.query()
-        .where('userId', user.id)
-        .preload('photos', (gemsQuery) => {
-          gemsQuery.select(['id', 'storageKey', 'thumbnailStorageKey', 'caption', 'isPrimary'])
-          gemsQuery.orderBy('isPrimary', 'desc')
-          gemsQuery.orderBy('createdAt', 'asc')
-        })
-        .orderBy('createdAt', 'desc')
-        .paginate(page, limit)
+    const result = await this.hiddenGemService.getUserHiddenGems(user, page, limit)
 
-      const serialized = gems.serialize()
-      const gemsWithUrls = await Promise.all(
-        serialized.data.map(async (gem) => ({
-          ...gem,
-          photos: await this.imageProcessingService.getPhotoUrls(
-            gems.all().find((g) => g.id === gem.id)?.photos || []
-          ),
-        }))
-      )
-
-      return response.ok({
-        data: gemsWithUrls,
-        meta: serialized.meta,
-      })
-    } catch (error) {
-      throw error
-    }
+    return response.ok(result)
   }
 
   // SHOW ONE HIDDEN GEM
