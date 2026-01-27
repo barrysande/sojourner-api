@@ -33,22 +33,11 @@ export default class HiddenGemsController {
     try {
       const user = auth.getUserOrFail()
 
-      const gem = await HiddenGem.query()
-        .where('id', params.id)
-        .where('userId', user.id)
-        .preload('photos', (gemQuery) => {
-          gemQuery.orderBy('isPrimary', 'desc')
-          gemQuery.orderBy('createdAt', 'asc')
-        })
-        .preload('expenses')
-        .preload('postVisitNotes')
-        .firstOrFail()
-
-      const photosWithUrls = await this.imageProcessingService.getPhotoUrls(gem.photos)
+      const { gem, photos } = await this.hiddenGemService.getGemById(user, params.id)
 
       return response.ok({
         gem,
-        photos: photosWithUrls,
+        photos,
       })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {

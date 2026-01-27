@@ -35,4 +35,21 @@ export class HiddenGemService {
       meta: serialized.meta,
     }
   }
+
+  async getGemById(user: User, gemId: string | number) {
+    const gem = await HiddenGem.query()
+      .where('id', gemId)
+      .where('userId', user.id)
+      .preload('photos', (gemQuery) => {
+        gemQuery.orderBy('isPrimary', 'desc')
+        gemQuery.orderBy('createdAt', 'asc')
+      })
+      .preload('expenses')
+      .preload('postVisitNotes')
+      .firstOrFail()
+
+    const photosWithUrls = await this.imageProcessingService.getPhotoUrls(gem.photos)
+
+    return { gem, photos: photosWithUrls }
+  }
 }
