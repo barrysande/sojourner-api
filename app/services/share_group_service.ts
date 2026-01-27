@@ -101,6 +101,7 @@ export default class ShareGroupService {
       .preload('members', (query) => {
         query.where('status', 'active')
       })
+      .preload('sharedGems')
       .select('share_groups.*')
       .distinct()
       .paginate(page, perPage)

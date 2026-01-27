@@ -12,3 +12,8 @@ export const messageHistoryValidator = vine.create({
 export const deleteMessageValidator = vine.create({
   messageId: vine.number().positive(),
 })
+
+export const chatRoomsValidator = vine.create({
+  page: vine.number().positive().optional(),
+  perPage: vine.number().positive().max(100).optional(),
+})

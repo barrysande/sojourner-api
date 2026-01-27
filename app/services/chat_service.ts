@@ -116,22 +116,30 @@ export default class ChatService {
     return !!membership
   }
 
-  async getUserChatRooms(userId: number) {
-    const userMemberships = await ShareGroupMember.query()
-      .where('user_id', userId)
-      .where('status', 'active')
-      .select('share_group_id')
-
-    const groupIds = userMemberships.map((m) => m.shareGroupId)
-
-    if (groupIds.length === 0) {
-      return []
-    }
-
+  async getUserChatRooms(userId: number, page: number = 1, perPage: number = 20) {
     const chatRooms = await ChatRoom.query()
-      .whereIn('share_group_id', groupIds)
+
+      .join(
+        'share_group_members',
+        'chat_rooms.share_group_id',
+        'share_group_members.share_group_id'
+      )
+      .where('share_group_members.user_id', userId)
+      .where('share_group_members.status', 'active')
+
+      .select('chat_rooms.*')
+
       .preload('shareGroup')
-      .orderBy('last_activity_at', 'desc')
+      .orderBy('chat_rooms.last_activity_at', 'desc')
+
+      .preload('messages', (messagesQuery) => {
+        messagesQuery
+          .where('message_type', '!=', 'system')
+          .preload('user', (q) => q.select('id', 'full_name', 'email'))
+          .orderBy('created_at', 'desc')
+          .groupLimit(1)
+      })
+      .paginate(page, perPage)
 
     return chatRooms
   }

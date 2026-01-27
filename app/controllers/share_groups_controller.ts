@@ -34,11 +34,7 @@ export default class ShareGroupsController {
 
       const shareGroups = await this.shareGroupService.getUserShareGroups(user.id, page, perPage)
 
-      return response.ok({
-        message: 'Share groups retrieved successfully',
-        shareGroups: shareGroups.all(),
-        meta: shareGroups.getMeta(),
-      })
+      return response.ok(shareGroups)
     } catch (error) {
       return response.internalServerError({
         message: 'Failed to retrieve share groups',

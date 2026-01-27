@@ -2,7 +2,11 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { inject } from '@adonisjs/core'
 import ChatService from '#services/chat_service'
 import ChatMessage from '#models/chat_message'
-import { messageHistoryValidator, deleteMessageValidator } from '#validators/chat'
+import {
+  messageHistoryValidator,
+  deleteMessageValidator,
+  chatRoomsValidator,
+} from '#validators/chat'
 
 @inject()
 export default class ChatsController {
@@ -53,11 +57,13 @@ export default class ChatsController {
     return response.ok({ history })
   }
 
-  async getUserRooms({ auth, response }: HttpContext) {
+  async getUserRooms({ auth, request, response }: HttpContext) {
     const user = auth.getUserOrFail()
-    const chatRooms = await this.chatService.getUserChatRooms(user.id)
 
-    return response.ok({ chatRooms })
+    const { page, perPage } = await chatRoomsValidator.validate(request.qs())
+    const chatRooms = await this.chatService.getUserChatRooms(user.id, page, perPage)
+
+    return response.ok(chatRooms)
   }
 
   async deleteMessage({ auth, params, response }: HttpContext) {
