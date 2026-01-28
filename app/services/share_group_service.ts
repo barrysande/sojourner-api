@@ -75,9 +75,12 @@ export default class ShareGroupService {
     const nonSerializedShareGroup = await ShareGroup.query()
       .where('id', shareGroupId)
       .preload('members', (query) => {
-        query.where('status', 'active').preload('user', (userQuery) => {
-          userQuery.select('id', 'email', 'fullName', 'avatarKey', 'avatarUrl', 'avatarSource')
-        })
+        query
+          .where('status', 'active')
+          .preload('user', (userQuery) => {
+            userQuery.select('id', 'email', 'fullName', 'avatarKey', 'avatarUrl', 'avatarSource')
+          })
+          .orderBy('joinedAt', 'asc')
       })
       .firstOrFail()
 

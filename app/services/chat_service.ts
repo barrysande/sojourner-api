@@ -43,7 +43,6 @@ export default class ChatService {
         chatRoom = await this.createChatRoomForGroup(shareGroupId)
         await chatRoom.load('shareGroup')
       } catch (error) {
-        // Handle duplicate key violation (PostgreSQL code 23505)
         if (error.code === '23505') {
           chatRoom = await this.getChatRoomByGroupId(shareGroupId)
           if (!chatRoom) {
@@ -116,22 +115,27 @@ export default class ChatService {
     return !!membership
   }
 
-  async getUserChatRooms(userId: number, page: number = 1, perPage: number = 20) {
+  async getUserChatRooms(userId: number, page: number = 1, perPage: number = 10) {
     const chatRooms = await ChatRoom.query()
-
+      // 1. Join Members (Check if User is in Group)
       .join(
         'share_group_members',
         'chat_rooms.share_group_id',
         'share_group_members.share_group_id'
       )
-      .where('share_group_members.user_id', userId)
-      .where('share_group_members.status', 'active')
 
-      .select('chat_rooms.*')
+      // 2. Join Groups (Check if Group is Active)
+      // We must join this table to access the 'status' column of the group
+      .join('share_groups', 'chat_rooms.share_group_id', 'share_groups.id')
+
+      .where('share_group_members.user_id', userId)
+      .where('share_group_members.status', 'active') // User is an active member
+      .where('share_groups.status', 'active') // Group itself is active <-- THE FIX
+
+      .select('chat_rooms.*') // prevent ID collisions
 
       .preload('shareGroup')
       .orderBy('chat_rooms.last_activity_at', 'desc')
-
       .preload('messages', (messagesQuery) => {
         messagesQuery
           .where('message_type', '!=', 'system')
