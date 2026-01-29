@@ -388,8 +388,6 @@ export class GroupSubscriptionService {
       params
     )
 
-    await groupSubscription.merge({ totalSeats: newSeatCount }).save()
-
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
       oldSeats: groupSubscription.totalSeats,
@@ -442,8 +440,6 @@ export class GroupSubscriptionService {
       groupSubscription.dodoSubscriptionId!,
       params
     )
-
-    await groupSubscription.merge({ totalSeats: newSeatCount }).save()
 
     logger.info('Group subscription seats expanded', {
       groupSubscriptionId,
