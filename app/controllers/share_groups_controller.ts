@@ -163,7 +163,7 @@ export default class ShareGroupsController {
         return response.badRequest({ message: 'Invalid invite code' })
       }
 
-      const canJoin = await this.tierService.canJoinShareGroup(user.id)
+      const canJoin = await this.tierService.canJoinShareGroup(user, shareGroup)
       if (!canJoin.canJoin) {
         return response.forbidden({ message: canJoin.message })
       }

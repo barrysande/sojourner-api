@@ -22,6 +22,18 @@ interface TierCalculationResult {
 }
 
 export default class TierService {
+  private async getUserActiveGroupCount(userId: number): Promise<number> {
+    const result = await ShareGroupMember.query()
+      .where('user_id', userId)
+      .where('status', 'active')
+      .whereHas('shareGroup', (groupQuery) => {
+        groupQuery.where('status', 'active')
+      })
+      .count('* as total')
+
+    return Number(result[0].$extras.total)
+  }
+
   getTierLimits(tier: string) {
     const limits = {
       free: {
@@ -146,43 +158,47 @@ export default class TierService {
     const user = await User.findOrFail(userId)
     const limits = this.getTierLimits(user.tier)
 
-    const currentGroupsCount = await ShareGroup.query()
-      .where('created_by', userId)
-      .where('status', 'active')
-      .count('* as total')
-
-    const currentCount = Number(currentGroupsCount[0].$extras.total)
+    const currentCount = await this.getUserActiveGroupCount(userId)
 
     if (currentCount >= limits.maxShareGroups) {
       return {
         canCreate: false,
-        message: `Share group limit reached, ${user.tier} tier allows maximum ${limits.maxShareGroups} groups. Upgrade to create more.`,
+        message: `Limit reached. You are already in ${currentCount} share group. Upgrade to create more.`,
       }
     }
-    return {
-      canCreate: true,
-    }
+    return { canCreate: true }
   }
 
-  async canJoinShareGroup(shareGroupId: number): Promise<{ canJoin: boolean; message?: string }> {
-    const shareGroup = await ShareGroup.findOrFail(shareGroupId)
+  async canJoinShareGroup(
+    user: User,
+    shareGroup: ShareGroup
+  ): Promise<{ canJoin: boolean; message?: string }> {
+    const limits = this.getTierLimits(user.tier)
 
-    const currentMembers = await ShareGroupMember.query()
-      .where('share_group_id', shareGroupId)
+    const userGroupCount = await this.getUserActiveGroupCount(user.id)
+
+    if (userGroupCount >= limits.maxShareGroups) {
+      return {
+        canJoin: false,
+        message: `Limit reached. You are already in ${userGroupCount} share group. Upgrade to join more.`,
+      }
+    }
+
+    const groupMemberCount = await ShareGroupMember.query()
+      .where('share_group_id', shareGroup.id)
       .where('status', 'active')
       .count('* as total')
 
-    const currentCount = Number(currentMembers[0].$extras.total)
+    const currentMembers = Number(groupMemberCount[0].$extras.total)
 
-    if (currentCount >= shareGroup.maxMembers) {
+    if (currentMembers >= shareGroup.maxMembers) {
       return {
         canJoin: false,
         message: 'Share group is at maximum capacity.',
       }
     }
-    return {
-      canJoin: true,
-    }
+
+    return { canJoin: true }
   }
 
   async getMaxShareGroups(userId: number): Promise<{ maxGroups: number }> {
