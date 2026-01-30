@@ -7,6 +7,8 @@ import app from '@adonisjs/core/services/app'
 import { inject } from '@adonisjs/core'
 import ChatService from './chat_service.js'
 import AvatarService from './avatar_service.js'
+import { ActionDeniedException } from '#exceptions/payment_errors_exception'
+import NotificationService from './notification_service.js'
 
 interface InviteResult {
   email: string
@@ -18,7 +20,8 @@ interface InviteResult {
 export default class ShareGroupService {
   constructor(
     protected chatService: ChatService,
-    protected avatarService: AvatarService
+    protected avatarService: AvatarService,
+    protected notificationService: NotificationService
   ) {}
 
   generateUniqueInviteCode(): string {
@@ -306,7 +309,7 @@ export default class ShareGroupService {
       .firstOrFail()
 
     if (membership.status !== 'left') {
-      throw new Error(`Invalid rejoin attempt from status "${membership.status}"`)
+      throw new ActionDeniedException('Invalid rejoin attempt')
     }
 
     await membership
@@ -315,6 +318,32 @@ export default class ShareGroupService {
         joinedAt: DateTime.now(),
       })
       .save()
+
+    return membership
+  }
+
+  async removeShareGroupMember(
+    targetUserId: number,
+    shareGroupId: number
+  ): Promise<ShareGroupMember> {
+    const membership = await ShareGroupMember.query()
+      .where('user_id', targetUserId)
+      .where('share_group_id', shareGroupId)
+      .firstOrFail()
+
+    if (membership.status === 'left' || membership.status === 'pending') {
+      throw new ActionDeniedException('User is not a member of this share group')
+    }
+
+    if (membership.role === 'creator') {
+      throw new ActionDeniedException(
+        'Cannot remove the group creator. Dissolve group to remove creator.'
+      )
+    }
+
+    await membership.merge({ status: 'left' }).save()
+
+    await this.notificationService.createMemberRemovedNotifications(shareGroupId, targetUserId)
 
     return membership
   }

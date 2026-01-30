@@ -204,7 +204,7 @@ export default class NotificationService {
 
     const subscriptionOwner = await User.findOrFail(groupSubscription?.ownerUserId, { client: trx })
 
-    const notiification = await Notification.create(
+    const notification = await Notification.create(
       {
         userId: newUser.id,
         type: 'group_left',
@@ -220,7 +220,54 @@ export default class NotificationService {
       { client: trx }
     )
 
-    return notiification
+    return notification
+  }
+
+  async createMemberRemovedNotifications(
+    shareGroupId: number,
+    removedUserId: number
+  ): Promise<void> {
+    const shareGroup = await ShareGroup.findOrFail(shareGroupId)
+    const removedUser = await User.findOrFail(removedUserId)
+
+    // 1. Notify the specific user who was removed
+    await Notification.create({
+      userId: removedUserId,
+      type: 'group_left',
+      title: 'Removed from Group',
+      message: `You have been removed from the group "${shareGroup.name}" by the creator.`,
+      data: {
+        shareGroupId: shareGroupId,
+        groupName: shareGroup.name,
+      },
+      isRead: false,
+      sentAt: DateTime.now(),
+    })
+
+    // 2. Notify remaining active members
+    const existingMembers = await ShareGroupMember.query()
+      .where('share_group_id', shareGroupId)
+      .where('status', 'active')
+      .where('user_id', '!=', removedUserId)
+
+    const notificationData = existingMembers.map((member) => ({
+      userId: member.userId,
+      type: 'group_left' as const,
+      title: 'Member Removed',
+      message: `${removedUser.fullName} was removed from ${shareGroup.name}`,
+      data: {
+        shareGroupId: shareGroupId,
+        removedUserId: removedUserId,
+        groupName: shareGroup.name,
+        removedUserName: removedUser.fullName,
+      },
+      isRead: false,
+      sentAt: DateTime.now(),
+    }))
+
+    if (notificationData.length > 0) {
+      await Notification.createMany(notificationData)
+    }
   }
 
   async getUserNotifications(userId: number, page: number = 1, perPage: number = 20) {

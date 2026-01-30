@@ -406,4 +406,30 @@ export default class ShareGroupsController {
       })
     }
   }
+
+  async removeMember({ auth, params, response }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const shareGroupId = params.id
+    const targetUserId = params.memberId
+
+    const canManage = await this.shareGroupService.canUserManageGroup(user.id, shareGroupId)
+
+    if (!canManage) {
+      return response.forbidden({
+        message: 'Only group creators can remove members',
+      })
+    }
+
+    if (Number(user.id) === Number(targetUserId)) {
+      return response.badRequest({
+        message: 'You cannot remove yourself. Please leave or dissolve the group.',
+      })
+    }
+
+    await this.shareGroupService.removeShareGroupMember(targetUserId, shareGroupId)
+
+    return response.ok({
+      message: 'Member removed successfully',
+    })
+  }
 }

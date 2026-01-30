@@ -350,12 +350,10 @@ export default class AuthController {
 
       await User.verifyCredentials(user.email, password)
 
-      // Clear avatars from Cloudflare
       if (user.avatarUrl) {
         await this.avatarService.deleteAvatar(user.avatarUrl)
       }
 
-      // Clear hidden gem photos from Cloudflare
       await this.imageProcessingService.deleteAllUserPhotos(user.id)
 
       await user.delete()
