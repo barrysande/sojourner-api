@@ -809,10 +809,11 @@ export class GroupSubscriptionService {
     )
   }
 
+  /**@param -  newQuantity is set to type number | undefined | null because this method allows 3 scenarios, one of which does not affect it making the webhook reset the seat count to 0 if left as number. This scenario occurs when users can change subscription without altering seats. */
   async handleSubscriptionPlanChanged(
     ownerUserId: number,
     dodoSubscriptionId: string,
-    newQuantity: number,
+    newQuantity: number | undefined | null,
     newPlanType: PlanType,
     trx: TransactionClientContract
   ): Promise<void> {
@@ -822,9 +823,12 @@ export class GroupSubscriptionService {
       .forUpdate()
       .firstOrFail()
 
+    const finalQuantity =
+      newQuantity && newQuantity > 0 ? newQuantity : groupSubscription.totalSeats
+
     await groupSubscription
       .useTransaction(trx)
-      .merge({ status: 'active', totalSeats: newQuantity, planType: newPlanType })
+      .merge({ status: 'active', totalSeats: finalQuantity, planType: newPlanType })
       .save()
 
     await this.tierService.updateUserTier(

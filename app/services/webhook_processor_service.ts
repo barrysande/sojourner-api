@@ -320,7 +320,7 @@ export default class WebhookService {
       await this.groupSubscriptionService.handleSubscriptionPlanChanged(
         ownerUserId,
         dodoSubId,
-        newQuantity || 1,
+        newQuantity,
         planType,
         trx
       )
