@@ -17,7 +17,6 @@ const driveConfig = defineConfig({
       region: 'auto',
       bucket: env.get('R2_BUCKET'),
       endpoint: env.get('R2_ENDPOINT'),
-      cdnUrl: env.get('R2_CDN_URL'),
       visibility: 'public',
     }),
   },
