@@ -40,32 +40,29 @@ export default class SocialAuthsController {
       await auth.use('web').login(socialAuth.user)
       return response.redirect(redirectPath)
     }
-
+    // SocialAuthsController.ts
     try {
-      const user = await db.transaction(async (trx) => {
-        let userToLogin: User
-
+      // 1. Run the transaction and just return the user
+      const userToLogin = await db.transaction(async (trx) => {
+        let user: User
         const existingUser = await User.query({ client: trx })
           .where('email', googleUser.email)
           .first()
 
         if (existingUser) {
-          userToLogin = existingUser
-
-          if (!userToLogin.avatarUrl && googleUser.avatarUrl) {
-            userToLogin.avatarUrl = googleUser.avatarUrl
-            userToLogin.avatarSource = 'social'
-            userToLogin.avatarKey = null
+          user = existingUser
+          if (!user.avatarUrl && googleUser.avatarUrl) {
+            user.avatarUrl = googleUser.avatarUrl
+            user.avatarSource = 'social'
+            await user.useTransaction(trx).save()
           }
         } else {
-          userToLogin = await User.create(
+          user = await User.create(
             {
               fullName: googleUser.name || googleUser.nickName,
               email: googleUser.email,
-              password: null,
               avatarUrl: googleUser.avatarUrl,
               avatarSource: 'social',
-              avatarKey: null,
               emailVerifiedAt:
                 googleUser.emailVerificationState === 'verified' ? DateTime.now() : null,
             },
@@ -75,7 +72,7 @@ export default class SocialAuthsController {
 
         await SocialAuthentication.create(
           {
-            userId: userToLogin.id,
+            userId: user.id,
             providerName: 'google',
             providerId: googleUser.id,
             email: googleUser.email,
@@ -84,16 +81,16 @@ export default class SocialAuthsController {
           { client: trx }
         )
 
-        if (userToLogin.isDirty()) {
-          await userToLogin.useTransaction(trx).save()
-        }
-
-        return userToLogin
+        return user
       })
 
-      await auth.use('web').login(user)
+      // 2. NOW that the transaction is 100% finished and committed:
+      // Perform the login so the Set-Cookie header is attached to the response.
+      await auth.use('web').login(userToLogin)
+
       return response.redirect(redirectPath)
-    } catch {
+    } catch (error) {
+      // Logic failed, transaction rolled back automatically
       return response.status(500).redirect(`${redirectPath}?error=account_creation_failed`)
     }
   }
