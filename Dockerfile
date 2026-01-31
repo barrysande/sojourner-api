@@ -3,14 +3,15 @@ FROM node:22.16.0-alpine3.22 AS base
 # All deps stage
 FROM base AS deps
 WORKDIR /app
-ADD package.json package-lock.json ./
-RUN npm ci
+ADD package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm install --frozen-lockfile
 
 # Production only deps stage
 FROM base AS production-deps
 WORKDIR /app
-ADD package.json package-lock.json ./
-RUN npm ci --omit=dev
+# FIX 1: Copy pnpm-lock.yaml, not package-lock.json
+ADD package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
 
 # Build stage
 FROM base AS build
@@ -25,5 +26,6 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=production-deps /app/node_modules /app/node_modules
 COPY --from=build /app/build /app
-EXPOSE 8080
+# FIX 2: Use the standard Adonis port
+EXPOSE 3333
 CMD ["node", "./bin/server.js"]
