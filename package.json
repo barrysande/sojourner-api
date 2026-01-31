@@ -75,6 +75,9 @@
     "sharp": "^0.34.5",
     "socket.io": "^4.8.1"
   },
+  "pnpm": {
+    "ignoredBuiltDependencies": ["sharp"]
+  },
   "hotHook": {
     "boundaries": [
       "./app/controllers/**/*.ts",
