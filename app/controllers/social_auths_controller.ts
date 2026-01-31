@@ -40,11 +40,10 @@ export default class SocialAuthsController {
       await auth.use('web').login(socialAuth.user)
       return response.redirect(redirectPath)
     }
-    // SocialAuthsController.ts
+
     try {
-      // 1. Run the transaction and just return the user
+      let user: User | null = null
       const userToLogin = await db.transaction(async (trx) => {
-        let user: User
         const existingUser = await User.query({ client: trx })
           .where('email', googleUser.email)
           .first()
@@ -84,13 +83,10 @@ export default class SocialAuthsController {
         return user
       })
 
-      // 2. NOW that the transaction is 100% finished and committed:
-      // Perform the login so the Set-Cookie header is attached to the response.
       await auth.use('web').login(userToLogin)
 
       return response.redirect(redirectPath)
     } catch (error) {
-      // Logic failed, transaction rolled back automatically
       return response.status(500).redirect(`${redirectPath}?error=account_creation_failed`)
     }
   }
