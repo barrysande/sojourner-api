@@ -16,7 +16,14 @@ export default await Env.create(new URL('../', import.meta.url), {
   PORT: Env.schema.number(),
   APP_KEY: Env.schema.string(),
   HOST: Env.schema.string({ format: 'host' }),
-  LOG_LEVEL: Env.schema.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']),
+  LOG_LEVEL: Env.schema.enum.optional([
+    'info',
+    'debug',
+    'warn',
+    'error',
+    'fatal',
+    'trace',
+  ] as const),
 
   /*
   |----------------------------------------------------------
@@ -93,7 +100,6 @@ export default await Env.create(new URL('../', import.meta.url), {
   R2_SECRET: Env.schema.string(),
   R2_BUCKET: Env.schema.string(),
   R2_ENDPOINT: Env.schema.string(),
-  R2_CDN_URL: Env.schema.string(),
 
   /*
   |----------------------------------------------------------
