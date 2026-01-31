@@ -25,6 +25,7 @@ export default class DodoPaymentService {
     this.client = new DodoPayments({
       bearerToken: env.get('DODO_PAYMENTS_API_KEY'),
       webhookKey: env.get('DODO_PAYMENTS_WEBHOOK_KEY'),
+      environment: 'live_mode',
     })
   }
 
