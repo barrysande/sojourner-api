@@ -15,20 +15,8 @@ const loggerConfig = defineConfig({
       level: env.get('LOG_LEVEL', 'info'),
 
       transport: {
-        targets: [
-          {
-            target: 'pino/file',
-            level: 'info',
-            options: {
-              destination: 1,
-            },
-          },
-          {
-            target: 'pino-pretty',
-            level: 'info',
-            options: {},
-          },
-        ],
+        targets:
+          env.get('NODE_ENV') === 'production' ? [] : [{ target: 'pino-pretty', options: {} }],
       },
     },
   },
