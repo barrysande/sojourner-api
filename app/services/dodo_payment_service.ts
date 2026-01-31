@@ -24,7 +24,6 @@ export default class DodoPaymentService {
   constructor() {
     this.client = new DodoPayments({
       bearerToken: env.get('DODO_PAYMENTS_API_KEY'),
-      environment: 'test_mode',
       webhookKey: env.get('DODO_PAYMENTS_WEBHOOK_KEY'),
 
       maxRetries: 3,
