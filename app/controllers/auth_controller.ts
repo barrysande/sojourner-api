@@ -173,13 +173,10 @@ export default class AuthController {
   async logout({ auth, response }: HttpContext) {
     try {
       await auth.use('web').logout()
-      response.clearCookie('adonis-session', {
-        domain: '.hiddouts.com',
-        path: '/',
-      })
+      return response.ok({ message: 'Logout successful' })
+    } catch (error) {
+      logger.error('Logout error:', error)
 
-      return response.noContent()
-    } catch {
       return response.internalServerError({
         message: 'An error occurred during logout',
       })
