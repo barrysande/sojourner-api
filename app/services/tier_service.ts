@@ -43,7 +43,7 @@ export default class TierService {
         maxShareGroups: 1,
         maxMembersPerGroup: 3,
         maxSharedGemsPerGroup: 3,
-        maxFileSize: 2 * 1024 * 1024,
+        maxFileSize: 5 * 1024 * 1024,
       },
       individual_paid: {
         maxPhotosPerGem: 20,
