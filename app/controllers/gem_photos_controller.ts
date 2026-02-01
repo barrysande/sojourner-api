@@ -119,13 +119,24 @@ export default class GemPhotosController {
       const user = auth.getUserOrFail()
       const disk = drive.use()
 
-      // 1. Fetch only the data we need (don't preload the whole world)
       const photo = await Photo.query()
         .where('id', params.photoId)
         .whereHas('hiddenGem', (query) => {
           query.where('userId', user.id).where('id', params.gemId)
         })
         .firstOrFail()
+
+      const photoCount = await Photo.query().where('hiddenGemId', params.gemId).count('* as total')
+
+      const total = Number(photoCount[0].$extras.total)
+
+      if (total === 1) {
+        await photo.merge({ isPrimary: true }).save()
+
+        return response.badRequest({
+          message: 'Cannot delete the only photo. A hidden gem must have at least one photo.',
+        })
+      }
 
       const { isPrimary, storageKey, thumbnailStorageKey } = photo
 
@@ -141,7 +152,7 @@ export default class GemPhotosController {
         if (isPrimary) {
           const nextPhoto = await Photo.query({ client: trx })
             .select('id')
-            .where('hiddenGemId', params.id)
+            .where('hiddenGemId', params.gemId)
             .orderBy('id', 'asc')
             .first()
 
@@ -154,13 +165,11 @@ export default class GemPhotosController {
       })
 
       await r2Promise
-
       return response.ok({ message: 'Photo deleted successfully' })
     } catch (error) {
       if (error.code === 'E_ROW_NOT_FOUND') {
         return response.notFound({ message: 'Photo not found' })
       }
-
       throw error
     }
   }
