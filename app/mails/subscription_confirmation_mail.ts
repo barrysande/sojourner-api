@@ -12,7 +12,7 @@ export default class SubscriptionConfirmationMail extends BaseMail {
     super()
   }
 
-  from = `Hideouts <${env.get('MAIL_FROM_ADDRESS')}>`
+  from = `Hiddouts <${env.get('MAIL_FROM_ADDRESS')}>`
 
   subject = 'Subscription Update'
 
@@ -167,7 +167,7 @@ The Hideouts Team
           <tr>
             <td align="center" style="padding: 30px 20px;">
               <p style="font-size: 12px; color: #999; margin: 0;">
-                © ${DateTime.now().year} Hideouts. All rights reserved.<br/>
+                © ${DateTime.now().year} Hiddouts. All rights reserved.<br/>
                 You are receiving this email because you made a purchase on our platform.
               </p>
             </td>
