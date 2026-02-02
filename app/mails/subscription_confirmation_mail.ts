@@ -89,7 +89,7 @@ You can now access all your new features. To manage your subscription or view in
 ${frontendUrl}/dashboard
 
 Thank you,
-The Hideouts Team
+The Hiddouts Team
 `
     const htmlContent = `
 <!DOCTYPE html>
