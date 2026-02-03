@@ -30,7 +30,7 @@ export default class AuthController {
     protected imageProcessingService: ImageProcessingService
   ) {}
 
-  async register({ request, response }: HttpContext) {
+  async register({ auth, request, response }: HttpContext) {
     try {
       const data = await request.validateUsing(registerValidator)
 
@@ -60,8 +60,10 @@ export default class AuthController {
         return newUser
       })
 
+      await auth.use('web').login(user)
+
       return response.created({
-        message: 'Account created successfully. Please login',
+        message: 'Account created successfully.',
         user: user,
       })
     } catch (error) {
