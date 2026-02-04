@@ -140,7 +140,7 @@ router
     router.post('/share-groups/accept', [ShareGroupsController, 'acceptShareGroupInvitation'])
     router.post('/share-groups/:id/invite', [ShareGroupsController, 'invite'])
     router.delete('/share-groups/:id/leave', [ShareGroupsController, 'leave'])
-    router.delete('/share-groups/:id/:memberId', [ShareGroupsController, 'removeMember'])
+    router.delete('/share-groups/:id/members/:memberId', [ShareGroupsController, 'removeMember'])
     router.delete('/share-groups/:id', [ShareGroupsController, 'destroy'])
   })
   .prefix('/api')

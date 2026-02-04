@@ -171,20 +171,29 @@ export default class TierService {
 
   async canJoinShareGroup(
     user: User,
-    shareGroup: ShareGroup
+    shareGroup: ShareGroup,
+    trx?: TransactionClientContract
   ): Promise<{ canJoin: boolean; message?: string }> {
     const limits = this.getTierLimits(user.tier)
 
-    const userGroupCount = await this.getUserActiveGroupCount(user.id)
+    const userGroupCount = await ShareGroupMember.query({ client: trx })
+      .where('user_id', user.id)
+      .where('status', 'active')
+      .whereHas('shareGroup', (groupQuery) => {
+        groupQuery.where('status', 'active')
+      })
+      .count('* as total')
 
-    if (userGroupCount >= limits.maxShareGroups) {
+    const userGroups = Number(userGroupCount[0].$extras.total)
+
+    if (userGroups >= limits.maxShareGroups) {
       return {
         canJoin: false,
-        message: `Limit reached. You are already in ${userGroupCount} share group. Upgrade to join more.`,
+        message: `Limit reached. You are already in ${userGroups} share group. Upgrade to join more.`,
       }
     }
 
-    const groupMemberCount = await ShareGroupMember.query()
+    const groupMemberCount = await ShareGroupMember.query({ client: trx })
       .where('share_group_id', shareGroup.id)
       .where('status', 'active')
       .count('* as total')

@@ -9,6 +9,7 @@ import ChatService from './chat_service.js'
 import AvatarService from './avatar_service.js'
 import { ActionDeniedException } from '#exceptions/payment_errors_exception'
 import NotificationService from './notification_service.js'
+import { TransactionClientContract } from '@adonisjs/lucid/types/database'
 
 interface InviteResult {
   email: string
@@ -67,8 +68,11 @@ export default class ShareGroupService {
     })
   }
 
-  async getShareGroupByInviteCode(inviteCode: string): Promise<ShareGroup | null> {
-    return await ShareGroup.query()
+  async getShareGroupByInviteCode(
+    inviteCode: string,
+    trx?: TransactionClientContract
+  ): Promise<ShareGroup | null> {
+    return await ShareGroup.query({ client: trx })
       .where('invite_code', inviteCode.toUpperCase())
       .where('status', 'active')
       .first()
@@ -113,24 +117,30 @@ export default class ShareGroupService {
       .paginate(page, perPage)
   }
 
-  async createGroupMembership(data: {
-    shareGroupId: number
-    userId: number
-    invitedBy: number
-    status: 'pending' | 'active' | 'left'
-    role: 'creator' | 'member'
-    invitedAt: DateTime
-    joinedAt?: DateTime | null
-  }): Promise<ShareGroupMember> {
-    return await ShareGroupMember.create({
-      shareGroupId: data.shareGroupId,
-      userId: data.userId,
-      invitedBy: data.invitedBy,
-      status: data.status,
-      role: data.role,
-      invitedAt: data.invitedAt,
-      joinedAt: data.joinedAt || null,
-    })
+  async createGroupMembership(
+    data: {
+      shareGroupId: number
+      userId: number
+      invitedBy: number
+      status: 'pending' | 'active' | 'left'
+      role: 'creator' | 'member'
+      invitedAt: DateTime
+      joinedAt?: DateTime | null
+    },
+    trx?: TransactionClientContract
+  ): Promise<ShareGroupMember> {
+    return await ShareGroupMember.create(
+      {
+        shareGroupId: data.shareGroupId,
+        userId: data.userId,
+        invitedBy: data.invitedBy,
+        status: data.status,
+        role: data.role,
+        invitedAt: data.invitedAt,
+        joinedAt: data.joinedAt || null,
+      },
+      { client: trx }
+    )
   }
 
   async inviteMembersToGroup(
@@ -224,16 +234,24 @@ export default class ShareGroupService {
 
   async acceptGroupInvitation(
     userId: number,
-    shareGroupId: number
+    shareGroupId: number,
+    trx?: TransactionClientContract
   ): Promise<ShareGroupMember | null> {
-    const membership = await ShareGroupMember.query()
+    const membership = await ShareGroupMember.query({ client: trx })
       .where('user_id', userId)
       .where('share_group_id', shareGroupId)
       .where('status', 'pending')
+      .whereHas('shareGroup', (query) => {
+        query.where('status', 'active')
+      })
       .first()
 
     if (!membership) {
       return null
+    }
+
+    if (trx) {
+      membership.useTransaction(trx)
     }
 
     await membership
@@ -271,6 +289,11 @@ export default class ShareGroupService {
 
     await shareGroup.merge({ status: 'dissolved' }).save()
 
+    await ShareGroupMember.query()
+      .where('share_group_id', shareGroupId)
+      .whereIn('status', ['active', 'pending'])
+      .update({ status: 'left' })
+
     await this.chatService.deleteChatRoom(shareGroupId)
 
     return shareGroup
@@ -285,13 +308,16 @@ export default class ShareGroupService {
       })
   }
 
-  async findMembership(userId: number, shareGroupId: number): Promise<ShareGroupMember | null> {
-    return await ShareGroupMember.query()
+  async findMembership(
+    userId: number,
+    shareGroupId: number,
+    trx?: TransactionClientContract
+  ): Promise<ShareGroupMember | null> {
+    return await ShareGroupMember.query({ client: trx })
       .where('user_id', userId)
       .where('share_group_id', shareGroupId)
       .first()
   }
-
   async getUserShareGroupsMinimal(userId: number) {
     return await ShareGroup.query()
       .innerJoin('share_group_members', 'share_groups.id', 'share_group_members.share_group_id')
@@ -302,14 +328,26 @@ export default class ShareGroupService {
       .distinct()
   }
 
-  async rejoinGroup(userId: number, shareGroupId: number): Promise<ShareGroupMember> {
-    const membership = await ShareGroupMember.query()
+  async rejoinGroup(
+    userId: number,
+    shareGroupId: number,
+    trx?: TransactionClientContract
+  ): Promise<ShareGroupMember | null> {
+    const membership = await ShareGroupMember.query({ client: trx })
       .where('user_id', userId)
       .where('share_group_id', shareGroupId)
-      .firstOrFail()
+      .where('status', 'left')
+      .whereHas('shareGroup', (query) => {
+        query.where('status', 'active')
+      })
+      .first()
 
-    if (membership.status !== 'left') {
-      throw new ActionDeniedException('Invalid rejoin attempt')
+    if (!membership) {
+      return null
+    }
+
+    if (trx) {
+      membership.useTransaction(trx)
     }
 
     await membership

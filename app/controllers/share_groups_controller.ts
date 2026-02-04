@@ -15,6 +15,14 @@ import ShareGroup from '#models/share_group'
 import ChatService from '#services/chat_service'
 import { disconnectUserFromGroup } from '#services/websocket_service'
 import socket from '#services/socket'
+import db from '@adonisjs/lucid/services/db'
+import {
+  InvalidInviteCodeException,
+  AlreadyMemberException,
+  GroupJoinDeniedException,
+  InvalidInvitationException,
+  GroupDissolvedException,
+} from '#exceptions/share_group_exception'
 
 @inject()
 export default class ShareGroupsController {
@@ -154,54 +162,65 @@ export default class ShareGroupsController {
    * Join share group using invite code
    */
   async join({ request, response, auth }: HttpContext) {
+    const user = auth.getUserOrFail()
+    const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
+
     try {
-      const user = auth.getUserOrFail()
-      const { inviteCode } = await request.validateUsing(joinShareGroupValidator)
+      const shareGroup = await db.transaction(async (trx) => {
+        const group = await this.shareGroupService.getShareGroupByInviteCode(inviteCode, trx)
 
-      const shareGroup = await this.shareGroupService.getShareGroupByInviteCode(inviteCode)
-      if (!shareGroup) {
-        return response.badRequest({ message: 'Invalid invite code' })
-      }
+        if (!group) {
+          throw new InvalidInviteCodeException()
+        }
 
-      const canJoin = await this.tierService.canJoinShareGroup(user, shareGroup)
-      if (!canJoin.canJoin) {
-        return response.forbidden({ message: canJoin.message })
-      }
+        const canJoin = await this.tierService.canJoinShareGroup(user, group, trx)
+        if (!canJoin.canJoin) {
+          throw new GroupJoinDeniedException(canJoin.message)
+        }
 
-      const existingMembership = await this.shareGroupService.findMembership(user.id, shareGroup.id)
+        const existingMembership = await this.shareGroupService.findMembership(
+          user.id,
+          group.id,
+          trx
+        )
 
-      // Already active -> refuse
-      if (existingMembership?.status === 'active') {
-        return response.conflict({
-          message: 'You are already a member of this group',
-        })
-      }
+        if (existingMembership?.status === 'active') {
+          throw new AlreadyMemberException()
+        }
 
-      // Pending invitation -> accept
-      if (existingMembership?.status === 'pending') {
-        await this.shareGroupService.acceptGroupInvitation(user.id, shareGroup.id)
-      }
+        if (existingMembership?.status === 'pending') {
+          const accepted = await this.shareGroupService.acceptGroupInvitation(
+            user.id,
+            group.id,
+            trx
+          )
+          if (!accepted) {
+            throw new InvalidInvitationException()
+          }
+        } else if (existingMembership?.status === 'left') {
+          const rejoined = await this.shareGroupService.rejoinGroup(user.id, group.id, trx)
+          if (!rejoined) {
+            throw new GroupDissolvedException()
+          }
+        } else {
+          await this.shareGroupService.createGroupMembership(
+            {
+              shareGroupId: group.id,
+              userId: user.id,
+              invitedBy: group.createdBy,
+              status: 'active',
+              role: 'member',
+              invitedAt: DateTime.now(),
+              joinedAt: DateTime.now(),
+            },
+            trx
+          )
+        }
 
-      // Previously left -> rejoin explicitly
-      if (existingMembership?.status === 'left') {
-        await this.shareGroupService.rejoinGroup(user.id, shareGroup.id)
-      }
-
-      // No membership -> create fresh active membership
-      if (!existingMembership) {
-        await this.shareGroupService.createGroupMembership({
-          shareGroupId: shareGroup.id,
-          userId: user.id,
-          invitedBy: shareGroup.createdBy,
-          status: 'active',
-          role: 'member',
-          invitedAt: DateTime.now(),
-          joinedAt: DateTime.now(),
-        })
-      }
+        return group
+      })
 
       await this.notificationService.createGroupJoinedNotification(shareGroup.id, user.id)
-
       await this.chatService.createGroupJoinedSystemMessage(shareGroup.id, user.id)
 
       return response.ok({
@@ -210,14 +229,31 @@ export default class ShareGroupsController {
       })
     } catch (error) {
       if (error.code === 'E_VALIDATION_ERROR') {
-        return response.badRequest({
-          message: 'Invalid invite code format',
-        })
+        return response.badRequest({ message: 'Invalid invite code format' })
       }
 
-      return response.internalServerError({
-        message: 'Failed to join share group',
-      })
+      if (error instanceof InvalidInviteCodeException) {
+        return response.badRequest({ message: error.message })
+      }
+
+      if (error instanceof AlreadyMemberException) {
+        return response.conflict({ message: error.message })
+      }
+
+      if (error instanceof GroupJoinDeniedException) {
+        return response.forbidden({ message: error.message })
+      }
+
+      if (error instanceof InvalidInvitationException) {
+        return response.badRequest({ message: error.message })
+      }
+
+      if (error instanceof GroupDissolvedException) {
+        return response.badRequest({ message: error.message })
+      }
+
+      logger.error('Failed to join share group:', error)
+      return response.internalServerError({ message: 'Failed to join share group' })
     }
   }
 
