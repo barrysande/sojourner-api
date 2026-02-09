@@ -8,7 +8,7 @@ export const createGemValidator = vine.create({
     .array(
       vine.file({
         size: '15mb',
-        extnames: ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP'],
+        extnames: ['jpg', 'jpeg', 'png', 'webp', 'avif', 'JPG', 'JPEG', 'PNG', 'WEBP', 'AVIF'],
       })
     )
     .minLength(1),
