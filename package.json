@@ -69,7 +69,7 @@
     "@vinejs/vine": "^4.2.0",
     "adonis-autoswagger": "^3.73.0",
     "adonisjs-scheduler": "^2.6.4",
-    "dodopayments": "^2.6.1",
+    "dodopayments": "^2.19.0",
     "ioredis": "^5.9.1",
     "luxon": "^3.7.1",
     "nanoid": "^5.1.6",

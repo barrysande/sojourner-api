@@ -48,7 +48,7 @@ export interface CreateIndividualSubscriptionParams {
 }
 
 export interface SubscriptionCreateResponse {
-  checkoutUrl: string
+  checkoutUrl: string | null | undefined
   sessionId: string
 }
 

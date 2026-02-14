@@ -201,12 +201,14 @@ export default class DodoPaymentService {
         product_id: params.newProductId,
         quantity: params.quantity,
         proration_billing_mode: params.prorationBillingMode,
+        on_payment_failure: 'prevent_change',
       })
 
       logger.info('Subscription plan changed', {
         subscriptionId: dodoSubscriptionId,
         newProductId: params.newProductId,
       })
+
       return 'Subscription plan changed'
     } catch (error) {
       this.handleDodoApiError(error)
@@ -232,6 +234,7 @@ export default class DodoPaymentService {
         product_id: params.newProductId,
         quantity: params.quantity,
         proration_billing_mode: params.prorationBillingMode,
+        on_payment_failure: 'prevent_change',
       })
 
       logger.info('Subscription plan changed', {
