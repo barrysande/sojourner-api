@@ -38,12 +38,13 @@ export default class SharingService {
   async unshareGemsFromGroup(gemIds: number | number[], shareGroupId: number): Promise<number> {
     const gemIdArray = Array.isArray(gemIds) ? gemIds : [gemIds]
 
-    const gemToUnshare = await SharedGem.query()
+    // Destructuring then type casting the return value as a number because Knexjs del/delete method returns an array that takes the shape of [affectedRows] https://knexjs.org/guide/query-builder.html#del-delete
+    const [deletedCount] = await SharedGem.query()
       .whereIn('hidden_gem_id', gemIdArray)
       .where('share_group_id', shareGroupId)
       .delete()
 
-    return gemToUnshare.length
+    return Number(deletedCount)
   }
 
   async getSharedGemsForUser(userId: number, page: number = 1, perPage: number = 10) {

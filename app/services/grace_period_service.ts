@@ -102,58 +102,8 @@ export default class GracePeriodService {
   }
 
   /**
-   * Lock gems over free tier limit (3 gems)
-   * Keeps the first 3 gems by created_at, locks the rest
-   * Locked gems remain in DB but user can't access them
-   *
-   * @param userId - User whose gems to lock
-   * @param trx - Database transaction
-   * @returns Number of gems locked
-   */
-
-  private async lockExcessGems(userId: number, trx: TransactionClientContract): Promise<number> {
-    const freeTier = this.tierService.getTierLimits('free')
-    const freeTierLimit = freeTier.maxGemsTotal
-
-    // 1. get all user's gems in order by creation date
-    const allGems = await HiddenGem.query({ client: trx })
-      .where('user_id', userId)
-      .orderBy('created_at', 'asc')
-      .forUpdate()
-
-    if (allGems.length <= freeTierLimit) {
-      logger.info('User has no gems to lock', {
-        userId,
-        gemCount: allGems.length,
-        limit: freeTierLimit,
-      })
-      return 0
-    }
-
-    // 2. show first 3 and lock the rest
-    const gemsToKeep = allGems.slice(0, freeTierLimit)
-    const gemsToLock = allGems.slice(freeTierLimit)
-
-    // 3. Mark gems as locked
-    for (const gem of gemsToLock) {
-      gem.locked = true
-      await gem.useTransaction(trx).merge({ locked: true }).save()
-    }
-
-    logger.info('Excess gems locked', {
-      userId,
-      totalGems: allGems.length,
-      kept: gemsToKeep.length,
-      locked: gemsToLock.length,
-    })
-
-    return gemsToLock.length
-  }
-
-  /**
    * Start a grace period for a user
    * Only one active grace period allowed per user
-   *
    * @param userId - User entering grace period
    * @param type - 'payment_failure' or 'group_removal'
    * @param originalTier - Tier user had before grace period 'free', or 'individual_paid', or 'group_paid'
@@ -221,7 +171,6 @@ export default class GracePeriodService {
   /**
    * Clear/resolve an active grace period for a user
    * Called when user resolves their payment issue or rejoins a group
-   *
    * @param userId - User whose grace period to clear
    */
   async clearGracePeriod(userId: number, trx: TransactionClientContract): Promise<void> {
@@ -247,7 +196,6 @@ export default class GracePeriodService {
 
   /**
    * Get active grace period for a user
-   *
    * @param userId - User to check
    * @returns Active grace period or null
    */
@@ -277,10 +225,7 @@ export default class GracePeriodService {
     // 1. Delete non-primary photos (keep first photo per gem)
     const deletedPhotos = await this.deleteNonPrimaryPhotos(userId, trx)
 
-    // 2. Lock gems over free tier limit (keep first 3)
-    const lockedGems = await this.lockExcessGems(userId, trx)
-
-    // 3. Resolve grace period
+    // 2. Resolve grace period
     const gracePeriod = await GracePeriod.query({ client: trx })
       .where('user_id', userId)
       .where('resolved', false)
@@ -292,7 +237,7 @@ export default class GracePeriodService {
       await gracePeriod.save()
     }
 
-    // 4. Update user tier to free
+    // 3. Update user tier to free
     await this.tierService.updateUserTier(
       userId,
       'Grace period expired - degraded to free tier',
@@ -302,21 +247,18 @@ export default class GracePeriodService {
         gracePeriodId: gracePeriod?.id,
         gracePeriodType: gracePeriod?.type,
         deletedPhotos,
-        lockedGems,
       }
     )
 
     logger.info('User degradation completed', {
       userId,
       deletedPhotos,
-      lockedGems,
     })
   }
 
   /**
    * Check for expired grace periods and trigger degradation
-   * * Recommended: Run this Cron every 5-15 minutes.
-   * We process a limited batch each time to prevent timeouts/memory issues.
+   * Process a limited batch each time to prevent timeouts/memory issues.
    */
   async checkExpiredGracePeriods(): Promise<number> {
     const expiredGracePeriods = await GracePeriod.query()
