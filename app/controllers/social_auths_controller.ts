@@ -7,7 +7,7 @@ import env from '#start/env'
 
 export default class SocialAuthsController {
   async redirect({ ally }: HttpContext) {
-    return ally.use('google').stateless().redirect()
+    return ally.use('google').redirect()
   }
 
   async handleCallback({ ally, auth, response }: HttpContext) {
