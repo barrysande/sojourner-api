@@ -452,9 +452,9 @@ CREATE INDEX idx_group_subscriptions_dodo_subscription_id ON group_subscriptions
 
 ## Orphan Healing
 
-If a webhook arrives without a matching pending subscription (edge case) because the user experience an internet cut off while paying or the server is down so the database does not record the payment but receives the webhook, then the system creates one:
+If a webhook arrives without a matching pending subscription (edge case) because for some reason the user completed payment but got cut off or the server goes down so the database does not record the initial `session_id` but receives the webhook, then the system creates one from the webhook payload as below:
 
-```typescript
+```ts
 
 if (!subscription) {
   logger.warn(`Orphan subscription found. Healing now: ${dodoSubId}`)
@@ -568,7 +568,7 @@ The decoupled architecture solves the temporal gap between checkout and subscrip
 
 ## Queue System
 
-Sojourner API uses a PostgreSQL-backed job queue instead of a dedicated queue broker like [Bull](https://bullmq.io/). All job state lives in the same database as the rest of the application. This was a deliberate early-stage decision: it eliminated the need for a separate Redis instance (cost and maintenance), removed the learning curve of a dedicated queue library, and kept the infrastructure footprint small while Sojourner API was being built. The tradeoff is that high-throughput workloads would eventually warrant moving to a proper broker, but for current volumes it is the right fit.
+Sojourner API uses a PostgreSQL-backed job queue instead of a dedicated queue broker like [BullMQ](https://bullmq.io/). All job state lives in the same database as the rest of the application. This was a deliberate early-stage decision: it eliminated the need for a separate Redis instance (cost and maintenance), removed the learning curve of a dedicated queue library, and kept the infrastructure footprint small while Sojourner API was being built. The tradeoff is that high-throughput workloads would eventually warrant moving to a proper broker, but for current volumes it is the right fit.
 
 The queue is built on [AdonisJS](https://adonisjs.com/) with [Lucid ORM](https://lucid.adonisjs.com/) and [Knex.js](https://knexjs.org/) under the hood for query building, running against PostgreSQL. The scheduler is powered by [adonisjs-scheduler](https://github.com/KABBOUCHI/adonisjs-scheduler).
 
