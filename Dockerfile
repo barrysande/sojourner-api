@@ -9,7 +9,7 @@ RUN npm install -g pnpm && pnpm install --frozen-lockfile
 # Production only deps stage
 FROM base AS production-deps
 WORKDIR /app
-# FIX 1: Copy pnpm-lock.yaml, not package-lock.json
+# Copy pnpm-lock.yaml, not package-lock.json
 ADD package.json pnpm-lock.yaml ./
 RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
 
@@ -26,6 +26,6 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=production-deps /app/node_modules /app/node_modules
 COPY --from=build /app/build /app
-# FIX 2: Use the standard Adonis port
+# Use the standard Adonis port
 EXPOSE 3333
 CMD ["node", "./bin/server.js"]

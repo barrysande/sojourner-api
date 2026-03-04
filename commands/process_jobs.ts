@@ -4,9 +4,10 @@ import Job from '#models/job'
 import { EmailJobPayload } from '#models/job'
 import logger from '@adonisjs/core/services/logger'
 import { DateTime } from 'luxon'
+import env from '#start/env'
 
-const MAX_JOB_ATTEMPTS = 3
-const RETRY_DELAYS = [0, 60, 300] // seconds: immediate, 1min, 5min
+const MAX_JOB_ATTEMPTS = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
+const RETRY_DELAYS = [0, 60, 300]
 
 export default class ProcessJobs extends BaseCommand {
   static commandName = 'process:jobs'
@@ -19,7 +20,8 @@ export default class ProcessJobs extends BaseCommand {
   }
 
   async run() {
-    this.logger.info('Worker running: checking for jobs...')
+    // debug log, not used in prod.
+    // this.logger.info('Worker running: checking for jobs...')
 
     const job = await Job.query()
       .where((query) => {

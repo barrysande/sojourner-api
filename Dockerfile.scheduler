@@ -1,21 +1,21 @@
-# 1. Use the official Node 20 image (Small and Secure)
+# Use the official Node 20 image (Small and Secure)
 FROM node:20-alpine AS base
 
-# 2. Install dependencies
+# Install dependencies
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 # Install pnpm manually since it's not in Alpine by default
 RUN npm install -g pnpm && pnpm i --frozen-lockfile
 
-# 3. Build the app
+# Build the app
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm install -g pnpm && pnpm run build
 
-# 4. Production Image (The thing that actually runs)
+# Production Image 
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production

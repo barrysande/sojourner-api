@@ -9,9 +9,8 @@ import Job, { type WebhookJobPayload } from '#models/job'
 import WebhookService from '#services/webhook_processor_service'
 import db from '@adonisjs/lucid/services/db'
 import { TransactionClientContract } from '@adonisjs/lucid/types/database'
-// import User from '#models/user'
 
-const MAX_JOB_ATTEMPTS = 3
+const MAX_WEBHOOK_ATTEMPTS = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
 const RETRY_DELAYS = [0, 60, 300]
 
 export default class ProcessWebhooks extends BaseCommand {
@@ -35,7 +34,7 @@ export default class ProcessWebhooks extends BaseCommand {
       const job = await Job.query({ client: trx })
         .where((query) => {
           query.where('status', 'pending').orWhere((subQuery) => {
-            subQuery.where('status', 'failed').where('attempts', '<', MAX_JOB_ATTEMPTS)
+            subQuery.where('status', 'failed').where('attempts', '<', MAX_WEBHOOK_ATTEMPTS)
           })
         })
         .where((query) => {
@@ -57,9 +56,7 @@ export default class ProcessWebhooks extends BaseCommand {
         return
       }
 
-      const maxAttempts = env.get('WEBHOOK_MAX_ATTEMPTS', 3)
-
-      await this.processJob(job, maxAttempts, trx)
+      await this.processJob(job, MAX_WEBHOOK_ATTEMPTS, trx)
 
       await trx.commit()
     } catch (error) {
@@ -126,7 +123,7 @@ export default class ProcessWebhooks extends BaseCommand {
       jobLogger.info('Webhook job processed successfully')
     } catch (error) {
       const nextAttemptCount = job.attempts + 1
-      const willRetry = nextAttemptCount < MAX_JOB_ATTEMPTS
+      const willRetry = nextAttemptCount < MAX_WEBHOOK_ATTEMPTS
 
       jobLogger.error(
         { err: error },
