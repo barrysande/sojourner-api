@@ -62,7 +62,7 @@ const dodoResponse = await this.dodoPaymentService.createIndividualSubscription(
 await IndividualSubscription.create({
   userId,
   dodoSessionId: dodoResponse.sessionId,
-  dodoSubscriptionId: null, //  Don't have this yet
+  dodoSubscriptionId: null, //  don't have this yet
   planType: payload.plan_type,
   status: 'pending',
 })
@@ -86,7 +86,7 @@ const dodoResponse = await this.dodoPaymentService.createGroupSubscription({
 await GroupSubscription.create({
   ownerUserId,
   dodoSessionId: dodoResponse.sessionId,
-  dodoSubscriptionId: null, //  Don't have this yet
+  dodoSubscriptionId: null, //  don't have this yet
   totalSeats: payload.total_seats,
   inviteCode,
   inviteCodeExpiresAt,
@@ -617,7 +617,7 @@ A significant architectural insight for this implementation came from the [nedoi
 
 ---
 
-## 1. The Architectural Challenge: Upgrades and Middleware
+## 1. The Challenge: Upgrades and Middleware
 
 Integrating Socket.io with AdonisJS presents a two-fold architectural challenge. Because Adonis completely abstracts the underlying Node.js HTTP server and relies on a strict middleware pipeline, a naive Socket.io integration typically fails in two distinct phases: first at the protocol upgrade level, and second when attempting to access the HTTP context for authentication.
 
@@ -641,7 +641,7 @@ To resolve both phases, the Sojourner API explicitly binds Socket.io to the raw 
 
 ---
 
-## 2. Core Implementation Strategy
+## 2. Implementation Strategy
 
 The integration is broken down across specific services, providers, and custom middleware to strictly separate concerns and maintain the service patterns.
 
@@ -649,7 +649,7 @@ The integration is broken down across specific services, providers, and custom m
 
 **Location:** `app/services/socket.ts`
 
-Instead of starting a separate Nodejs/maybe an Express server (which causes port conflicts and detaches the socket from the Adonis ecosystem), this service acts as a singleton. It extracts the raw Node.js server instance from the Adonis application container and attaches Socket.io directly to it. This allows HTTP and WebSocket traffic to safely share the same port.
+It extracts the raw Node.js server instance from the Adonis application container and attaches Socket.io directly to it. This allows HTTP and WebSocket traffic to safely share the same port.
 
 ### B. Bootstrapping via Provider
 
@@ -661,9 +661,9 @@ This Adonis Service Provider ensures the socket server boots securely during the
 
 **Location:** `app/middleware/socket/socket_http_context_middleware.ts`
 
-This is the most critical piece of the architecture. This custom Socket.io middleware intercepts the initial handshake. It takes the raw Node `socket.request`, creates a mock `ServerResponse`, and forces the Adonis server instance to build a complete `HttpContext`.
+This custom Socket.io middleware intercepts the initial handshake. It takes the raw Node `socket.request`, creates a mock `ServerResponse`, and forces the Adonis server instance to build a complete `HttpContext`.
 
-Once the context is created, it resolves the `auth.manager` from the IoC container, creates an authenticator, and attaches the fully hydrated context back onto the socket object (`socket.context`). This allows standard Adonis session authentication to function over the WebSocket protocol.
+Once the context is created, it resolves the `auth.manager` from the IoC container, creates an authenticator, and attaches the fully hydrated context back onto the socket object (`socket.context`) thereby allowing standard Adonis session authentication to function over the WebSocket protocol.
 
 ### D. WebSocket Handlers and Room Management
 
