@@ -203,16 +203,16 @@ Both handlers then populate `dodoSubscriptionId`, `dodoCustomerId`, `status`, an
 
 ---
 
-### Phase 2: Lifecycle Updates (`subscription.renewed`, `subscription.cancelled`, `subscription.expired`, `subscription.plan_changed`, `subscription.failed`)
+### Phase 2: Subscription Lifecycle Updates (`subscription.renewed`, `subscription.cancelled`, `subscription.expired`, `subscription.plan_changed`, `subscription.failed`)
 
 **File:** `IndividualSubscriptionService` / `GroupSubscriptionService` — respective handler methods
 
-All subsequent webhook handlers query by the user's stable identifier only. The `dodoSubscriptionId` is passed into each handler not to query by, but to defensively populate it on the record if it is still null — guarding against the edge case where a lifecycle event arrives before `subscription.active` has been processed.
+All subsequent webhook handlers query by both the user's identifier and the `dodoSubscriptionId` for a strict match. This prevents a lifecycle event from accidentally targeting the wrong subscription when a user has multiple historical records.
 
 **Query Pattern:**
 
-- **Individual:** `where('user_id', userId)`
-- **Group:** `where('owner_user_id', ownerUserId)`
+- **Individual:** `where('user_id', userId)` + `where('dodo_subscription_id', dodoSubscriptionId)`
+- **Group:** `where('owner_user_id', ownerUserId)` + `where('dodo_subscription_id', dodoSubscriptionId)`
 
 ---
 
@@ -221,12 +221,10 @@ All subsequent webhook handlers query by the user's stable identifier only. The 
 Here is how the system automatically heals when `subscription.renewed` is processed before `subscription.active`:
 
 1. The `process:webhooks` worker picks up the `renewed` job and routes it to the handler.
-2. The handler queries by `userId`/`ownerUserId`. If the subscription record does not yet exist, `.firstOrFail()` throws a `RowNotFoundException`.
+2. The handler queries by `userId` + `dodoSubscriptionId`. Because `subscription.active` hasn't been processed yet, no row with that `dodoSubscriptionId` exists — `.firstOrFail()` throws a `RowNotFoundException`.
 3. The worker catches the error, rolls back the transaction, marks the job `failed`, and reschedules it 60 seconds out (`RETRY_DELAYS = [0, 60, 300]`).
-4. The worker picks up the `active` job, processes it successfully, and writes the subscription record with `dodoSubscriptionId` populated.
-5. One minute later, the worker retries the `renewed` job. It finds the record by `userId`/`ownerUserId` and updates it successfully.
-
----
+4. The worker picks up the `active` job, processes it successfully, and writes `dodoSubscriptionId` onto the subscription record.
+5. One minute later, the worker retries the `renewed` job. The strict query now finds the row and updates it successfully.
 
 ## Metadata Requirements
 
