@@ -172,232 +172,111 @@ async handleSubscriptionActive(
 
 ```
 
-## Critical Design Decision: Query by userId/ownerUserId
+Here is the complete, corrected documentation formatted purely in Markdown. You can copy this entire block directly into your README.
 
-**Why Not Query by dodoSubscriptionId?**
-Because webhooks can arrive **out of order**. If `subscription.renewed` arrives before `subscription.active` completes, `dodoSubscriptionId` is still null and queries fail.
+(The formatting issue in the previous message happened because I nested a TypeScript code block inside a Markdown code block, which breaks some markdown parsers. I am outputting it directly below so it renders correctly and is easy to copy!)
 
-**Solution:** All webhook handlers query by `userId` (individual) or `ownerUserId` (group), never by `dodoSubscriptionId`.
+---
 
-### Individual Subscription Handlers
+## Critical Design Decision: Webhook Concurrency & Database Lookups
 
-All handlers receive `userId` and query by it:
+### The Challenge: Out-of-Order Webhooks & Race Conditions
 
-```typescript
-// subscription.active - populates dodoSubscriptionId
-handleSubscriptionActive(userId, dodoSubscriptionId, expiresAt, trx)
-// subscription.renewed - queries by userId (works even if dodoSubscriptionId null)
-handleSubscriptionRenewed(userId, newExpiresAt, trx)
-// subscription.cancelled
-handleSubscriptionCancelled(userId, trx)
-// subscription.expired
-handleSubscriptionExpired(userId, trx)
-// subscription.failed
-handleSubscriptionFailed(userId, trx)
-// subscription.plan_changed
-handleSubscriptionPlanChanged(userId, newPlanType, newExpiresAt, trx)
-```
+[Dodo Payments](https://docs.dodopayments.com/developer-resources/webhooks#event-ordering) do not guarantee webhook delivery order. A `subscription.renewed` event might arrive milliseconds before the initial `subscription.active` event completes. Furthermore, users can have multiple historical subscription records (e.g., an old cancelled plan and a new active one).
 
-Query pattern:
+Because the Sojourner API saves webhooks to the database queue in the controller and immediately returns `200 OK` to Dodo, we cannot rely on Dodo's HTTP retry mechanism. Instead, we use a two-phase database query pattern paired with the internal `process:webhooks` job queue to handle race conditions safely.
 
-```typescript
-const subscription = await IndividualSubscription.query({ client: trx })
-  .where('user_id', userId) // ← Always query by userId
-  .forUpdate()
-  .firstOrFail()
-```
+---
 
-### Group Subscription Handlers
+### Phase 1: The Initializer (`subscription.active`)
 
-All handlers receive `ownerUserId` + `dodoSubscriptionId` and query by `ownerUserId`:
+**File:** `WebhookProcessorService.processWebhookEvent()` → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
 
-```typescript
-// subscription.active - populates dodoSubscriptionId
-handleSubscriptionActive(ownerUserId, dodoSubscriptionId, expiresAt, trx)
-// subscription.renewed - queries by ownerUserId, populates ID if missing
-handleSubscriptionRenewed(ownerUserId, dodoSubscriptionId, newExpiresAt, trx)
-// subscription.cancelled
-handleSubscriptionCancelled(ownerUserId, dodoSubscriptionId, trx)
-// subscription.expired
-handleSubscriptionExpired(ownerUserId, dodoSubscriptionId, trx)
-// subscription.failed
-handleSubscriptionFailed(ownerUserId, dodoSubscriptionId, trx)
-// subscription.plan_changed
-handleSubscriptionPlanChanged(ownerUserId, dodoSubscriptionId, newQuantity, newPlanType, trx)
-```
+This handler bridges the gap between the checkout session and the established subscription. Since the database does not yet know the `dodoSubscriptionId`, we look up the pending record by the user's ID. The `whereNull('dodo_subscription_id')` clause is applied in `WebhookProcessorService` before calling the service handler, to confirm a pending record exists and guard against orphan healing.
 
-Query pattern + defensive ID population:
+**Query Pattern:**
 
-```typescript
-const groupSubscription = await GroupSubscription.query({ client: trx })
-  .where('owner_user_id', ownerUserId) // ← Always query by ownerUserId
-  .preload('owner')
-  .forUpdate()
-  .firstOrFail()
-// Populate dodoSubscriptionId if missing (handles out-of-order webhooks)
-if (!groupSubscription.dodoSubscriptionId) {
-  groupSubscription.dodoSubscriptionId = dodoSubscriptionId
-}
-await groupSubscription
-  .useTransaction(trx)
-  .merge({
-    /* updates */
-  })
-  .save()
-```
+- **Individual:** `where('user_id', userId)` + `whereNull('dodo_subscription_id')`
+- **Group:** `where('owner_user_id', ownerUserId)` + `whereNull('dodo_subscription_id')`
 
-**Why Pass dodoSubscriptionId to All Handlers?**
-So any webhook can populate it if it arrives first. This makes the system resilient to webhook ordering issues.
+Both handlers then populate `dodoSubscriptionId`, `dodoCustomerId`, `status`, and `expiresAt` on the located record.
 
-## Race Condition Resolution
+---
 
-**Problem:** `subscription.renewed` webhook arrives before `subscription.active` completes.
+### Phase 2: Lifecycle Updates (`subscription.renewed`, `subscription.cancelled`, `subscription.expired`, `subscription.plan_changed`, `subscription.failed`)
 
-**Old behavior (broken):**
+**File:** `IndividualSubscriptionService` / `GroupSubscriptionService` — respective handler methods
 
-```typescript
-// Query by dodoSubscriptionId (still null) → Error: Row not found
-const subscription = await GroupSubscription.where('dodoSubscriptionId', dodoSubId).first()
-```
+All subsequent webhook handlers query by the user's stable identifier only. The `dodoSubscriptionId` is passed into each handler not to query by, but to defensively populate it on the record if it is still null — guarding against the edge case where a lifecycle event arrives before `subscription.active` has been processed.
 
-**New behavior (fixed):**
+**Query Pattern:**
 
-```typescript
-// Query by ownerUserId (always exists) → Success
-const subscription = await GroupSubscription.where('ownerUserId', ownerUserId).first()
-// Populate ID if missing
-if (!subscription.dodoSubscriptionId) {
-  subscription.dodoSubscriptionId = dodoSubscriptionId
-}
-```
+- **Individual:** `where('user_id', userId)`
+- **Group:** `where('owner_user_id', ownerUserId)`
+
+---
+
+### Race Condition Resolution Flow
+
+Here is how the system automatically heals when `subscription.renewed` is processed before `subscription.active`:
+
+1. The `process:webhooks` worker picks up the `renewed` job and routes it to the handler.
+2. The handler queries by `userId`/`ownerUserId`. If the subscription record does not yet exist, `.firstOrFail()` throws a `RowNotFoundException`.
+3. The worker catches the error, rolls back the transaction, marks the job `failed`, and reschedules it 60 seconds out (`RETRY_DELAYS = [0, 60, 300]`).
+4. The worker picks up the `active` job, processes it successfully, and writes the subscription record with `dodoSubscriptionId` populated.
+5. One minute later, the worker retries the `renewed` job. It finds the record by `userId`/`ownerUserId` and updates it successfully.
+
+---
 
 ## Metadata Requirements
 
-**Critical:** Metadata is how webhook handlers identify which subscription to update.
+Metadata is how webhook handlers identify which subscription to update. It is set at checkout session creation time in `DodoPaymentService.createIndividualSubscription()` / `createGroupSubscription()`.
 
 ### Individual Subscriptions
 
-Must include in metadata:
-
 ```typescript
-
 {
   userId: userId.toString(),
   subscription_type: 'individual'
 }
-
 ```
 
 ### Group Subscriptions
 
-Must include in metadata:
-
 ```typescript
-
 {
-  ownerUserId: ownerUserId.toString(),  // NOT userId - owner's ID because semantically correct and it is a subtle indicator that you are dealing with group subscription information
+  ownerUserId: ownerUserId.toString(), // NOT userId — ownerUserId is semantically correct and signals you are dealing with a group subscription
   subscription_type: 'group'
 }
-
 ```
 
-**Location:** `DodoPaymentService.createIndividualSubscription()` / `createGroupSubscription()`
-
-```typescript
-
-// Individual
-const response = await this.client.checkoutSessions.create({
-  product_cart: [...],
-  billing_address: {...},
-  customer: {...},
-  metadata: {
-    userId: params.userId.toString(),
-    subscription_type: 'individual',
-  },
-  return_url: env.get('FRONTEND_URL'),
-})
-// Group
-const response = await this.client.checkoutSessions.create({
-  product_cart: [...],
-  billing_address: {...},
-  customer: {...},
-  metadata: {
-    ownerUserId: params.ownerUserId.toString(),
-    subscription_type: 'group',
-  },
-  return_url: env.get('FRONTEND_URL'),
-})
-
-```
+---
 
 ## Webhook Processing Flow
 
 **File:** `WebhookProcessorService.processWebhookEvent()`
 
-### subscription.active
+Extracts `subscription_type`, `userId`/`ownerUserId`, and `dodoSubscriptionId` from the payload, then delegates to the appropriate service handler. See `webhook_processor_service.ts` for the full routing switch.
 
-```typescript
-const userId = Number(payload.metadata?.userId)
-const ownerUserId = Number(payload.metadata?.ownerUserId)
-const dodoSubId = payload.subscription_id
-const expiresAt = payload.expires_at
-if (subType === 'individual') {
-  // Find pending subscription by userId
-  let subscription = await IndividualSubscription.query({ client: trx })
-    .where('userId', userId)
-    .whereNull('dodoSubscriptionId')
-    .first()
-  // Call handler to populate dodoSubscriptionId
-  return individualSubscriptionService.handleSubscriptionActive(userId, dodoSubId, expiresAt, trx)
-}
-if (subType === 'group') {
-  // Find pending subscription by ownerUserId
-  let subscription = await GroupSubscription.query({ client: trx })
-    .where('ownerUserId', ownerUserId)
-    .whereNull('dodoSubscriptionId')
-    .first()
-  // Call handler to populate dodoSubscriptionId
-  return groupSubscriptionService.handleSubscriptionActive(ownerUserId, dodoSubId, expiresAt, trx)
-}
-```
+### `subscription.active`
 
-### subscription.renewed
+Handled by `IndividualSubscriptionService.handleSubscriptionActive()` or `GroupSubscriptionService.handleSubscriptionActive()`. Locates the pending record via `whereNull('dodo_subscription_id')` and populates it with the subscription ID, customer ID, status, and expiry.
 
-```typescript
-const userId = Number(payload.metadata?.userId)
-const ownerUserId = Number(payload.metadata?.ownerUserId)
-const dodoSubId = payload.subscription_id
-const newExpiresAt = payload.expires_at
-if (subType === 'individual') {
-  return individualSubscriptionService.handleSubscriptionRenewed(userId, newExpiresAt, trx)
-}
-if (subType === 'group') {
-  return groupSubscriptionService.handleSubscriptionRenewed(
-    ownerUserId,
-    dodoSubId,
-    newExpiresAt,
-    trx
-  )
-}
-```
+### `subscription.renewed`
 
-### Other Webhooks (cancelled, expired, failed, plan_changed)
+Handled by `IndividualSubscriptionService.handleSubscriptionRenewed()` or `GroupSubscriptionService.handleSubscriptionRenewed()`. Queries by `userId`/`ownerUserId` and updates `expiresAt`.
 
-Same pattern:
+### Other Webhooks (`subscription.cancelled`, `subscription.expired`, `subscription.failed`, `subscription.plan_changed`)
 
-1. Extract `userId`/`ownerUserId` from metadata
-2. Extract `dodoSubId` from payload
-3. Pass both to handler
-4. Handler queries by `userId`/`ownerUserId`
-5. Handler populates `dodoSubscriptionId` if null
-6. Handler performs updates
+Same routing pattern — extract identifiers, delegate to the matching service handler. Group handlers additionally receive `dodoSubscriptionId` to populate defensively if null. See individual handler methods in `IndividualSubscriptionService` and `GroupSubscriptionService`.
+
+---
 
 ## Database Schema
 
 ### individual_subscriptions
 
 ```sql
-
 CREATE TABLE individual_subscriptions (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -409,16 +288,15 @@ CREATE TABLE individual_subscriptions (
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL
 );
+
 CREATE INDEX idx_individual_subscriptions_user_id ON individual_subscriptions(user_id);
 CREATE INDEX idx_individual_subscriptions_dodo_session_id ON individual_subscriptions(dodo_session_id);
 CREATE INDEX idx_individual_subscriptions_dodo_subscription_id ON individual_subscriptions(dodo_subscription_id);
-
 ```
 
 ### group_subscriptions
 
 ```sql
-
 CREATE TABLE group_subscriptions (
   id SERIAL PRIMARY KEY,
   owner_user_id INTEGER NOT NULL REFERENCES users(id),
@@ -433,44 +311,30 @@ CREATE TABLE group_subscriptions (
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL
 );
+
 CREATE INDEX idx_group_subscriptions_owner_user_id ON group_subscriptions(owner_user_id);
 CREATE INDEX idx_group_subscriptions_dodo_session_id ON group_subscriptions(dodo_session_id);
 CREATE INDEX idx_group_subscriptions_dodo_subscription_id ON group_subscriptions(dodo_subscription_id);
-
 ```
+
+---
 
 ## Key Differences: Individual vs Group
 
-| Aspect                      | Individual                     | Group                                 |
-| --------------------------- | ------------------------------ | ------------------------------------- |
-| **Metadata key**            | `userId`                       | `ownerUserId`                         |
-| **DB lookup**               | `where('user_id', userId)`     | `where('owner_user_id', ownerUserId)` |
-| **Tier updates**            | Single user                    | All active members                    |
-| **Handler params (active)** | `userId, dodoSubId, expiresAt` | `ownerUserId, dodoSubId, expiresAt`   |
-| **Handler params (others)** | `userId`                       | `ownerUserId, dodoSubId`              |
-| **ID population**           | Only in `active` handler       | In ALL handlers (defensive)           |
+| Aspect                      | Individual                                     | Group                                               |
+| --------------------------- | ---------------------------------------------- | --------------------------------------------------- |
+| **Metadata key**            | `userId`                                       | `ownerUserId`                                       |
+| **DB lookup**               | `where('user_id', userId)`                     | `where('owner_user_id', ownerUserId)`               |
+| **Tier updates**            | Single user                                    | All active members                                  |
+| **Handler params (active)** | `userId, dodoSubId, dodoCustomerId, expiresAt` | `ownerUserId, dodoSubId, dodoCustomerId, expiresAt` |
+| **Handler params (others)** | `userId, dodoSubId`                            | `ownerUserId, dodoSubId`                            |
+| **Defensive ID population** | `active` handler only                          | All handlers                                        |
+
+---
 
 ## Orphan Healing
 
-If a webhook arrives without a matching pending subscription (edge case) because for some reason the user completed payment but got cut off or the server goes down so the database does not record the initial `session_id` but receives the webhook, then the system creates one from the webhook payload as below:
-
-```ts
-
-if (!subscription) {
-  logger.warn(`Orphan subscription found. Healing now: ${dodoSubId}`)
-  subscription = await GroupSubscription.create({
-    ownerUserId,
-    dodoSessionId: payload.session_id || 'unknown',
-    dodoSubscriptionId: null,
-    totalSeats,
-    inviteCode,
-    inviteCodeExpiresAt,
-    status: 'pending',
-    planType: resolvePlanType(...)
-  }, { client: trx })
-}
-
-```
+If a webhook arrives with no matching pending subscription — because the user completed payment but the server was down and never recorded the `session_id` in Phase 1 — the system creates a minimal subscription record from the webhook payload before proceeding with activation. See `WebhookProcessorService.handleSubscriptionActive()` for the healing logic.
 
 ## Debugging Checklist
 
@@ -619,19 +483,6 @@ The API service and the scheduler service are deployed as two separate Dokploy s
 ### `jobs`
 
 The central queue table. Both the `emails` and `webhooks` queues are rows in this table, distinguished by `queue_name`.
-
-| Column | Type | Description |
-| |--- |---| --- |
-| `id` | integer (PK) | Auto-incrementing job ID |
-| `queue_name` | string | `'emails'` or `'webhooks'` |
-| `payload` | JSON | Queue-specific payload (see below) |
-| `status` | string | `pending`, `processing`, `completed`, `failed` |
-| `priority` | integer | Lower value = processed first |
-| `attempts` | integer | Number of times this job has been attempted |
-| `scheduled_for` | datetime (nullable) | Earliest time the job may run; `null` means run immediately |
-| `last_error` | string (nullable) | Error message from the most recent failed attempt |
-| `created_at` | datetime | Row creation timestamp |
-| `updated_at` | datetime | Last updated timestamp |
 
 #### Payload shapes
 
