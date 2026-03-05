@@ -186,7 +186,7 @@ Because the Sojourner API saves webhooks to the database queue in the controller
 
 ### Phase 1: The Initializer (`subscription.active`)
 
-**File:** `webhook_processor_service` → WebhookService.handleSusbcriptionActive() → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
+**Location:** `webhook_processor_service` → WebhookService.handleSusbcriptionActive() → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
 
 This handler bridges the gap between the checkout session and the established subscription. Since the database does not yet know the `dodoSubscriptionId`, look up the pending record by the user's identifier.
 
@@ -203,7 +203,7 @@ Both handlers then populate `dodoSubscriptionId`, `dodoCustomerId`, `status`, an
 
 ### Phase 2: Subscription Lifecycle Updates (`subscription.renewed`, `subscription.cancelled`, `subscription.expired`, `subscription.plan_changed`, `subscription.failed`)
 
-**File:** `IndividualSubscriptionService` / `GroupSubscriptionService` — respective handler methods
+**Location:** `IndividualSubscriptionService` / `GroupSubscriptionService` — respective handler methods
 
 All subsequent webhook handlers query by both the user's identifier and the `dodoSubscriptionId` for a strict match. This prevents a lifecycle event from accidentally targeting the wrong subscription when a user has multiple historical records.
 
@@ -250,7 +250,7 @@ Metadata is how webhook handlers identify which subscription to update. It is se
 
 ## Webhook Processing Flow
 
-**File:** `webhook_processor_service.ts`
+**Location:** `webhook_processor_service.ts`
 
 Extracts `subscription_type`, `userId`/`ownerUserId`, and `dodoSubscriptionId` from the payload, then delegates to the appropriate service handler. See `webhook_processor_service.ts` for the full routing switch.
 
@@ -380,9 +380,9 @@ The decoupled architecture solves the temporal gap between checkout and subscrip
 
 ## Queue System
 
-Sojourner API uses a PostgreSQL-backed job queue instead of a dedicated queue broker like [BullMQ](https://bullmq.io/). All job state lives in the same database as the rest of the application. This was a deliberate early-stage decision: it eliminated the need for a separate Redis instance (cost and maintenance), removed the learning curve of a dedicated queue library, and kept the infrastructure footprint small while Sojourner API was being built. The tradeoff is that high-throughput workloads would eventually warrant moving to a proper broker, but for current volumes it is the right fit.
+Sojourner API uses a database-backed job queue. All job state lives in the same database as the rest of the application. This was a deliberate early-stage decision: it eliminated the need for a separate Redis instance (cost and maintenance), removed the learning curve of a dedicated queue library, and kept the infrastructure footprint small while Sojourner API was being built. The tradeoff is that high-throughput workloads would eventually warrant moving to a proper broker, but for current volumes it is the right fit.
 
-The queue is built on [AdonisJS](https://adonisjs.com/) with [Lucid ORM](https://lucid.adonisjs.com/) and [Knex.js](https://knexjs.org/) under the hood for query building, running against PostgreSQL. The scheduler is powered by [adonisjs-scheduler](https://github.com/KABBOUCHI/adonisjs-scheduler).
+The queue is built using [AdonisJS](https://adonisjs.com/) with [Lucid ORM](https://lucid.adonisjs.com/) PostgreSQL. The scheduler is powered by [adonisjs-scheduler](https://github.com/KABBOUCHI/adonisjs-scheduler).
 
 There are two queues: **`emails`** for transactional emails (auth and subscription), and **`webhooks`** for processing incoming payment events from DodoPayments.
 
@@ -527,7 +527,7 @@ Because the entire processing cycle — subscription state mutation, event statu
 
 ### `WebhookProcessorService` — Event Routing
 
-**File:** `app/services/webhook_processor_service.ts`
+**Location:** `app/services/webhook_processor_service.ts`
 
 Receives a `WebhookEvent` and a transaction client and routes to the appropriate handler based on `event_type`. All handlers run inside the caller's transaction.                                |
 
@@ -722,19 +722,19 @@ The integration is broken down across specific services, providers, and custom m
 
 ### A. Tapping the Underlying Node Server
 
-**File:** `app/services/socket.ts`
+**Location:** `app/services/socket.ts`
 
 Instead of starting a separate Nodejs/maybe an Express server (which causes port conflicts and detaches the socket from the Adonis ecosystem), this service acts as a singleton. It extracts the raw Node.js server instance from the Adonis application container and attaches Socket.io directly to it. This allows HTTP and WebSocket traffic to safely share the same port.
 
 ### B. Bootstrapping via Provider
 
-**File:** `app/providers/socket_provider.ts`
+**Location:** `app/providers/socket_provider.ts`
 
 This Adonis Service Provider ensures the socket server boots securely during the application's `ready` lifecycle phase. For more information on AdonisJS's lifecycles see documentation at [AdonisJS-lifecycles] It also handles dynamic imports for the WebSocket handlers to ensure all Adonis services are fully booted before listeners are attached. Finally, it registers a `shutdown` hook to close the socket server cleanly, preventing memory leaks or hanging ports during terminal commands (such as running migrations).
 
 ### C. Rebuilding the HTTP Context
 
-**File:** `app/middleware/socket/socket_http_context_middleware.ts`
+**Location:** `app/middleware/socket/socket_http_context_middleware.ts`
 
 This is the most critical piece of the architecture. This custom Socket.io middleware intercepts the initial handshake. It takes the raw Node `socket.request`, creates a mock `ServerResponse`, and forces the Adonis server instance to build a complete `HttpContext`.
 
@@ -742,7 +742,7 @@ Once the context is created, it resolves the `auth.manager` from the IoC contain
 
 ### D. WebSocket Handlers and Room Management
 
-**File:** `app/services/websocket_service.ts`
+**Location:** `app/services/websocket_service.ts`
 
 Once the context is established by the middleware, this service manages real-time state and event listeners.
 
@@ -754,6 +754,6 @@ Once the context is established by the middleware, this service manages real-tim
 
 ## 3. Service Layer Architecture
 
-**File:** `app/services/chat_service.ts`
+**Location:** `app/services/chat_service.ts`
 
 Database interactions are strictly decoupled from the WebSocket layer to keep the real-time server performant. The `websocket_service.ts` resolves `ChatService` via the Adonis IoC container to handle all database work.
