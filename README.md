@@ -4,7 +4,7 @@
 
 The subscription system uses a **two-phase creation pattern** to handle Dodo Payments' checkout session flow where subscription IDs aren't available immediately.
 
-**Old Flow (owning to dodopayments deprecating the create subscriptions endpoint):** Creation of subscriptions happened before payment meaning that when a user was redirected to dodopayments checkout, the `subscription_id` would be issued at this point.
+**Old Flow (switched from this because dodopayments deprecated the create subscriptions endpoint):** Creation of subscriptions happened before payment meaning that when a user was redirected to dodopayments checkout, the `subscription_id` would be issued at this point.
 
 ```ts
 
@@ -22,7 +22,7 @@ checkoutSessions.create → sessionId only → save pending record → webhook p
 
 ## The Decoupling Problem
 
-**Core Issue:** The checkout session API returns an object with `sessionId` and `checkoutUrl`, not an object `dodoSubscriptionId` and other useful data like subscription expiry dates. The subscription ID and other information arrive later (after the user completes the payment flow) via webhook, creating a temporal gap.
+**Core Issue:** The checkout session API returns an object with `sessionId` and `checkoutUrl`, not an object with `payment_link`, `dodoSubscriptionId`, and other useful data like subscription expiry dates. The subscription ID and other information arrive later (after the user completes the payment flow) via webhook, creating a temporal gap of information in the old flow.
 
 **Challenge:** Services expected immediate `dodoSubscriptionId` for database lookups, but now must work without it until the webhook arrives.
 
@@ -34,9 +34,9 @@ checkoutSessions.create → sessionId only → save pending record → webhook p
 
 **What Happens:**
 
-1. User initiates subscription purchase
+1. User initiates subscription attempt
 2. Call `DodoPaymentService.createIndividualSubscription()` or `createGroupSubscription()`
-3. Dodo returns `{ checkoutUrl, sessionId }` (NO dodoSubscriptionId yet)
+3. Dodo returns `{ checkoutUrl, sessionId }` (No dodoSubscriptionId yet)
 4. Save DB record with:
    - `dodoSessionId` = sessionId from Dodo
    - `dodoSubscriptionId` = null
