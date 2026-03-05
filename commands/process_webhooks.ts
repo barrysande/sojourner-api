@@ -51,7 +51,8 @@ export default class ProcessWebhooks extends BaseCommand {
         .first()
 
       if (!job) {
-        this.logger.info('No pending webhook jobs found.')
+        // debug log
+        // this.logger.info('No pending webhook jobs found.')
 
         await trx.commit()
         return
