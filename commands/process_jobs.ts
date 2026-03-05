@@ -43,7 +43,8 @@ export default class ProcessJobs extends BaseCommand {
       .first()
 
     if (!job) {
-      this.logger.info('No pending jobs found.')
+      // debug log
+      // this.logger.info('No pending jobs found.')
       return
     }
 
