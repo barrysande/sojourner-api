@@ -1,4 +1,4 @@
-# Sojourner API Documentation
+# Sojourner API Docs
 
 ## Payment System
 
@@ -20,15 +20,17 @@ checkoutSessions.create → sessionId only → save pending record → webhook p
 
 ```
 
-## The Decoupling Problem
+### The Decoupling Problem
 
-**Core Issue:** The checkout session API returns an object with `sessionId` and `checkoutUrl`, not an object with `payment_link`, `dodoSubscriptionId`, and other useful data like subscription expiry dates. The subscription ID and other information arrive later (after the user completes the payment flow) via webhook, creating a temporal gap of information in the old flow.
+**Core Issue:** The checkout session API returns an object with `sessionId` and `checkoutUrl`, not an object with `paymentLink`, `dodoSubscriptionId`, and other useful data like subscription expiry dates. The subscription ID and other information arrive later (after the user completes the payment flow) via webhook, creating a temporal gap of information in the old flow.
 
 **Challenge:** Services expected immediate `dodoSubscriptionId` for database lookups, but now must work without it until the webhook arrives.
 
-## Two-Phase Approach
+### Two-Phase Approach
 
-### Phase 1: Checkout Session Creation
+Create a record with the available information ie `sessionId`, `checkoutUrl`, and `status` set to `pending`. Then update the relevant tables using the the webhooks payload information once processed.
+
+#### Phase 1: Checkout Session Creation
 
 **Location:** `IndividualSubscriptionService.createIndividualSubscription()` / `GroupSubscriptionService.createGroupSubscription()`
 
@@ -59,7 +61,7 @@ const dodoResponse = await this.dodoPaymentService.createIndividualSubscription(
 })
 await IndividualSubscription.create({
   userId,
-  dodoSessionId: dodoResponse.sessionId, //  Have this
+  dodoSessionId: dodoResponse.sessionId,
   dodoSubscriptionId: null, //  Don't have this yet
   planType: payload.plan_type,
   status: 'pending',
@@ -77,13 +79,13 @@ const dodoResponse = await this.dodoPaymentService.createGroupSubscription({
   email: owner.email,
   name: owner.name,
   metadata: {
-    ownerUserId: ownerUserId.toString(), // Critical: owner, not just userId
+    ownerUserId: ownerUserId.toString(),
     subscription_type: 'group',
   },
 })
 await GroupSubscription.create({
   ownerUserId,
-  dodoSessionId: dodoResponse.sessionId, //  Have this
+  dodoSessionId: dodoResponse.sessionId,
   dodoSubscriptionId: null, //  Don't have this yet
   totalSeats: payload.total_seats,
   inviteCode,
@@ -93,7 +95,7 @@ await GroupSubscription.create({
 })
 ```
 
-### Phase 2: Webhook Activation
+#### Phase 2: Webhook Activation
 
 **Location:** `WebhookProcessorService` → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
 
@@ -118,12 +120,12 @@ async handleSubscriptionActive(
 ): Promise<User> {
   const subscription = await IndividualSubscription.query({ client: trx })
     .where('user_id', userId)
-    .whereNull('dodo_subscription_id')  // Find the pending one
+    .whereNull('dodo_subscription_id')  // finds the pending one
     .preload('user')
     .forUpdate()
     .firstOrFail()
   await subscription.merge({
-    dodoSubscriptionId,  // ← NOW we populate it
+    dodoSubscriptionId,  // populates dodo_subscription_id
     status: 'active',
     expiresAt: DateTime.fromISO(expiresAt),
   }).save()
@@ -148,12 +150,12 @@ async handleSubscriptionActive(
 ): Promise<User> {
   const groupSubscription = await GroupSubscription.query({ client: trx })
     .where('owner_user_id', ownerUserId)
-     .whereNull('dodo_subscription_id')   // Find the pending one
+     .whereNull('dodo_subscription_id')   // finds the pending one
     .preload('owner')
     .forUpdate()
     .firstOrFail()
   await groupSubscription.merge({
-    dodoSubscriptionId,  // ← NOW we populate it
+    dodoSubscriptionId,  // populates dodo_subscription_id
     status: 'active',
     expiresAt: DateTime.fromISO(expiresAt),
   }).save()
@@ -176,15 +178,26 @@ async handleSubscriptionActive(
 
 ## Critical Design Decision: Webhook Concurrency & Database Lookups
 
-### The Challenge: Out-of-Order Webhooks & Race Conditions
+### Challenge 1: Out-of-Order Webhooks
 
-[Dodo Payments](https://docs.dodopayments.com/developer-resources/webhooks#event-ordering) do not guarantee webhook delivery order. A `subscription.renewed` event might arrive milliseconds before the initial `subscription.active` event completes. Furthermore, users can have multiple historical subscription records (e.g., an old cancelled plan and a new active one).
+[Dodo Payments](https://docs.dodopayments.com/developer-resources/webhooks#event-ordering) does not guarantee webhook delivery order. For every new subscription, Dodo sends both `subscription.active` (the subscription is now active and recurring charges are scheduled) and `subscription.renewed` (the first billing cycle was successfully processed). On every subsequent billing cycle, `subscription.renewed` continues to arrive. There is no guarantee which of the two arrives first on that initial pair.
 
-Because the Sojourner API saves webhooks to the database queue in the controller and immediately returns `200 OK` to Dodo, we cannot rely on Dodo's HTTP retry mechanism. Instead, we use a two-phase database query pattern paired with the internal `process:webhooks` job queue to handle race conditions safely.
+This matters because the `renewed` handler queries by `dodoSubscriptionId`, which only exists after `active` has been processed and written it to the database (we refer to it as the initialiser).
+
+The solution is to treat `handleSubscriptionActive` in `IndividualSubscriptionService` and `GroupSubscriptionService` as the initialiser — the only handler that uses `whereNull('dodo_subscription_id')` to locate and activate the pending record. All other lifecycle handlers
+(`renewed`, `cancelled`, `expired`, etc.) query by `dodoSubscriptionId` directly. When `renewed` arrives before `active` has been processed,
+`.firstOrFail()` throws, the job queue catches the error, marks the job `failed`, and reschedules it for retry after a delay (`RETRY_DELAYS = [0, 60, 300]` seconds). By the time the retry runs, `active` will have been processed and the `dodoSubscriptionId` populated, allowing `renewed` to find the correct row and complete successfully. The two-phase query pattern is what makes the retry work correctly — without it, the retry would still fail.
+
+### Challenge 2: Selecting the Right Row
+
+Sojourner API enforces a one-active-subscription-per-user rule, but users can accumulate multiple historical subscription records over time (e.g. an expired individual plan followed by a new one). Querying by `userId` alone could match the wrong row.
+
+The `whereNull('dodo_subscription_id')` clause solves this by targeting only the record created during the current checkout session — a null
+`dodoSubscriptionId` indicates the subscription has been initiated but not yet activated. While this correlates with `status = 'pending'`, the two are not strictly equivalent and `whereNull` is the more precise signal here.
 
 ---
 
-### Phase 1: The Initializer (`subscription.active`)
+### Phase 1: The Initialiser (`subscription.active`)
 
 **Location:** `webhook_processor_service` → WebhookService.handleSusbcriptionActive() → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
 
@@ -226,7 +239,7 @@ Here is how the system automatically heals when `subscription.renewed` is proces
 
 ## Metadata Requirements
 
-Metadata is how webhook handlers identify which subscription to update. It is set at checkout session creation time in `DodoPaymentService.createIndividualSubscription()` / `createGroupSubscription()`.
+Webhook handlers have no direct link to a subscription record — they only receive what Dodo sends back. Metadata is embedded in the checkout session at creation time in `DodoPaymentService.createIndividualSubscription()` / `createGroupSubscription()` and travels with every subsequent webhook for that subscription, giving the handlers the identifiers they need to locate the correct record.
 
 ### Individual Subscriptions
 
@@ -241,7 +254,7 @@ Metadata is how webhook handlers identify which subscription to update. It is se
 
 ```typescript
 {
-  ownerUserId: ownerUserId.toString(), // NOT userId — ownerUserId is semantically correct and signals you are dealing with a group subscription
+  ownerUserId: ownerUserId.toString(), // ownerUserId is semantically correct and signals you are dealing with a group subscription
   subscription_type: 'group'
 }
 ```
@@ -390,40 +403,6 @@ There are two queues: **`emails`** for transactional emails (auth and subscripti
 
 ## Architecture
 
-```text
-
-┌─────────────────────────────────────────────────────────┐
-│                     API Service                         │
-│                                                         │
-│  POST webhooks  ──► WebhooksController                 │
-│                         │                               │
-│                         │ db.transaction()              │
-│                         ▼                               │
-│               webhook_events (pending)                  │
-│               jobs [queue: webhooks] (pending)          │
-│                                                         │
-│  Auth flows  ──────► EmailVerification / PasswordReset  │
-│                         │                               │
-│                         │                               │
-│                         ▼                               │
-│               jobs [queue: emails] (pending)            │
-└─────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────┐
-│                  Scheduler Service                       │
-│           (node build/bin/console.js scheduler:run)     │
-│                                                         │
-│   every 5s ──► process:jobs     ──► emails queue        │
-│   every 5s ──► process:webhooks ──► webhooks queue      │
-│                                                         │
-│   every 15m ──► expired_grace_periods                   │
-│   quarterly ──► cleanup_password_tokens                 │
-│   quarterly ──► clean_expired_tokens                    │
-│   quarterly ──► delete completed/failed jobs (3mo+)     │
-└─────────────────────────────────────────────────────────┘
-
-```
-
 The API service and the scheduler service are deployed as two separate Dokploy services, each built from its own Dockerfile. They share the same PostgreSQL database. The scheduler never handles HTTP traffic — it only reads from and writes to the `jobs` and `webhook_events` tables.
 
 ## Database Tables
@@ -431,22 +410,6 @@ The API service and the scheduler service are deployed as two separate Dokploy s
 ### `jobs`
 
 The central queue table. Both the `emails` and `webhooks` queues are rows in this table, distinguished by `queue_name`.
-
-#### Payload shapes
-
-```ts
-// queue_name: 'webhooks'
-interface WebhookJobPayload {
-  eventId: number // FK → webhook_events.id
-}
-
-// queue_name: 'emails'
-interface EmailJobPayload {
-  userId: number
-  emailType: 'email_verification' | 'password_reset' | 'subscription_confirmation'
-  metadata?: Record<string, any> // e.g. { plainToken, eventName }
-}
-```
 
 ### `webhook_events`
 
@@ -486,7 +449,7 @@ Status transitions for webhook jobs are written within the same database transac
 
 ### `process:jobs` — Email Queue
 
-**File:** `commands/process_jobs.ts`
+**Location:** `commands/process_jobs.ts`
 **Schedule:** every 5 seconds, `withoutOverlapping()`
 
 Handles all outbound emails. On each invocation it:
@@ -504,7 +467,7 @@ Handles all outbound emails. On each invocation it:
 
 ### `process:webhooks` — Webhook Queue
 
-**File:** `commands/process_webhooks.ts`
+**Location:** `commands/process_webhooks.ts`
 **Schedule:** every 5 seconds, `withoutOverlapping()`
 
 Handles DodoPayments webhook events. On each invocation it:
@@ -529,7 +492,7 @@ Because the entire processing cycle — subscription state mutation, event statu
 
 **Location:** `app/services/webhook_processor_service.ts`
 
-Receives a `WebhookEvent` and a transaction client and routes to the appropriate handler based on `event_type`. All handlers run inside the caller's transaction.                                |
+Receives a `WebhookEvent` and a transaction client and routes to the appropriate handler based on `event_type`. All handlers run inside the caller's transaction. |
 
 Each handler delegates to either `IndividualSubscriptionService` or `GroupSubscriptionService` depending on `payload.metadata.subscription_type`.
 
@@ -586,7 +549,7 @@ The scheduler service requires the same database connection environment variable
 
 ```text
 
-NODE_ENV=production
+NODE_ENV=
 DB_HOST=
 DB_PORT=
 DB_USER=
@@ -665,50 +628,12 @@ Before a WebSocket connection can be established, the client must send an HTTP r
 - **The Error:** The client browser throws `WebSocket is closed before the connection is established`, and the network tab shows the request permanently stuck in the "Switching Protocols" status.
 - **The Cause:** By default, AdonisJS's HTTP router handles all incoming traffic. If you attempt to instantiate Socket.io by passing the Adonis server object directly (instead of extracting the raw Node.js server), the Adonis router intercepts the upgrade request, fails to process the WebSocket protocol, and drops the connection.
 
-**The Broken Code (Phase 1):**
-
-```ts
-// BAD: Passing the Adonis server abstraction directly
-import app from '@adonisjs/core/services/app'
-import { Server } from 'socket.io'
-
-class Websocket {
-  async boot() {
-    const adonisServer = await app.container.make('server')
-
-    // This fails the WebSocket upgrade protocol
-    // adonisServer is not a native Node HTTP server!
-    this.io = new Server(adonisServer, socketConfig)
-  }
-}
-```
-
 ### Phase 2: The Middleware Bypass (Authentication Failure)
 
 Once the server is correctly bound using `adonisServer.getNodeServer()` and the socket upgrade succeeds, the connection inherently bypasses the standard Adonis HTTP middleware stack.
 
 - **The Error:** `E_UNAUTHORIZED_ACCESS: Invalid or expired user session` at `SessionGuard.getUserOrFail`, and the socket is disconnected.
 - **The Cause:** Because the standard session middleware was bypassed during the WebSocket upgrade, the incoming socket request never read or decrypted the session cookie. When the Auth module attempts to resolve the user, it finds an empty session and panics.
-
-**The Broken Code (Phase 2):**
-
-```ts
-// BAD: Attempting to auth without awaiting or rebuilding the context
-export function setupWebsocketsHandlers(io: Server) {
-  io.on('connection', (socket: ExtendedSocket) => {
-    try {
-      // Fails: Not awaited, and no custom middleware ran to parse the cookie
-      socket.context.auth.authenticateUsing(['web'])
-    } catch {
-      socket.disconnect(true)
-      return
-    }
-
-    // Crashes the server with E_UNAUTHORIZED_ACCESS
-    const user = socket.context.auth.getUserOrFail()
-  })
-}
-```
 
 ### The Solution
 
@@ -730,7 +655,7 @@ Instead of starting a separate Nodejs/maybe an Express server (which causes port
 
 **Location:** `app/providers/socket_provider.ts`
 
-This Adonis Service Provider ensures the socket server boots securely during the application's `ready` lifecycle phase. For more information on AdonisJS's lifecycles see documentation at [AdonisJS-lifecycles] It also handles dynamic imports for the WebSocket handlers to ensure all Adonis services are fully booted before listeners are attached. Finally, it registers a `shutdown` hook to close the socket server cleanly, preventing memory leaks or hanging ports during terminal commands (such as running migrations).
+This Adonis Service Provider ensures the socket server boots securely during the application's `ready` lifecycle phase. For more information on AdonisJS's lifecycles see documentation at [AdonisJS Aplication Lifecycle](https://v6-docs.adonisjs.com/guides/concepts/application-lifecycle) It also handles dynamic imports for the WebSocket handlers to ensure all Adonis services are fully booted before listeners are attached. Finally, it registers a `shutdown` hook to close the socket server gracefully.
 
 ### C. Rebuilding the HTTP Context
 
@@ -752,7 +677,7 @@ Once the context is established by the middleware, this service manages real-tim
 
 ---
 
-## 3. Service Layer Architecture
+## 3. Service Layer
 
 **Location:** `app/services/chat_service.ts`
 
