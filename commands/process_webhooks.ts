@@ -24,7 +24,8 @@ export default class ProcessWebhooks extends BaseCommand {
   }
 
   async run() {
-    this.logger.info('Webhook worker running: checking for jobs...')
+    // debug log
+    // this.logger.info('Webhook worker running: checking for jobs...')
 
     await this.recoverStuckWebhooks()
 

@@ -20,7 +20,7 @@ export default class ProcessJobs extends BaseCommand {
   }
 
   async run() {
-    // debug log, not used in prod.
+    // debug log
     // this.logger.info('Worker running: checking for jobs...')
 
     const job = await Job.query()
