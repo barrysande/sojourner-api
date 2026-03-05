@@ -48,7 +48,7 @@ export default class WebhookService {
 
       let subscription = await IndividualSubscription.query({ client: trx })
         .where('user_id', userId)
-        .whereNull('dodoSubscriptionId')
+        .whereNull('dodo_subscription_id')
         .first()
 
       if (!subscription) {
@@ -84,7 +84,7 @@ export default class WebhookService {
 
       let subscription = await GroupSubscription.query({ client: trx })
         .where('owner_user_id', ownerUserId)
-        .whereNull('dodoSubscriptionId')
+        .whereNull('dodo_subscription_id')
         .first()
 
       if (!subscription) {
@@ -118,7 +118,7 @@ export default class WebhookService {
         )
 
         const existingMember = await GroupSubscriptionMember.query({ client: trx })
-          .where('userId', ownerUserId)
+          .where('user_id', ownerUserId)
           .where('status', 'active')
           .first()
 

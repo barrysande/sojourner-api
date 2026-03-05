@@ -118,7 +118,7 @@ async handleSubscriptionActive(
 ): Promise<User> {
   const subscription = await IndividualSubscription.query({ client: trx })
     .where('user_id', userId)
-    .whereNull('dodoSubscriptionId')  // Find the pending one
+    .whereNull('dodo_subscription_id')  // Find the pending one
     .preload('user')
     .forUpdate()
     .firstOrFail()
@@ -148,7 +148,7 @@ async handleSubscriptionActive(
 ): Promise<User> {
   const groupSubscription = await GroupSubscription.query({ client: trx })
     .where('owner_user_id', ownerUserId)
-    .whereNull('dodoSubscriptionId')  // Find the pending one
+     .whereNull('dodo_subscription_id')   // Find the pending one
     .preload('owner')
     .forUpdate()
     .firstOrFail()
@@ -172,10 +172,6 @@ async handleSubscriptionActive(
 
 ```
 
-Here is the complete, corrected documentation formatted purely in Markdown. You can copy this entire block directly into your README.
-
-(The formatting issue in the previous message happened because I nested a TypeScript code block inside a Markdown code block, which breaks some markdown parsers. I am outputting it directly below so it renders correctly and is easy to copy!)
-
 ---
 
 ## Critical Design Decision: Webhook Concurrency & Database Lookups
@@ -190,9 +186,11 @@ Because the Sojourner API saves webhooks to the database queue in the controller
 
 ### Phase 1: The Initializer (`subscription.active`)
 
-**File:** `WebhookProcessorService.processWebhookEvent()` → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
+**File:** `webhook_processor_service` → WebhookService.handleSusbcriptionActive() → `IndividualSubscriptionService.handleSubscriptionActive()` / `GroupSubscriptionService.handleSubscriptionActive()`
 
-This handler bridges the gap between the checkout session and the established subscription. Since the database does not yet know the `dodoSubscriptionId`, we look up the pending record by the user's ID. The `whereNull('dodo_subscription_id')` clause is applied in `WebhookProcessorService` before calling the service handler, to confirm a pending record exists and guard against orphan healing.
+This handler bridges the gap between the checkout session and the established subscription. Since the database does not yet know the `dodoSubscriptionId`, look up the pending record by the user's identifier.
+
+The `.whereNull('dodo_subscription_id')` clause is applied in `WebhookProcessorService.handleSubscriptionActive` method before calling the service handlers, to confirm a pending record exists and guard against orphan healing.
 
 **Query Pattern:**
 
@@ -252,7 +250,7 @@ Metadata is how webhook handlers identify which subscription to update. It is se
 
 ## Webhook Processing Flow
 
-**File:** `WebhookProcessorService.processWebhookEvent()`
+**File:** `webhook_processor_service.ts`
 
 Extracts `subscription_type`, `userId`/`ownerUserId`, and `dodoSubscriptionId` from the payload, then delegates to the appropriate service handler. See `webhook_processor_service.ts` for the full routing switch.
 
@@ -274,65 +272,17 @@ Same routing pattern — extract identifiers, delegate to the matching service h
 
 ### individual_subscriptions
 
-```sql
-CREATE TABLE individual_subscriptions (
-  id SERIAL PRIMARY KEY,
-  user_id INTEGER NOT NULL REFERENCES users(id),
-  dodo_session_id VARCHAR(255) NOT NULL UNIQUE,      -- Phase 1: From checkout
-  dodo_subscription_id VARCHAR(255) UNIQUE,           -- Phase 2: From webhook (nullable)
-  plan_type VARCHAR(50) NOT NULL,
-  status VARCHAR(50) NOT NULL,
-  expires_at TIMESTAMP,
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL
-);
-
-CREATE INDEX idx_individual_subscriptions_user_id ON individual_subscriptions(user_id);
-CREATE INDEX idx_individual_subscriptions_dodo_session_id ON individual_subscriptions(dodo_session_id);
-CREATE INDEX idx_individual_subscriptions_dodo_subscription_id ON individual_subscriptions(dodo_subscription_id);
-```
+See the IndividualSubscription Model for shape - `app/models/individual_subscription.ts`
 
 ### group_subscriptions
 
-```sql
-CREATE TABLE group_subscriptions (
-  id SERIAL PRIMARY KEY,
-  owner_user_id INTEGER NOT NULL REFERENCES users(id),
-  dodo_session_id VARCHAR(255) NOT NULL UNIQUE,      -- Phase 1: From checkout
-  dodo_subscription_id VARCHAR(255) UNIQUE,           -- Phase 2: From webhook (nullable)
-  total_seats INTEGER NOT NULL,
-  invite_code VARCHAR(255) UNIQUE,
-  invite_code_expires_at TIMESTAMP,
-  plan_type VARCHAR(50) NOT NULL,
-  status VARCHAR(50) NOT NULL,
-  expires_at TIMESTAMP,
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP NOT NULL
-);
-
-CREATE INDEX idx_group_subscriptions_owner_user_id ON group_subscriptions(owner_user_id);
-CREATE INDEX idx_group_subscriptions_dodo_session_id ON group_subscriptions(dodo_session_id);
-CREATE INDEX idx_group_subscriptions_dodo_subscription_id ON group_subscriptions(dodo_subscription_id);
-```
+See the GroupSubscription Model for shape - `app/models/group_subscription.ts`
 
 ---
 
-## Key Differences: Individual vs Group
+## Orphan Subscription(s) Healing
 
-| Aspect                      | Individual                                     | Group                                               |
-| --------------------------- | ---------------------------------------------- | --------------------------------------------------- |
-| **Metadata key**            | `userId`                                       | `ownerUserId`                                       |
-| **DB lookup**               | `where('user_id', userId)`                     | `where('owner_user_id', ownerUserId)`               |
-| **Tier updates**            | Single user                                    | All active members                                  |
-| **Handler params (active)** | `userId, dodoSubId, dodoCustomerId, expiresAt` | `ownerUserId, dodoSubId, dodoCustomerId, expiresAt` |
-| **Handler params (others)** | `userId, dodoSubId`                            | `ownerUserId, dodoSubId`                            |
-| **Defensive ID population** | `active` handler only                          | All handlers                                        |
-
----
-
-## Orphan Healing
-
-If a webhook arrives with no matching pending subscription — because the user completed payment but the server was down and never recorded the `session_id` in Phase 1 — the system creates a minimal subscription record from the webhook payload before proceeding with activation. See `WebhookProcessorService.handleSubscriptionActive()` for the healing logic.
+If a webhook arrives with no matching pending subscription — because the user completed payment but the server was down and never recorded the `session_id` in Phase 1 — the system creates a minimal subscription record from the webhook payload before proceeding with activation. See `webhook_processor_service.ts -> WebhookService.handleSubscriptionActive()` for the healing logic.
 
 ## Debugging Checklist
 
@@ -365,7 +315,7 @@ If a webhook arrives with no matching pending subscription — because the user 
 
 User Checkout
     ↓
-DodoPaymentService.createGroupSubscription()
+DodoPaymentService.createGroupSubscription() / createIndividualSubscription()
     ↓
 Dodo API: checkoutSessions.create()
     ↓
@@ -379,11 +329,11 @@ Redirect user to checkoutUrl
     ↓
 Dodo → subscription.active webhook
     ↓
-WebhookProcessorService.handleSubscriptionActive()
+WebhookService.handleSubscriptionActive()
     ↓
 Extract ownerUserId from metadata
     ↓
-Find subscription: where('owner_user_id', ownerUserId).whereNull('dodoSubscriptionId')
+Find subscription: where('owner_user_id', ownerUserId).whereNull('dodo_subscription_id')
     ↓
 GroupSubscriptionService.handleSubscriptionActive()
     ↓
@@ -422,7 +372,7 @@ Update tiers
 The decoupled architecture solves the temporal gap between checkout and subscription activation by:
 
 1. **Saving early** with `dodoSessionId` (from checkout)
-2. **Querying by stable identifiers** (`userId`/`ownerUserId`)
+2. **Querying by** where(`userId`/`ownerUserId`) and whereNull('dodo_subscription_id') where applicable as stated before.
 3. **Populating late** with `dodoSubscriptionId` (from webhook)
 4. **Handling disorder** via defensive ID population in all handlers
 
@@ -502,22 +452,6 @@ interface EmailJobPayload {
 
 A dedicated audit table for every verified DodoPayments webhook delivery. A `webhook_events` row is always created before its corresponding `jobs` row, inside the same transaction, so there is never a job without an event record.
 
-| Column         | Type                | Description                                                        |
-| -------------- | ------------------- | ------------------------------------------------------------------ |
-| `id`           | integer (PK)        | Auto-incrementing ID                                               |
-| `event_id`     | string              | Dodo webhook delivery ID (from `webhook-id` header)                |
-| `event_type`   | string              | e.g. `subscription.active`, `subscription.renewed`                 |
-| `business_id`  | string              | Dodo business identifier                                           |
-| `payload`      | JSON                | Full verified webhook payload                                      |
-| `status`       | string              | Mirrors job status: `pending`, `processing`, `completed`, `failed` |
-| `attempts`     | integer             | Number of processing attempts                                      |
-| `last_error`   | string (nullable)   | Error from last failed attempt                                     |
-| `processed_at` | datetime (nullable) | Set when successfully processed                                    |
-| `created_at`   | datetime            | Row creation timestamp                                             |
-| `updated_at`   | datetime            | Last updated timestamp                                             |
-
----
-
 ## Job Lifecycle
 
 ```text
@@ -566,8 +500,6 @@ Handles all outbound emails. On each invocation it:
 4. On success: sets `status = 'completed'`, clears `last_error`.
 5. On failure: increments `attempts`, sets `status = 'failed'`, writes `last_error`, and sets `scheduled_for` for the next retry window (see [Retry Logic](#retry-logic)).
 
-> **Note:** `process:jobs` does not open an explicit transaction wrapping both the email dispatch and the job status update. This means a crash after the email sends but before `status = 'completed'` could cause a retry that re-sends the email. Auth emails (verification, password reset) are idempotent in practice because the token is consumed on use; subscription confirmation emails are not strictly idempotent, so this is a known minor caveat.
-
 ---
 
 ### `process:webhooks` — Webhook Queue
@@ -597,17 +529,7 @@ Because the entire processing cycle — subscription state mutation, event statu
 
 **File:** `app/services/webhook_processor_service.ts`
 
-Receives a `WebhookEvent` and a transaction client and routes to the appropriate handler based on `event_type`. All handlers run inside the caller's transaction.
-
-| Event type                                     | Handler                         | Description                                                                                       |
-| ---------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `subscription.active`                          | `handleSubscriptionActive`      | Activates an individual or group subscription; heals orphaned subscription records if none exists |
-| `subscription.renewed`                         | `handleSubscriptionRenewed`     | Extends `expires_at` on renewal                                                                   |
-| `subscription.cancelled`                       | `handleSubscriptionCancelled`   | Marks subscription cancelled                                                                      |
-| `subscription.expired`                         | `handleSubscriptionExpired`     | Marks subscription expired                                                                        |
-| `subscription.failed` / `subscription.on_hold` | `handleSubscriptionFailed`      | Marks subscription as failed/on hold                                                              |
-| `subscription.plan_changed`                    | `handleSubscriptionPlanChanged` | Updates plan type and seat count                                                                  |
-| anything else                                  | —                               | Logs a warning; returns `undefined`; job completes without error                                  |
+Receives a `WebhookEvent` and a transaction client and routes to the appropriate handler based on `event_type`. All handlers run inside the caller's transaction.                                |
 
 Each handler delegates to either `IndividualSubscriptionService` or `GroupSubscriptionService` depending on `payload.metadata.subscription_type`.
 
@@ -628,12 +550,6 @@ RETRY_DELAYS  = [0, 60, 300]  // seconds: immediate, 1 min, 5 min
 
 On each failure the worker calculates `nextAttemptCount = job.attempts + 1`. If `nextAttemptCount < MAX_ATTEMPTS`, the job is rescheduled:
 
-| Attempt                 | Delay before next retry                                           |
-| ----------------------- | ----------------------------------------------------------------- |
-| 1st failure (attempt 1) | immediate (`scheduled_for = now + 0s`)                            |
-| 2nd failure (attempt 2) | 1 minute (`scheduled_for = now + 60s`)                            |
-| 3rd failure (attempt 3) | max attempts reached — job stays `failed`, `scheduled_for = null` |
-
 Jobs stay in the table permanently after exhausting retries. They are not deleted automatically until the quarterly cleanup removes `completed` and `failed` rows older than 3 months.
 
 ---
@@ -652,50 +568,15 @@ The queue system is split across two Dokploy services that share the same Postgr
 
 ### API Service
 
-Built and run with the standard application Dockerfile. Handles all HTTP traffic including the `POST /webhooks` endpoint. The webhook controller verifies the Dodo signature, then writes a `webhook_events` row and a `jobs` row atomically before returning `200 { received: true }` — the actual processing is fully decoupled from the HTTP response.
+Built and run with the standard application Dockerfile. Handles all HTTP traffic.
 
 ### Scheduler Service
 
 **Dockerfile:** `Dockerfile.scheduler`
 
-```dockerfile
-
-FROM node:20-alpine AS base
-
-FROM base AS deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm i --frozen-lockfile
-
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm install -g pnpm && pnpm run build
-
-FROM base AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/node_modules ./node_modules
-COPY package.json ./
-
-CMD ["node", "build/bin/console.js", "scheduler:run"]
-
-```
-
 The container runs `scheduler:run` as a long-lived process. [adonisjs-scheduler](https://github.com/KABBOUCHI/adonisjs-scheduler) fires commands on their configured intervals from within that process without a system cron or external job runner.
 
 **Configured schedules (`start/scheduler.ts`):**
-
-| Command                      | Interval         | Notes                                   |
-| ---------------------------- | ---------------- | --------------------------------------- |
-| `process:jobs`               | every 5 seconds  | Email queue worker                      |
-| `process:webhooks`           | every 5 seconds  | Webhook queue worker                    |
-| `expired_grace_periods`      | every 15 minutes | Expires subscriptions past grace period |
-| `cleanup_password_tokens`    | quarterly        | Removes expired password reset tokens   |
-| `clean_expired_tokens`       | quarterly        | Removes other expired auth tokens       |
-| Completed/failed job cleanup | quarterly        | Deletes `jobs` rows older than 3 months |
 
 All scheduled commands use `.withoutOverlapping()`, which prevents a second invocation from starting if the previous one is still running.
 
@@ -787,7 +668,7 @@ Before a WebSocket connection can be established, the client must send an HTTP r
 **The Broken Code (Phase 1):**
 
 ```ts
-// ❌ BAD: Passing the Adonis server abstraction directly
+// BAD: Passing the Adonis server abstraction directly
 import app from '@adonisjs/core/services/app'
 import { Server } from 'socket.io'
 
@@ -812,7 +693,7 @@ Once the server is correctly bound using `adonisServer.getNodeServer()` and the 
 **The Broken Code (Phase 2):**
 
 ```ts
-// ❌ BAD: Attempting to auth without awaiting or rebuilding the context
+// BAD: Attempting to auth without awaiting or rebuilding the context
 export function setupWebsocketsHandlers(io: Server) {
   io.on('connection', (socket: ExtendedSocket) => {
     try {

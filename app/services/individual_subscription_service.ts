@@ -215,7 +215,7 @@ export default class IndividualSubscriptionService {
   ): Promise<void> {
     const subscription = await IndividualSubscription.query({ client: trx })
       .where('user_id', userId)
-      .whereNull('dodoSubscriptionId')
+      .whereNull('dodo_subscription_id')
       .forUpdate()
       .firstOrFail()
 

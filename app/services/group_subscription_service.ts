@@ -669,7 +669,7 @@ export class GroupSubscriptionService {
   ): Promise<void> {
     const groupSubscription = await GroupSubscription.query({ client: trx })
       .where('owner_user_id', ownerUserId)
-      .whereNull('dodoSubscriptionId')
+      .whereNull('dodo_subscription_id')
       .forUpdate()
       .firstOrFail()
 
