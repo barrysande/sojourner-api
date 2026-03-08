@@ -653,9 +653,9 @@ It extracts the raw Node.js server instance from the Adonis application containe
 
 ### B. Bootstrapping via Provider
 
-**Location:** `app/providers/socket_provider.ts`
+**Location:** `providers/socket_provider.ts`
 
-This Adonis Service Provider ensures the socket server boots securely during the application's `ready` lifecycle phase. For more information on AdonisJS's lifecycles see documentation at [AdonisJS Aplication Lifecycle](https://v6-docs.adonisjs.com/guides/concepts/application-lifecycle) It also handles dynamic imports for the WebSocket handlers to ensure all Adonis services are fully booted before listeners are attached. Finally, it registers a `shutdown` hook to close the socket server gracefully.
+This Adonis Service Provider ensures the socket server boots securely during the application's `ready` lifecycle phase. For more information on AdonisJS's lifecycles see documentation at [AdonisJS Application Lifecycle](https://v6-docs.adonisjs.com/guides/concepts/application-lifecycle) It also handles dynamic imports for the WebSocket handlers to ensure all Adonis services are fully booted before listeners are attached. Finally, it registers a `shutdown` hook to close the socket server gracefully.
 
 ### C. Rebuilding the HTTP Context
 
@@ -663,7 +663,7 @@ This Adonis Service Provider ensures the socket server boots securely during the
 
 This custom Socket.io middleware intercepts the initial handshake. It takes the raw Node `socket.request`, creates a mock `ServerResponse`, and forces the Adonis server instance to build a complete `HttpContext`.
 
-Once the context is created, it resolves the `auth.manager` from the IoC container, creates an authenticator, and attaches the fully hydrated context back onto the socket object (`socket.context`) thereby allowing standard Adonis session authentication to function over the WebSocket protocol.
+Once the context is created, it resolves the `auth.manager` from the IoC container, creates an authenticator, and attaches the fully hydrated context back onto the socket object (`socket.context`) thereby allowing the AdonisJS session authentication to function over the WebSocket protocol.
 
 ### D. WebSocket Handlers and Room Management
 
